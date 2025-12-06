@@ -1,4 +1,5 @@
 #include "service/job.hpp"
+#include "vm.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -96,6 +97,8 @@ std::string to_json(const JobRequest& job) {
     out << '{';
     out << "\"job_id\":\"" << escape_json(job.job_id) << "\",";
     out << "\"shots\":" << job.shots << ',';
+    out << "\"isa_version\":{\"major\":" << job.isa_version.major
+        << ",\"minor\":" << job.isa_version.minor << "},";
     out << "\"hardware\":{\"positions\":";
     out << '[';
     for (std::size_t i = 0; i < job.hardware.positions.size(); ++i) {

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "vm.hpp"
+#include "vm/isa.hpp"
+#include "vm/measurement_record.types.hpp"
 
 #include <map>
 #include <string>
@@ -21,6 +22,7 @@ struct JobRequest {
     std::vector<Instruction> program;
     int shots = 1;
     std::map<std::string, std::string> metadata;
+    ISAVersion isa_version = kCurrentISAVersion;
 };
 
 struct JobResult {

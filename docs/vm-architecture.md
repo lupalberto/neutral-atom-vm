@@ -167,3 +167,30 @@ To fully align with the “hardware VM” vision, the next steps are:
 
 These changes will turn the current prototype from “a simulator with a small API” into a proper **hardware virtual machine**: a stable target for the QuEra DSL and compilation stack, with multiple underlying engines and realistic device models.
 
+## 5. ISA v1 Specification
+
+The prototype ISA is captured in `src/vm/isa.hpp`, which must remain the definitive description for compilers, services, and backends. Key elements of ISA v1 are:
+
+- **Instruction palette:**
+  - `AllocArray` allocates `n` qubits/sites and zero-initializes the device state.
+  - `ApplyGate` executes a logical gate (`Gate.name`) on the supplied `Gate.targets` and optional `Gate.param`.
+  - `Measure` projects the specified targets and records outcomes in the measurement log.
+  - `MoveAtom` updates an atom’s position for geometry-aware validation.
+  - `Wait` advances logical time so engines can insert idle noise or monitor durations.
+  - `Pulse` logs a classical pulse description (`target`, `detuning`, `duration`) without fixing the underlying physics.
+
+- **Operand encoding:**
+  - Each `Instruction` wraps an `Op` plus a `std::variant` payload that matches the opcode.
+  - `Gate` carries easy-to-read metadata (`name`, `targets`, `param`) so a compiler can express both single- and two-qubit gates without engine-specific enums.
+
+- **Hardware configuration:**
+  - `HardwareConfig` exposes the atom `positions` (1D array for this version) and a `blockade_radius`.
+  - Engines use the hardware configuration to enforce constraints before applying two-qubit operations.
+
+Keeping this section synchronized with `src/vm/isa.hpp` ensures ISA v1 remains a clean, engine-agnostic contract—the exact behavior the new hardware ISA ticket requires.
+
+## 6. ISA Versioning
+
+`src/vm/isa.hpp` also defines `ISAVersion` and `kCurrentISAVersion`. Every `JobRequest` carries an `isa_version` with sensible defaults (`1.0` in this release), and the service serializes that field alongside programs and hardware configs.
+
+This explicit version tag is how the VM can offer multiple ISA versions within the same release: downstream clients declare the dialect they are targeting, the service/engine inspects `isa_version`, and the runtime routes to the appropriate interpreter/emulator. Future ISA revisions can live beside the current one while we ship support for old programs, simply by adding new `ISAVersion` values and dispatch logic in `JobRunner`.

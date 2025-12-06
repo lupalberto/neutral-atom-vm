@@ -35,6 +35,7 @@ TEST(ServiceApiTests, JobRequestJson) {
     const std::string expected =
         "{\"job_id\":\"job-test\"," \
         "\"shots\":8," \
+        "\"isa_version\":{\"major\":1,\"minor\":0}," \
         "\"hardware\":{\"positions\":[0,1],\"blockade_radius\":1.5}," \
         "\"program\":[{\"op\":\"AllocArray\",\"n_qubits\":2}," \
         "{\"op\":\"ApplyGate\",\"gate\":{\"name\":\"H\",\"targets\":[0],\"param\":0}}," \

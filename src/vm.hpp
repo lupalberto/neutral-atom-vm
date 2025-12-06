@@ -1,64 +1,15 @@
 #pragma once
 
+#include <array>
 #include <complex>
 #include <cstdint>
 #include <memory>
 #include <random>
-#include <string>
-#include <variant>
 #include <vector>
 
 #include "noise.hpp"
+#include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
-
-struct MoveAtomInstruction {
-    int atom = 0;
-    double position = 0.0;
-};
-
-struct WaitInstruction {
-    double duration = 0.0;
-};
-
-struct PulseInstruction {
-    int target = 0;
-    double detuning = 0.0;
-    double duration = 0.0;
-};
-
-enum class Op {
-    AllocArray,
-    ApplyGate,
-    Measure,
-    MoveAtom,
-    Wait,
-    Pulse,
-};
-
-struct Gate {
-    std::string name;          // "X", "H", "CX", "CZ", ...
-    std::vector<int> targets;  // qubit indices
-    double param = 0.0;        // angle or other parameter
-};
-
-struct Instruction {
-    Op op;
-    std::variant<
-        int,
-        Gate,
-        std::vector<int>,
-        MoveAtomInstruction,
-        WaitInstruction,
-        PulseInstruction> payload;
-    // AllocArray: payload = int (n_qubits)
-    // ApplyGate:  payload = Gate
-    // Measure:    payload = std::vector<int> (targets)
-};
-
-struct HardwareConfig {
-    std::vector<double> positions;  // 1D positions for atoms
-    double blockade_radius = 0.0;
-};
 
 struct VMState {
     int n_qubits = 0;

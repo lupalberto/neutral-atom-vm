@@ -1,5 +1,10 @@
 # Kirin ↔ Neutral Atom VM Roadmap
 
+## Phase 0 – Hardware Specification & Emulator (Ongoing)
+- Define and document the hardware VM ISA v1 (instruction set, operand semantics, geometry/timing) so compilers and services share a stable contract.
+- Establish ISA versioning (current release supports v1.0 with `ISAVersion` metadata) so a single deployment can run programs targeting multiple dialect revisions.
+- Implement the ISA in a hardware-style emulator that observes device constraints (blockade radius, positions, timing) while remaining backend-agnostic.
+
 ## Phase 1 – Service Definition (Q1)
 - Finalize VM instruction/job schema aligned with Kirin VM dialect.
 - Specify gRPC/REST API for submitting jobs, querying status, and streaming results.

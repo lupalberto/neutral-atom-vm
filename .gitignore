@@ -14,3 +14,4 @@ python/src/neutral_atom_vm/*.so
 *.out
 *.log
 .venv/
+Testing/
