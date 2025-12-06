@@ -1,0 +1,20 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.10",
+    "pybind11[global]~=2.13",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "neutral-atom-vm"
+version = "0.1.0"
+description = "Python helpers and bindings for the Neutral Atom VM prototype."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kirin-toolchain~=0.22.4",
+]
+
+[tool.scikit-build]
+cmake.version = ">=3.20"
+wheel.packages = ["src/neutral_atom_vm"]

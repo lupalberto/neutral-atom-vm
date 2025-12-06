@@ -1,0 +1,111 @@
+#pragma once
+
+#include <complex>
+#include <cstdint>
+#include <memory>
+#include <random>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "noise.hpp"
+#include "vm/measurement_record.types.hpp"
+
+struct MoveAtomInstruction {
+    int atom = 0;
+    double position = 0.0;
+};
+
+struct WaitInstruction {
+    double duration = 0.0;
+};
+
+struct PulseInstruction {
+    int target = 0;
+    double detuning = 0.0;
+    double duration = 0.0;
+};
+
+enum class Op {
+    AllocArray,
+    ApplyGate,
+    Measure,
+    MoveAtom,
+    Wait,
+    Pulse,
+};
+
+struct Gate {
+    std::string name;          // "X", "H", "CX", "CZ", ...
+    std::vector<int> targets;  // qubit indices
+    double param = 0.0;        // angle or other parameter
+};
+
+struct Instruction {
+    Op op;
+    std::variant<
+        int,
+        Gate,
+        std::vector<int>,
+        MoveAtomInstruction,
+        WaitInstruction,
+        PulseInstruction> payload;
+    // AllocArray: payload = int (n_qubits)
+    // ApplyGate:  payload = Gate
+    // Measure:    payload = std::vector<int> (targets)
+};
+
+struct HardwareConfig {
+    std::vector<double> positions;  // 1D positions for atoms
+    double blockade_radius = 0.0;
+};
+
+struct VMState {
+    int n_qubits = 0;
+    std::vector<std::complex<double>> state;  // size = 2^n_qubits
+    HardwareConfig hw;
+    double logical_time = 0.0;
+    std::vector<PulseInstruction> pulse_log;
+    std::vector<MeasurementRecord> measurements;
+};
+
+class VM {
+  public:
+    explicit VM(HardwareConfig cfg);
+
+    // Attach a shared noise model instance. If nullptr, the VM
+    // evolves without adding additional noise beyond ideal gates.
+    void set_noise_model(std::shared_ptr<const NoiseEngine> noise);
+
+    // Set the random seed used for stochastic processes such as
+    // measurement sampling and noise application.
+    void set_random_seed(std::uint64_t seed);
+
+    void run(const std::vector<Instruction>& program);
+
+    const VMState& state() const { return state_; }
+
+  private:
+    VMState state_;
+
+    std::shared_ptr<const NoiseEngine> noise_;
+    std::mt19937_64 rng_{};
+
+    void alloc_array(int n);
+    void apply_gate(const Gate& g);
+    void measure(const std::vector<int>& targets);
+    void move_atom(const MoveAtomInstruction& move);
+    void wait_duration(const WaitInstruction& wait_instr);
+    void apply_pulse(const PulseInstruction& pulse);
+    void enforce_blockade(int q0, int q1) const;
+
+    void apply_single_qubit_unitary(
+        int q,
+        const std::array<std::complex<double>, 4>& U
+    );
+    void apply_two_qubit_unitary(
+        int q0,
+        int q1,
+        const std::array<std::complex<double>, 16>& U
+    );
+};

@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: neutral-atom-vm
+Version: 0.1.0
+Summary: Python helpers and bindings for the Neutral Atom VM prototype.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: kirin-toolchain~=0.22.4
+Requires-Dist: bloqade-circuit
+
+# Neutral Atom VM Python Package
+
+This directory contains the pure-Python helpers for the Neutral Atom VM prototype:
+
+- `neutral_atom_vm.to_vm_program` – lowers Bloqade/Squin kernels to the VM instruction schema.
+- `neutral_atom_vm.submit_job` – provided by the `_neutral_atom_vm` extension module built via CMake.
+
+To install the package in editable mode (for development):
+
+```bash
+python -m pip install -e python
+```
+
+Make sure you build the C++ bindings (`_neutral_atom_vm`) via CMake so that `submit_job`
+is available at runtime.
