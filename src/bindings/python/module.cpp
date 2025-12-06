@@ -191,6 +191,9 @@ py::dict submit_job(const py::dict& job_obj) {
         if (noise.contains("gate")) {
             fill_gate_noise_config(py::cast<py::dict>(noise["gate"]), cfg.gate);
         }
+        if (noise.contains("idle_rate")) {
+            cfg.idle_rate = py::cast<double>(noise["idle_rate"]);
+        }
         job.noise_config = cfg;
     }
 

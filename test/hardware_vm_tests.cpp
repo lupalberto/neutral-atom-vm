@@ -4,6 +4,8 @@
 
 #include <vector>
 
+#include <memory>
+
 namespace {
 
 TEST(HardwareVMTests, AppliesNoiseEngine) {
@@ -51,6 +53,43 @@ TEST(HardwareVMTests, RunsMultipleShots) {
 
     const auto measurements = vm.run(program, 3);
     EXPECT_EQ(measurements.size(), 3u);
+}
+
+TEST(HardwareVMTests, IdleNoiseInducesPhaseFlip) {
+    DeviceProfile profile;
+    profile.id = "idle-noise";
+    profile.hardware.positions = {0.0};
+    profile.hardware.blockade_radius = 1.0;
+
+    SimpleNoiseConfig cfg;
+    cfg.idle_rate = 1000.0;
+    profile.noise_engine = std::make_shared<SimpleNoiseEngine>(cfg);
+
+    HardwareVM vm(profile);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"H", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{1.0},
+    });
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"H", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    const auto measurements = vm.run(program, 1);
+    ASSERT_EQ(measurements.size(), 1u);
+    // With strong idle-phase noise (Z), the H-Z-H sequence acts like X, so measurement yields 1.
+    EXPECT_EQ(measurements[0].bits, std::vector<int>({1}));
 }
 
 }  // namespace

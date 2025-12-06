@@ -97,6 +97,7 @@ class SimpleNoiseConfig:
     p_loss: float = 0.0
     readout: MeasurementNoiseConfig = field(default_factory=MeasurementNoiseConfig)
     gate: GateNoiseConfig = field(default_factory=GateNoiseConfig)
+    idle_rate: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -104,6 +105,7 @@ class SimpleNoiseConfig:
             "p_loss": self.p_loss,
             "readout": self.readout.to_dict(),
             "gate": self.gate.to_dict(),
+            "idle_rate": self.idle_rate,
         }
 
     @classmethod
@@ -119,6 +121,7 @@ class SimpleNoiseConfig:
             gate=GateNoiseConfig.from_mapping(
                 _normalize_mapping(gate) if isinstance(gate, Mapping) else {}
             ),
+            idle_rate=_to_float(mapping.get("idle_rate")),
         )
 
 

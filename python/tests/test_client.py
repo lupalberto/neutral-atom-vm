@@ -25,7 +25,7 @@ def test_submit_job_accepts_job_request():
         ),
         device_id="runtime",
         profile=None,
-        shots=1,
+        shots=32,
     )
 
     result = neutral_atom_vm.submit_job(job)
@@ -80,6 +80,34 @@ def test_submit_job_applies_noise_loss():
         for record in result["measurements"]
         for bit in record["bits"]
     )
+
+
+def test_idle_noise_causes_phase_flip():
+    program = [
+        {"op": "AllocArray", "n_qubits": 1},
+        {"op": "ApplyGate", "name": "H", "targets": [0], "param": 0.0},
+        {"op": "Wait", "duration": 1.0},
+        {"op": "ApplyGate", "name": "H", "targets": [0], "param": 0.0},
+        {"op": "Measure", "targets": [0]},
+    ]
+
+    job = neutral_atom_vm.JobRequest(
+        program=program,
+        hardware=neutral_atom_vm.HardwareConfig(
+            positions=[0.0],
+            blockade_radius=1.0,
+        ),
+        device_id="runtime",
+        profile=None,
+        shots=64,
+        noise=neutral_atom_vm.SimpleNoiseConfig(idle_rate=1000.0),
+    )
+
+    result = neutral_atom_vm.submit_job(job)
+    bits = [record["bits"][0] for record in result["measurements"]]
+    # A high idle rate should flip the phase almost every time, so at least
+    # one shot should produce a `1`.
+    assert any(bit == 1 for bit in bits)
 
 
 def test_squin_lowering_to_program():

@@ -51,6 +51,9 @@ struct SimpleNoiseConfig {
 
     // Effective Pauli channels applied after gates.
     GateNoiseConfig gate{};
+
+    // Idle/dephasing rate per second for `Wait`/idle periods.
+    double idle_rate = 0.0;
 };
 
 class NoiseEngine {
@@ -76,6 +79,13 @@ class NoiseEngine {
         int /*q1*/,
         int /*n_qubits*/,
         std::vector<std::complex<double>>& /*amplitudes*/,
+        std::mt19937_64& /*rng*/
+    ) const {}
+
+    virtual void apply_idle_noise(
+        int /*n_qubits*/,
+        std::vector<std::complex<double>>& /*amplitudes*/,
+        double /*duration*/,
         std::mt19937_64& /*rng*/
     ) const {}
 };
@@ -104,6 +114,13 @@ class SimpleNoiseEngine : public NoiseEngine {
         int q1,
         int n_qubits,
         std::vector<std::complex<double>>& amplitudes,
+        std::mt19937_64& rng
+    ) const override;
+
+    void apply_idle_noise(
+        int n_qubits,
+        std::vector<std::complex<double>>& amplitudes,
+        double duration,
         std::mt19937_64& rng
     ) const override;
 

@@ -203,6 +203,14 @@ void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
         throw std::invalid_argument("Wait duration must be non-negative");
     }
     state_.logical_time += wait_instr.duration;
+    if (noise_) {
+        noise_->apply_idle_noise(
+            state_.n_qubits,
+            state_.state,
+            wait_instr.duration,
+            rng_
+        );
+    }
 }
 
 void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
@@ -315,4 +323,3 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
 
     state_.measurements.push_back(std::move(record));
 }
-

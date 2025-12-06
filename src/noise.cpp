@@ -227,3 +227,24 @@ void SimpleNoiseEngine::apply_two_qubit_gate_noise(
         apply_single_qubit_pauli(p1, amplitudes, n_qubits, q1);
     }
 }
+
+void SimpleNoiseEngine::apply_idle_noise(
+    int n_qubits,
+    std::vector<std::complex<double>>& amplitudes,
+    double duration,
+    std::mt19937_64& rng
+) const {
+    if (config_.idle_rate <= 0.0 || duration <= 0.0) {
+        return;
+    }
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    const double probability = 1.0 - std::exp(-config_.idle_rate * duration);
+    if (probability <= 0.0) {
+        return;
+    }
+    for (int q = 0; q < n_qubits; ++q) {
+        if (dist(rng) < probability) {
+            apply_pauli_z(amplitudes, n_qubits, q);
+        }
+    }
+}
