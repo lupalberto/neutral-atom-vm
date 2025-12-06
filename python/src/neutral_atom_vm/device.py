@@ -29,23 +29,17 @@ class Device:
     profile: Optional[str]
     positions: Sequence[float]
     blockade_radius: float = 0.0
+    noise: SimpleNoiseConfig | None = None
 
     def submit(
         self,
         program_or_kernel: Union[ProgramType, KernelType],
         shots: int = 1,
-        noise: SimpleNoiseConfig | Mapping[str, Any] | None = None,
     ) -> JobHandle:
         if callable(program_or_kernel):
             program = to_vm_program(program_or_kernel)
         else:
             program = list(program_or_kernel)
-
-        noise_config: SimpleNoiseConfig | None = None
-        if isinstance(noise, SimpleNoiseConfig):
-            noise_config = noise
-        elif isinstance(noise, Mapping):
-            noise_config = SimpleNoiseConfig.from_mapping(noise)
 
         request = JobRequest(
             program=program,
@@ -56,7 +50,7 @@ class Device:
             device_id=self.id,
             profile=self.profile,
             shots=shots,
-            noise=noise_config,
+            noise=self.noise,
         )
         job_result = submit_job(request)
         return JobHandle(job_result)
@@ -67,13 +61,38 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     ("runtime", None): {
         "positions": [0.0, 1.0],
         "blockade_radius": 1.0,
+        "noise": None,
     },
     # UX-aligned device name; currently backed by the same runtime.
     ("quera.na_vm.sim", "ideal_small_array"): {
         "positions": [0.0, 1.0],
         "blockade_radius": 1.0,
+        "noise": None,
     },
 }
+
+
+def build_device_from_config(
+    device_id: str,
+    *,
+    profile: Optional[str],
+    config: Mapping[str, Any],
+) -> Device:
+    if "positions" not in config:
+        raise ValueError("Profile config must include 'positions'")
+    positions = list(config["positions"])
+    blockade = float(config.get("blockade_radius", 0.0))
+    noise_cfg = None
+    noise_payload = config.get("noise")
+    if isinstance(noise_payload, Mapping):
+        noise_cfg = SimpleNoiseConfig.from_mapping(noise_payload)
+    return Device(
+        id=device_id,
+        profile=profile,
+        positions=positions,
+        blockade_radius=blockade,
+        noise=noise_cfg,
+    )
 
 
 def connect_device(
@@ -92,9 +111,4 @@ def connect_device(
     if key not in _PROFILE_TABLE:
         raise ValueError(f"Unknown device/profile combination: {device_id!r}, {profile!r}")
     cfg = _PROFILE_TABLE[key]
-    return Device(
-        id=device_id,
-        profile=profile,
-        positions=list(cfg["positions"]),
-        blockade_radius=float(cfg["blockade_radius"]),
-    )
+    return build_device_from_config(device_id, profile=profile, config=cfg)

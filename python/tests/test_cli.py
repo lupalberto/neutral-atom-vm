@@ -33,8 +33,8 @@ def test_quera_vm_run_executes_kernel_and_prints_result(capsys):
     assert '"measurements"' in out
 
 
-def test_quera_vm_run_accepts_noise_flag(capsys, tmp_path):
-    """CLI noise flag should run through to the VM and mutate measurements."""
+def test_quera_vm_run_accepts_profile_config(capsys, tmp_path):
+    """CLI profile config should override defaults and allow custom noise."""
 
     from neutral_atom_vm import cli
 
@@ -50,18 +50,23 @@ def test_quera_vm_run_accepts_noise_flag(capsys, tmp_path):
         "    squin.measure(q)\n"
     )
 
-    noise_payload = json.dumps(
-        {
-            "p_loss": 1.0,
-        }
+    profile_cfg = tmp_path / "profile.json"
+    profile_cfg.write_text(
+        json.dumps(
+            {
+                "positions": [0.0, 1.0],
+                "blockade_radius": 1.0,
+                "noise": {"p_loss": 1.0},
+            }
+        )
     )
 
     argv = [
         "run",
         "--output",
         "json",
-        "--noise",
-        noise_payload,
+        "--profile-config",
+        str(profile_cfg),
         "--device",
         "quera.na_vm.sim",
         "--profile",

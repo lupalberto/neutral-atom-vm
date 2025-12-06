@@ -8,8 +8,7 @@ import runpy
 from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
-from .device import connect_device
-from .job import SimpleNoiseConfig
+from .device import connect_device, build_device_from_config
 
 
 def _load_kernel(target: str) -> Callable[..., Any]:
@@ -94,10 +93,18 @@ def _summarize_result(
 def _cmd_run(args: argparse.Namespace) -> int:
     kernel = _load_kernel(args.target)
 
-    noise_config = _parse_noise_config(args.noise) if args.noise else None
+    if args.profile_config:
+        profile_payload = _load_profile_config(args.profile_config)
+        profile_name = profile_payload.get("profile", args.profile)
+        device = build_device_from_config(
+            args.device,
+            profile=profile_name,
+            config=profile_payload,
+        )
+    else:
+        device = connect_device(args.device, profile=args.profile)
 
-    device = connect_device(args.device, profile=args.profile)
-    job = device.submit(kernel, shots=args.shots, noise=noise_config)
+    job = device.submit(kernel, shots=args.shots)
     result = job.result()
 
     if args.output == "json":
@@ -106,20 +113,25 @@ def _cmd_run(args: argparse.Namespace) -> int:
         _summarize_result(
             result,
             device=args.device,
-            profile=args.profile,
+            profile=device.profile,
             shots=args.shots,
         )
     return 0
 
 
-def _parse_noise_config(raw: str) -> SimpleNoiseConfig:
+def _load_profile_config(path: str) -> Mapping[str, Any]:
+    if not os.path.exists(path):
+        raise SystemExit(f"Profile config path {path!r} does not exist")
     try:
-        payload = json.loads(raw)
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
     except json.JSONDecodeError as exc:
-        raise SystemExit(f"Invalid noise JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise SystemExit("Noise config must be a JSON object")
-    return SimpleNoiseConfig.from_mapping(payload)
+        raise SystemExit(f"Invalid profile JSON: {exc}") from exc
+    if not isinstance(payload, Mapping):
+        raise SystemExit("Profile config must be a JSON object")
+    if "positions" not in payload:
+        raise SystemExit("Profile config missing required 'positions' field")
+    return payload
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -134,8 +146,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Output format (summary or json)",
     )
     run_parser.add_argument(
-        "--noise",
-        help="JSON string describing a SimpleNoiseConfig (e.g. '{\"p_loss\":0.1}')",
+        "--profile-config",
+        help=(
+            "Path to a JSON file describing a custom profile (positions, "
+            "blockade_radius, optional noise). Overrides --profile when set."
+        ),
     )
     run_parser.add_argument(
         "--device",

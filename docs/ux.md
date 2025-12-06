@@ -67,6 +67,11 @@ quera-vm run \
   examples/ghz.py
 ```
 
+For ad-hoc experiments, `--profile-config path/to/profile.json` can override the
+built-in profile definitions. The JSON file can specify geometry (`positions`,
+`blockade_radius`) and the noise configuration that eventually becomes
+`SimpleNoiseConfig`, so developers no longer have to pass raw `--noise` blobs.
+
 What happens:
 1. The CLI loads `examples/ghz.py`, uses Bloqade/Kirin to lower the kernel to the VM dialect, and builds a program.
 2. It sends a `JobRequest` to a local VM daemon (or an in-process runner) with the requested device/profile.

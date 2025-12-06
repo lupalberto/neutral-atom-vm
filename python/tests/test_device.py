@@ -1,6 +1,7 @@
 import neutral_atom_vm
 
 import pytest
+from neutral_atom_vm.device import build_device_from_config
 
 def test_device_submit_program_runtime():
     device = neutral_atom_vm.connect_device("runtime")
@@ -28,3 +29,22 @@ def test_device_submit_kernel():
     result = job.result()
     assert result["status"] == "completed"
     assert any(record["bits"] for record in result["measurements"])
+
+
+def test_build_device_from_config_injects_noise():
+    cfg = {
+        "positions": [0.0],
+        "blockade_radius": 1.0,
+        "noise": {"p_loss": 1.0},
+    }
+    device = build_device_from_config("runtime", profile=None, config=cfg)
+
+    program = [
+        {"op": "AllocArray", "n_qubits": 1},
+        {"op": "Measure", "targets": [0]},
+    ]
+
+    job = device.submit(program, shots=1)
+    result = job.result()
+    assert result["status"] == "completed"
+    assert result["measurements"][0]["bits"] == [-1]
