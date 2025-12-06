@@ -16,3 +16,11 @@ def single_qubit_rotations():
     squin.ry(0.25, q[0])
     squin.rz(0.5, q[0])
     squin.measure(q)
+
+
+@squin.kernel
+def loop_cx():
+    q = squin.qalloc(2)
+    for _ in range(3):
+        squin.cx(q[0], q[1])
+    squin.measure(q)

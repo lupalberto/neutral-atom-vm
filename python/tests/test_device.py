@@ -1,6 +1,7 @@
 import neutral_atom_vm
 
 import pytest
+from neutral_atom_vm import to_vm_program
 from neutral_atom_vm.device import build_device_from_config, available_presets
 
 def test_device_submit_program_runtime():
@@ -29,6 +30,25 @@ def test_device_submit_kernel():
     result = job.result()
     assert result["status"] == "completed"
     assert any(record["bits"] for record in result["measurements"])
+
+
+def test_loop_kernel_lowers_and_runs():
+    pytest.importorskip("bloqade")
+
+    from .squin_programs import loop_cx
+
+    program = to_vm_program(loop_cx)
+    assert any(
+        instruction.get("op") == "ApplyGate" and instruction.get("name") == "CX"
+        for instruction in program
+    )
+
+    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="ideal_small_array")
+    job = device.submit(loop_cx, shots=1)
+    result = job.result()
+    assert result["status"] == "completed"
+    assert result["measurements"]
+    assert len(result["measurements"][0]["bits"]) == 2
 
 
 def test_build_device_from_config_injects_noise():

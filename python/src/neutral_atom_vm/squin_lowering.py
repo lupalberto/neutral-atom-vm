@@ -6,6 +6,8 @@ from typing import Any
 from kirin.dialects.func import stmts as func_stmts
 from kirin.dialects.py import constant as py_constant
 from kirin.dialects.py import indexing as py_indexing
+from kirin.dialects.py.binop import stmts as py_binop_stmts
+from kirin.dialects.scf import stmts as scf_stmts
 from kirin.ir.method import Method
 
 GateInstruction = dict[str, Any]
@@ -59,10 +61,12 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
         raise LoweringError("Expected a single basic block in the kernel body")
     block = body.blocks[0]
 
-    for stmt in block.stmts:
+    def _lower_stmt(stmt: Any) -> None:
+        nonlocal total_qubits
+
         if isinstance(stmt, py_constant.Constant):
             value_map[stmt.result] = stmt.value.data
-            continue
+            return
 
         if isinstance(stmt, py_indexing.GetItem):
             base = _resolve_value(value_map, stmt.obj)
@@ -75,7 +79,7 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
             else:
                 raise LoweringError(f"Unsupported getitem base: {base!r}")
             value_map[stmt.result] = resolved
-            continue
+            return
 
         if isinstance(stmt, func_stmts.Invoke):
             callee = stmt.callee.sym_name
@@ -88,7 +92,7 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
                 total_qubits += n_qubits
                 register_indices[stmt.result] = indices
                 value_map[stmt.result] = indices
-                continue
+                return
 
             if callee == "measure":
                 target = _resolve_value(value_map, args[0])
@@ -97,14 +101,16 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
                 else:
                     targets = [target]
                 program.append({"op": "Measure", "targets": targets})
-                continue
+                return
 
             gate_name = GATE_NAME_MAP.get(callee)
             if gate_name is not None:
                 resolved_args = [_resolve_value(value_map, arg) for arg in args]
                 if callee in PARAMETRIC_GATES:
                     if not resolved_args:
-                        raise LoweringError(f"Gate '{callee}' missing parameter argument")
+                        raise LoweringError(
+                            f"Gate '{callee}' missing parameter argument"
+                        )
                     param_value = float(resolved_args[0])
                     target_values = resolved_args[1:]
                 else:
@@ -125,8 +131,82 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
                         "param": param_value,
                     }
                 )
-                continue
+                return
 
+        if isinstance(stmt, scf_stmts.For):
+            _lower_for(stmt)
+            return
+
+        if isinstance(stmt, py_binop_stmts.Sub):
+            lhs_value = _resolve_value(value_map, stmt.lhs)
+            rhs_value = _resolve_value(value_map, stmt.rhs)
+            if not isinstance(lhs_value, (int, float)) or not isinstance(rhs_value, (int, float)):
+                raise LoweringError("Unsupported operands for subtraction")
+            value_map[stmt.result] = lhs_value - rhs_value
+            return
+
+        if isinstance(stmt, py_binop_stmts.Add):
+            lhs_value = _resolve_value(value_map, stmt.lhs)
+            rhs_value = _resolve_value(value_map, stmt.rhs)
+            if not isinstance(lhs_value, (int, float)) or not isinstance(rhs_value, (int, float)):
+                raise LoweringError("Unsupported operands for addition")
+            value_map[stmt.result] = lhs_value + rhs_value
+            return
+
+        # Other statements (ConstantNone, Return, etc.) are ignored during lowering.
+
+    def _lower_block(block_node: Any) -> None:
+        for inner_stmt in block_node.stmts:
+            _lower_stmt(inner_stmt)
+
+    def _lower_for(stmt: scf_stmts.For) -> None:
+        iterable_value = _resolve_value(value_map, stmt.iterable)
+        try:
+            iteration_values = list(iterable_value)
+        except TypeError as exc:
+            raise LoweringError("Loop iterables must be concrete sequences") from exc
+
+        region = stmt.body
+        if len(region.blocks) != 1:
+            raise LoweringError("Expected a single block inside loop body")
+        loop_block = region.blocks[0]
+        block_args = list(loop_block.args)
+        expected_iter_args = len(stmt.initializers)
+        if len(block_args) != 1 + expected_iter_args:
+            raise LoweringError("Unsupported loop structure")
+
+        current_iter_values = [
+            _resolve_value(value_map, initializer)
+            for initializer in stmt.initializers
+        ]
+
+        saved_values = {arg: value_map[arg] for arg in block_args if arg in value_map}
+        try:
+            for iter_value in iteration_values:
+                value_map[block_args[0]] = iter_value
+                for idx, arg in enumerate(block_args[1:], start=0):
+                    value_map[arg] = current_iter_values[idx]
+
+                for inner_stmt in loop_block.stmts:
+                    if isinstance(inner_stmt, scf_stmts.Yield):
+                        if len(inner_stmt.args) != expected_iter_args:
+                            raise LoweringError("Unexpected yield arguments inside loop")
+                        current_iter_values = [
+                            _resolve_value(value_map, arg) for arg in inner_stmt.args
+                        ]
+                        continue
+                    _lower_stmt(inner_stmt)
+
+            for result_val, iter_value in zip(stmt.results, current_iter_values):
+                value_map[result_val] = iter_value
+        finally:
+            for arg in block_args:
+                if arg in saved_values:
+                    value_map[arg] = saved_values[arg]
+                else:
+                    value_map.pop(arg, None)
+
+    _lower_block(block)
     return program
 
 
