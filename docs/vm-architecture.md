@@ -71,10 +71,17 @@ At this stage, timing and pulse semantics are deliberately minimal: the VM uses 
   - `JobRunner`: runs a job by constructing a fresh `StatevectorEngine` per shot and executing the program.
   - A JSON serialization of `JobRequest` used by tests.
 
-- `src/bindings/python/module.cpp` exposes a Python binding:
-  - `neutral_atom_vm._neutral_atom_vm.submit_job(program, positions, blockade_radius, shots)`:
-    - Converts the instruction dictionaries into `Instruction` objects.
-    - Builds a `JobRequest` and uses `JobRunner` to execute it.
+- `src/bindings/python/module.cpp` exposes a low-level Python binding used by the
+  higher-level SDK:
+  - `neutral_atom_vm._neutral_atom_vm.submit_job(job: dict)`:
+    - Accepts a dict mirroring `service::JobRequest` (job_id, device_id, profile,
+      hardware config, program, shots, metadata).
+    - Converts the instruction dictionaries into `Instruction` objects and uses
+      `JobRunner` to execute the job.
+  - The public Python API wraps this in `neutral_atom_vm.JobRequest` and
+    `neutral_atom_vm.submit_job(job: JobRequest | Mapping[str, Any])`, so callers
+    interact with a composable job description rather than passing geometry
+    directly as top-level arguments.
 
 From the client’s perspective, this is already a **device‑like** API: you submit a job and get measurements back, even though everything is currently in‑process.
 

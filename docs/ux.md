@@ -38,7 +38,7 @@ Flow:
 2. Lowers this kernel via `to_vm_program` into a list of `Instruction` dictionaries.
 3. Device selection:
    ```python
-   from quera_vm import connect_device
+   from neutral_atom_vm import connect_device
    dev = connect_device("quera.na_vm.sim", profile="ideal_small_array")
    ```
 4. Job submission:
@@ -47,6 +47,7 @@ Flow:
    result = job.result()
    print(result.measurements)
    ```
+   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we also expose `device_id="runtime"` which still drives the local C++ runtime directly using a built-in default profile.
 5. Under the hood: the Python SDK builds a `JobRequest`, attaches hardware/noise profiles, and submits to `JobRunner`, which picks the appropriate backend (ideal, noisy Pauli, etc.) and returns `JobResult`.
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.

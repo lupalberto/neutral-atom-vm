@@ -1,5 +1,5 @@
 #include "service/job.hpp"
-#include "engine_statevector.hpp"
+#include "hardware_vm.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -96,6 +96,8 @@ std::string to_json(const JobRequest& job) {
     out << std::setprecision(15);
     out << '{';
     out << "\"job_id\":\"" << escape_json(job.job_id) << "\",";
+    out << "\"device_id\":\"" << escape_json(job.device_id) << "\",";
+    out << "\"profile\":\"" << escape_json(job.profile) << "\",";
     out << "\"shots\":" << job.shots << ',';
     out << "\"isa_version\":{\"major\":" << job.isa_version.major
         << ",\"minor\":" << job.isa_version.minor << "},";
@@ -155,13 +157,18 @@ JobResult JobRunner::run(const JobRequest& job) {
                 " (supported: " + supported_versions_to_string() + ")");
         }
         const int shots = std::max(1, job.shots);
-        for (int shot = 0; shot < shots; ++shot) {
-            StatevectorEngine engine(job.hardware);
-            engine.run(job.program);
-            const auto& measurements = engine.state().measurements;
-            result.measurements.insert(
-                result.measurements.end(), measurements.begin(), measurements.end());
-        }
+
+        // Hardware VM façade: select a concrete device profile and execute
+        // the ISA program on a backend engine. For now all devices share the
+        // same statevector backend, but the profile struct gives us a place
+        // to hang future differences (noise, capabilities, backend kind).
+        DeviceProfile profile;
+        profile.id = job.device_id;
+        profile.isa_version = job.isa_version;
+        profile.hardware = job.hardware;
+
+        HardwareVM vm(profile);
+        result.measurements = vm.run(job.program, shots);
         result.status = JobStatus::Completed;
     } catch (const std::exception& ex) {
         result.status = JobStatus::Failed;

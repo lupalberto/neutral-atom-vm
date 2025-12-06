@@ -7,7 +7,7 @@ from typing import Sequence
 
 from bloqade import squin
 
-from . import submit_job, to_vm_program
+from . import HardwareConfig, JobRequest, submit_job, to_vm_program
 
 
 @squin.kernel
@@ -32,7 +32,14 @@ def run_demo(*, positions: Sequence[float] | None = None, blockade_radius: float
     if len(demo_positions) < 2:
         raise ValueError("Need two positions for the demo program")
 
-    return submit_job(program, positions=demo_positions, blockade_radius=blockade_radius, shots=shots)
+    job = JobRequest(
+        program=program,
+        hardware=HardwareConfig(positions=demo_positions, blockade_radius=blockade_radius),
+        device_id="runtime",
+        profile=None,
+        shots=shots,
+    )
+    return submit_job(job)
 
 
 def main():

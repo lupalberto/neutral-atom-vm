@@ -8,22 +8,52 @@ pytest.importorskip("bloqade")
 from .squin_programs import bell_pair, single_qubit_rotations
 
 
-def test_submit_job_uses_native_extension():
-    module_name = getattr(neutral_atom_vm.submit_job, "__module__", "")
-    assert module_name.endswith("_neutral_atom_vm"), module_name
-
-
-def test_submit_job():
+def test_submit_job_accepts_job_request():
     program = [
         {"op": "AllocArray", "n_qubits": 2},
         {"op": "ApplyGate", "name": "X", "targets": [1], "param": 0.0},
         {"op": "Measure", "targets": [0, 1]},
     ]
 
-    result = neutral_atom_vm.submit_job(program, positions=[0.0, 1.0], blockade_radius=1.0)
+    # High-level, composable JobRequest: hardware config is nested and
+    # device/profile are kept separate from low-level geometry.
+    job = neutral_atom_vm.JobRequest(
+        program=program,
+        hardware=neutral_atom_vm.HardwareConfig(
+            positions=[0.0, 1.0],
+            blockade_radius=1.0,
+        ),
+        device_id="runtime",
+        profile=None,
+        shots=1,
+    )
+
+    result = neutral_atom_vm.submit_job(job)
     assert result["status"] == "completed"
     assert result["measurements"]
     assert result["measurements"][0]["bits"] == [0, 1]
+
+
+def test_submit_job_preserves_job_id_roundtrip():
+    program = [
+        {"op": "AllocArray", "n_qubits": 1},
+        {"op": "Measure", "targets": [0]},
+    ]
+
+    job = neutral_atom_vm.JobRequest(
+        program=program,
+        hardware=neutral_atom_vm.HardwareConfig(
+            positions=[0.0],
+            blockade_radius=1.0,
+        ),
+        device_id="runtime",
+        profile=None,
+        shots=1,
+        job_id="python-test-job-123",
+    )
+
+    result = neutral_atom_vm.submit_job(job)
+    assert result["job_id"] == "python-test-job-123"
 
 
 def test_squin_lowering_to_program():

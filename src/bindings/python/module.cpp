@@ -75,18 +75,59 @@ py::dict job_result_to_dict(const service::JobResult& result) {
     return out;
 }
 
-py::dict submit_job(
-    const py::list& program,
-    const std::vector<double>& positions,
-    double blockade_radius,
-    int shots
-) {
+py::dict submit_job(const py::dict& job_obj) {
     service::JobRequest job;
-    job.job_id = "python-client";
-    job.hardware.positions = positions;
-    job.hardware.blockade_radius = blockade_radius;
+
+    // High-level identifiers.
+    if (job_obj.contains("job_id")) {
+        job.job_id = py::cast<std::string>(job_obj["job_id"]);
+    } else {
+        job.job_id = "python-client";
+    }
+
+    if (job_obj.contains("device_id")) {
+        job.device_id = py::cast<std::string>(job_obj["device_id"]);
+    } else {
+        job.device_id = "runtime";
+    }
+
+    if (job_obj.contains("profile") && !job_obj["profile"].is_none()) {
+        job.profile = py::cast<std::string>(job_obj["profile"]);
+    }
+
+    // Program.
+    const auto program = py::cast<py::list>(job_obj["program"]);
     job.program = instructions_from_list(program);
-    job.shots = shots;
+
+    // Hardware configuration.
+    if (job_obj.contains("hardware")) {
+        const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
+        if (hardware.contains("positions")) {
+            job.hardware.positions = py::cast<std::vector<double>>(hardware["positions"]);
+        }
+        if (hardware.contains("blockade_radius")) {
+            job.hardware.blockade_radius = py::cast<double>(hardware["blockade_radius"]);
+        }
+    } else {
+        // Fallback to legacy top-level fields if present.
+        if (job_obj.contains("positions")) {
+            job.hardware.positions = py::cast<std::vector<double>>(job_obj["positions"]);
+        }
+        if (job_obj.contains("blockade_radius")) {
+            job.hardware.blockade_radius = py::cast<double>(job_obj["blockade_radius"]);
+        }
+    }
+
+    // Shots.
+    if (job_obj.contains("shots")) {
+        job.shots = py::cast<int>(job_obj["shots"]);
+    }
+
+    // Optional metadata: accept a mapping of str->str.
+    if (job_obj.contains("metadata")) {
+        job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
+    }
+
     service::JobRunner runner;
     auto result = runner.run(job);
     return job_result_to_dict(result);
@@ -99,10 +140,7 @@ PYBIND11_MODULE(_neutral_atom_vm, m) {
     m.def(
         "submit_job",
         &submit_job,
-        py::arg("program"),
-        py::arg("positions"),
-        py::arg("blockade_radius") = 0.0,
-        py::arg("shots") = 1,
-        "Submit a VM job using the builtin JobRunner"
+        py::arg("job"),
+        "Submit a VM job using the builtin JobRunner. The job dict mirrors service::JobRequest."
     );
 }

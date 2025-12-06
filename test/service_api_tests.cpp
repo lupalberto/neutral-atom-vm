@@ -24,6 +24,8 @@ TEST(ServiceApiTests, JobRequestJson) {
 
     service::JobRequest job;
     job.job_id = "job-test";
+    job.device_id = "quera.na_vm.sim";
+    job.profile = "ideal_small_array";
     job.hardware = cfg;
     job.program = program;
     job.shots = 8;
@@ -32,6 +34,8 @@ TEST(ServiceApiTests, JobRequestJson) {
     const std::string json = service::to_json(job);
     const std::string expected =
         "{\"job_id\":\"job-test\"," \
+        "\"device_id\":\"quera.na_vm.sim\"," \
+        "\"profile\":\"ideal_small_array\"," \
         "\"shots\":8," \
         "\"isa_version\":{\"major\":1,\"minor\":0}," \
         "\"hardware\":{\"positions\":[0,1],\"blockade_radius\":1.5}," \

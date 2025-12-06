@@ -18,6 +18,8 @@ enum class JobStatus {
 
 struct JobRequest {
     std::string job_id;
+    std::string device_id;
+    std::string profile;
     HardwareConfig hardware;
     std::vector<Instruction> program;
     int shots = 1;

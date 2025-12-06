@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
+from .device import connect_device, Device, JobHandle
+from .job import HardwareConfig, JobRequest, submit_job
 from .squin_lowering import to_vm_program, LoweringError
-
-try:  # pragma: no cover - exercised in integration tests
-    from ._neutral_atom_vm import submit_job
-except ImportError:  # pragma: no cover
-    def submit_job(*args, **kwargs):
-        raise ImportError(
-            "The compiled neutral_atom_vm bindings are missing. "
-            "Build the C++ extension via CMake or install the package "
-            "with a wheel that includes '_neutral_atom_vm'."
-        )
+from . import cli
 
 
 __all__ = [
+    "connect_device",
+    "Device",
+    "JobHandle",
+    "HardwareConfig",
+    "JobRequest",
     "to_vm_program",
     "LoweringError",
     "submit_job",
+    "cli",
 ]

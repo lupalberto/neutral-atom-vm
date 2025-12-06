@@ -7,8 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(pybind11 CONFIG REQUIRED)
 
 add_library(vm STATIC
-    ../src/vm.cpp
+    ../src/engine_statevector.cpp
     ../src/noise.cpp
+    ../src/hardware_vm.cpp
     ../src/service/job.cpp
 )
 target_include_directories(vm PUBLIC
