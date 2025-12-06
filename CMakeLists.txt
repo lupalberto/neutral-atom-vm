@@ -12,6 +12,15 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_library(vm STATIC
     src/engine_statevector.cpp
     src/noise.cpp
+    src/noise/pauli_utils.cpp
+    src/noise/measurement_noise_source.cpp
+    src/noise/single_qubit_pauli_source.cpp
+    src/noise/two_qubit_pauli_source.cpp
+    src/noise/correlated_pauli_source.cpp
+    src/noise/idle_dephasing_source.cpp
+    src/noise/phase_kick_noise_source.cpp
+    src/noise/idle_phase_drift_source.cpp
+    src/noise/loss_tracking_source.cpp
     src/hardware_vm.cpp
     src/service/job.cpp
 )
