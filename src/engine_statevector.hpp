@@ -11,7 +11,10 @@
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
 
-struct VMState {
+// Statevector-based execution engine for the Neutral Atom ISA.
+// This is a concrete runtime backend, not the hardware VM itself.
+
+struct StatevectorState {
     int n_qubits = 0;
     std::vector<std::complex<double>> state;  // size = 2^n_qubits
     HardwareConfig hw;
@@ -20,11 +23,11 @@ struct VMState {
     std::vector<MeasurementRecord> measurements;
 };
 
-class VM {
+class StatevectorEngine {
   public:
-    explicit VM(HardwareConfig cfg);
+    explicit StatevectorEngine(HardwareConfig cfg);
 
-    // Attach a shared noise model instance. If nullptr, the VM
+    // Attach a shared noise model instance. If nullptr, the engine
     // evolves without adding additional noise beyond ideal gates.
     void set_noise_model(std::shared_ptr<const NoiseEngine> noise);
 
@@ -34,10 +37,10 @@ class VM {
 
     void run(const std::vector<Instruction>& program);
 
-    const VMState& state() const { return state_; }
+    const StatevectorState& state() const { return state_; }
 
   private:
-    VMState state_;
+    StatevectorState state_;
 
     std::shared_ptr<const NoiseEngine> noise_;
     std::mt19937_64 rng_{};
@@ -60,3 +63,4 @@ class VM {
         const std::array<std::complex<double>, 16>& U
     );
 };
+

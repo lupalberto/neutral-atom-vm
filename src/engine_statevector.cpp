@@ -1,4 +1,4 @@
-#include "vm.hpp"
+#include "engine_statevector.hpp"
 
 #include "noise.hpp"
 
@@ -8,21 +8,21 @@
 #include <random>
 #include <stdexcept>
 
-VM::VM(HardwareConfig cfg) {
+StatevectorEngine::StatevectorEngine(HardwareConfig cfg) {
     state_.hw = std::move(cfg);
     std::random_device rd;
     rng_.seed(rd());
 }
 
-void VM::set_noise_model(std::shared_ptr<const NoiseEngine> noise) {
+void StatevectorEngine::set_noise_model(std::shared_ptr<const NoiseEngine> noise) {
     noise_ = std::move(noise);
 }
 
-void VM::set_random_seed(std::uint64_t seed) {
+void StatevectorEngine::set_random_seed(std::uint64_t seed) {
     rng_.seed(seed);
 }
 
-void VM::run(const std::vector<Instruction>& program) {
+void StatevectorEngine::run(const std::vector<Instruction>& program) {
     for (const auto& instr : program) {
         switch (instr.op) {
             case Op::AllocArray:
@@ -47,7 +47,7 @@ void VM::run(const std::vector<Instruction>& program) {
     }
 }
 
-void VM::alloc_array(int n) {
+void StatevectorEngine::alloc_array(int n) {
     if (n <= 0) {
         throw std::invalid_argument("AllocArray requires positive number of qubits");
     }
@@ -59,7 +59,7 @@ void VM::alloc_array(int n) {
     }
 }
 
-void VM::apply_single_qubit_unitary(
+void StatevectorEngine::apply_single_qubit_unitary(
     int q,
     const std::array<std::complex<double>, 4>& U
 ) {
@@ -81,7 +81,7 @@ void VM::apply_single_qubit_unitary(
     }
 }
 
-void VM::apply_two_qubit_unitary(
+void StatevectorEngine::apply_two_qubit_unitary(
     int q0,
     int q1,
     const std::array<std::complex<double>, 16>& U
@@ -131,7 +131,7 @@ void VM::apply_two_qubit_unitary(
     }
 }
 
-void VM::apply_gate(const Gate& g) {
+void StatevectorEngine::apply_gate(const Gate& g) {
     if (g.name == "X" && g.targets.size() == 1) {
         std::array<std::complex<double>, 4> U{
             {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
@@ -188,7 +188,7 @@ void VM::apply_gate(const Gate& g) {
     }
 }
 
-void VM::move_atom(const MoveAtomInstruction& move) {
+void StatevectorEngine::move_atom(const MoveAtomInstruction& move) {
     if (state_.n_qubits == 0) {
         throw std::runtime_error("Cannot move atoms before allocation");
     }
@@ -198,14 +198,14 @@ void VM::move_atom(const MoveAtomInstruction& move) {
     state_.hw.positions[static_cast<std::size_t>(move.atom)] = move.position;
 }
 
-void VM::wait_duration(const WaitInstruction& wait_instr) {
+void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
     if (wait_instr.duration < 0.0) {
         throw std::invalid_argument("Wait duration must be non-negative");
     }
     state_.logical_time += wait_instr.duration;
 }
 
-void VM::apply_pulse(const PulseInstruction& pulse) {
+void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
     if (state_.n_qubits == 0) {
         throw std::runtime_error("Cannot apply pulse before allocation");
     }
@@ -218,7 +218,7 @@ void VM::apply_pulse(const PulseInstruction& pulse) {
     state_.pulse_log.push_back(pulse);
 }
 
-void VM::enforce_blockade(int q0, int q1) const {
+void StatevectorEngine::enforce_blockade(int q0, int q1) const {
     if (state_.hw.blockade_radius <= 0.0) {
         return;
     }
@@ -232,7 +232,7 @@ void VM::enforce_blockade(int q0, int q1) const {
     }
 }
 
-void VM::measure(const std::vector<int>& targets) {
+void StatevectorEngine::measure(const std::vector<int>& targets) {
     if (targets.empty()) {
         return;
     }
@@ -315,3 +315,4 @@ void VM::measure(const std::vector<int>& targets) {
 
     state_.measurements.push_back(std::move(record));
 }
+

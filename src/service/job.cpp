@@ -1,5 +1,5 @@
 #include "service/job.hpp"
-#include "vm.hpp"
+#include "engine_statevector.hpp"
 
 #include <chrono>
 #include <iomanip>
@@ -149,11 +149,16 @@ JobResult JobRunner::run(const JobRequest& job) {
     JobResult result;
     result.job_id = job.job_id;
     try {
+        if (!is_supported_isa_version(job.isa_version)) {
+            throw std::runtime_error(
+                "Unsupported ISA version " + to_string(job.isa_version) +
+                " (supported: " + supported_versions_to_string() + ")");
+        }
         const int shots = std::max(1, job.shots);
         for (int shot = 0; shot < shots; ++shot) {
-            VM vm(job.hardware);
-            vm.run(job.program);
-            const auto& measurements = vm.state().measurements;
+            StatevectorEngine engine(job.hardware);
+            engine.run(job.program);
+            const auto& measurements = engine.state().measurements;
             result.measurements.insert(
                 result.measurements.end(), measurements.begin(), measurements.end());
         }

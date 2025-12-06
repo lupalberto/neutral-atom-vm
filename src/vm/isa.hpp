@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <variant>
 #include <vector>
@@ -14,6 +15,42 @@ struct ISAVersion {
 };
 
 inline constexpr ISAVersion kCurrentISAVersion{1, 0};
+
+inline bool operator==(const ISAVersion& lhs, const ISAVersion& rhs) {
+    return lhs.major == rhs.major && lhs.minor == rhs.minor;
+}
+
+inline bool operator!=(const ISAVersion& lhs, const ISAVersion& rhs) {
+    return !(lhs == rhs);
+}
+
+inline std::string to_string(const ISAVersion& version) {
+    return std::to_string(version.major) + "." + std::to_string(version.minor);
+}
+
+inline constexpr std::array<ISAVersion, 1> kSupportedISAVersions{{
+    ISAVersion{1, 0},
+}};
+
+inline bool is_supported_isa_version(const ISAVersion& version) {
+    for (const auto& supported : kSupportedISAVersions) {
+        if (supported == version) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline std::string supported_versions_to_string() {
+    std::string out;
+    for (std::size_t i = 0; i < kSupportedISAVersions.size(); ++i) {
+        if (i > 0) {
+            out += ", ";
+        }
+        out += to_string(kSupportedISAVersions[i]);
+    }
+    return out;
+}
 
 struct MoveAtomInstruction {
     int atom = 0;

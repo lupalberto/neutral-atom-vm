@@ -1,4 +1,4 @@
-#include "vm.hpp"
+#include "engine_statevector.hpp"
 
 #include <iostream>
 
@@ -7,7 +7,7 @@ int main() {
     cfg.positions = {0.0, 1.0};
     cfg.blockade_radius = 1.5;
 
-    VM vm(cfg);
+    StatevectorEngine engine(cfg);
 
     std::vector<Instruction> program;
     program.push_back(Instruction{Op::AllocArray, 2});
@@ -20,9 +20,9 @@ int main() {
         Gate{"CX", {0, 1}, 0.0},
     });
 
-    vm.run(program);
+    engine.run(program);
 
-    const auto& state = vm.state().state;
+    const auto& state = engine.state().state;
     std::cout << "Final state amplitudes:\n";
     for (std::size_t i = 0; i < state.size(); ++i) {
         std::cout << i << ": " << state[i] << '\n';
@@ -30,4 +30,3 @@ int main() {
 
     return 0;
 }
-

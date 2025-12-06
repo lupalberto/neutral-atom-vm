@@ -1,7 +1,5 @@
 #include "service/job.hpp"
 
-#include "vm.hpp"
-
 #include <gtest/gtest.h>
 
 #include <string>
@@ -67,6 +65,26 @@ TEST(ServiceApiTests, JobRunnerExecutesProgram) {
     ASSERT_EQ(result.status, service::JobStatus::Completed);
     ASSERT_EQ(result.measurements.size(), 1u);
     EXPECT_EQ(result.measurements[0].bits, std::vector<int>({0, 1}));
+}
+
+TEST(ServiceApiTests, JobRunnerRejectsUnsupportedISAVersion) {
+    service::JobRequest job;
+    job.job_id = "job-unsupported-isa";
+    job.hardware.positions = {0.0};
+    job.hardware.blockade_radius = 1.0;
+    job.program.push_back(Instruction{Op::AllocArray, 1});
+    job.program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+    job.isa_version = ISAVersion{0, 9};
+
+    service::JobRunner runner;
+    const auto result = runner.run(job);
+
+    ASSERT_EQ(result.job_id, job.job_id);
+    ASSERT_EQ(result.status, service::JobStatus::Failed);
+    EXPECT_EQ(result.message, "Unsupported ISA version 0.9 (supported: 1.0)");
 }
 
 }  // namespace

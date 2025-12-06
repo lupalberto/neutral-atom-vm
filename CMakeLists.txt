@@ -10,8 +10,9 @@ include(FetchContent)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_library(vm STATIC
-    src/vm.cpp
+    src/engine_statevector.cpp
     src/noise.cpp
+    src/hardware_vm.cpp
     src/service/job.cpp
 )
 target_include_directories(vm PUBLIC

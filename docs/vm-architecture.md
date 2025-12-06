@@ -44,11 +44,11 @@ From top to bottom:
 
 ## 2. Current Prototype: What We Have
 
-### 2.1 VM Core and ISA
+### 2.1 ISA and Statevector Runtime
 
 In the current repository:
 
-- The C++ `VM` class (`src/vm.hpp`, `src/vm.cpp`) implements:
+- The C++ `StatevectorEngine` class (`src/engine_statevector.hpp`, `src/engine_statevector.cpp`) implements:
   - A small instruction set:
     - `AllocArray` – allocate qubits/sites.
     - `ApplyGate` – apply a logical gate (`X`, `H`, `Z`, `CX`, `CZ`).
@@ -56,7 +56,7 @@ In the current repository:
     - `MoveAtom` – update atomic positions (geometry).
     - `Wait` – advance logical time.
     - `Pulse` – log pulses applied to targets.
-  - A `VMState` with:
+  - A `StatevectorState` with:
     - Statevector amplitudes.
     - Hardware configuration (`HardwareConfig`).
     - Logical time, pulse log, measurement records.
@@ -68,7 +68,7 @@ At this stage, timing and pulse semantics are deliberately minimal: the VM uses 
 - `src/service/job.hpp`, `src/service/job.cpp` define:
   - `JobRequest`: job identifier, hardware config, program (vector of `Instruction`), `shots`, and metadata.
   - `JobResult`: status, elapsed time, measurements, message.
-  - `JobRunner`: runs a job by constructing a fresh `VM` per shot and executing the program.
+  - `JobRunner`: runs a job by constructing a fresh `StatevectorEngine` per shot and executing the program.
   - A JSON serialization of `JobRequest` used by tests.
 
 - `src/bindings/python/module.cpp` exposes a Python binding:
@@ -191,6 +191,10 @@ Keeping this section synchronized with `src/vm/isa.hpp` ensures ISA v1 remains a
 
 ## 6. ISA Versioning
 
-`src/vm/isa.hpp` also defines `ISAVersion` and `kCurrentISAVersion`. Every `JobRequest` carries an `isa_version` with sensible defaults (`1.0` in this release), and the service serializes that field alongside programs and hardware configs.
+`src/vm/isa.hpp` also defines `ISAVersion`, `kCurrentISAVersion`, and `kSupportedISAVersions`. Every `JobRequest` carries an `isa_version` with sensible defaults (`1.0` in this release), and the service serializes that field alongside programs and hardware configs.
 
 This explicit version tag is how the VM can offer multiple ISA versions within the same release: downstream clients declare the dialect they are targeting, the service/engine inspects `isa_version`, and the runtime routes to the appropriate interpreter/emulator. Future ISA revisions can live beside the current one while we ship support for old programs, simply by adding new `ISAVersion` values and dispatch logic in `JobRunner`.
+
+Currently the runtime enumerates the supported versions via `kSupportedISAVersions` (currently `[1.0]`), and `JobRunner` refuses to execute programs targeting anything else, returning a clear error that lists the acceptable versions.
+
+Currently the `JobRunner` enforces this contract by rejecting jobs whose `isa_version` differs from `kCurrentISAVersion`, returning a failed status and explaining that the ISA is unsupported.
