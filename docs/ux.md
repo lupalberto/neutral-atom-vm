@@ -72,6 +72,44 @@ built-in profile definitions. The JSON file can specify geometry (`positions`,
 `blockade_radius`) and the noise configuration that eventually becomes
 `SimpleNoiseConfig`, so developers no longer have to pass raw `--noise` blobs.
 
+### Built-in devices and profiles
+
+`--device` selects a VM backend/geometry pairing (for now everything routes to
+the local simulator), while `--profile` chooses the preset noise/parameter set
+for that hardware definition. We retired the raw `--noise` flag so that callers
+only pick from vetted presets or load a full profile JSON. Both the CLI and the
+Python SDK share the same registry, which can be inspected via
+`neutral_atom_vm.available_presets()` for discoverability.
+
+| Device ID          | Profile             | Geometry summary                                         | Noise focus                                                     | Primary persona/use case        |
+|--------------------|---------------------|-----------------------------------------------------------|-----------------------------------------------------------------|---------------------------------|
+| `runtime`          | `default` (None)    | Two tweezers separated by 1.0 units                       | None - deterministic; legacy service regression                 | Native regression/unit testing  |
+| `quera.na_vm.sim` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
+| `quera.na_vm.sim` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
+| `quera.na_vm.sim` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `quera.na_vm.sim` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
+| `quera.na_vm.sim` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
+
+To use one of these presets from the CLI:
+
+```
+quera-vm run --device quera.na_vm.sim --profile benchmark_chain \
+  --shots 1000 examples/ghz.py
+```
+
+From the SDK, the same preset is available via:
+
+```python
+from neutral_atom_vm import connect_device
+
+dev = connect_device("quera.na_vm.sim", profile="benchmark_chain")
+```
+
+If you need a bespoke combination (e.g., larger footprint with custom noise),
+start from a JSON template returned by `available_presets()` and tweak it, then
+pass it to the CLI's `--profile-config` or to
+`neutral_atom_vm.build_device_from_config` in Python.
+
 What happens:
 1. The CLI loads `examples/ghz.py`, uses Bloqade/Kirin to lower the kernel to the VM dialect, and builds a program.
 2. It sends a `JobRequest` to a local VM daemon (or an in-process runner) with the requested device/profile.

@@ -1,7 +1,7 @@
 import neutral_atom_vm
 
 import pytest
-from neutral_atom_vm.device import build_device_from_config
+from neutral_atom_vm.device import build_device_from_config, available_presets
 
 def test_device_submit_program_runtime():
     device = neutral_atom_vm.connect_device("runtime")
@@ -48,3 +48,32 @@ def test_build_device_from_config_injects_noise():
     result = job.result()
     assert result["status"] == "completed"
     assert result["measurements"][0]["bits"] == [-1]
+
+
+def test_available_presets_lists_built_in_profiles():
+    presets = available_presets()
+
+    assert "quera.na_vm.sim" in presets
+    assert "runtime" in presets
+
+    sim_profiles = presets["quera.na_vm.sim"]
+    for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
+        assert profile in sim_profiles
+        entry = sim_profiles[profile]
+        assert entry["positions"], "expected positions in preset"
+        assert "metadata" in entry and entry["metadata"].get("description")
+
+
+@pytest.mark.parametrize(
+    "profile, expected_qubits",
+    [
+        ("benchmark_chain", 20),
+        ("readout_stress", 8),
+    ],
+)
+def test_connect_device_supports_new_presets(profile, expected_qubits):
+    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile=profile)
+
+    assert len(device.positions) == expected_qubits
+    assert device.noise is not None
+    assert device.noise.gate.single_qubit.px >= 0.0

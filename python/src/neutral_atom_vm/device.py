@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
 
+from copy import deepcopy
+
 from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job
 from .squin_lowering import to_vm_program
 
@@ -56,20 +58,185 @@ class Device:
         return JobHandle(job_result)
 
 
+_PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
+    (
+        "runtime",
+        None,
+    ): {
+        "label": "Legacy runtime",
+        "description": "Minimal two-qubit local runner used by low-level tests.",
+        "geometry": "Pair of tweezers separated by 1.0 units (units are arbitrary).",
+        "noise_behavior": "Ideal evolution; only deterministic operations are applied.",
+        "persona": "service regression",
+    },
+    (
+        "quera.na_vm.sim",
+        "ideal_small_array",
+    ): {
+        "label": "Ideal tutorial array",
+        "description": "Ten-site 1D array with no noise for quick SDK/CLI walkthroughs.",
+        "geometry": "1D chain with unit spacing and blockade radius 1.5.",
+        "noise_behavior": "All noise sources disabled (deterministic statevector).",
+        "persona": "education",
+    },
+    (
+        "quera.na_vm.sim",
+        "noisy_square_array",
+    ): {
+        "label": "Noisy square array",
+        "description": "4x4 logical grid with moderate depolarizing and idle dephasing noise.",
+        "geometry": "Conceptual 4x4 layout flattened to 16 slots with blockade radius 2.0.",
+        "noise_behavior": "Gate depolarizing noise at the 1% level plus idle phase drift.",
+        "persona": "algorithm prototyping",
+    },
+    (
+        "quera.na_vm.sim",
+        "lossy_chain",
+    ): {
+        "label": "Loss-dominated chain",
+        "description": "Six-qubit chain that injects heavy loss to exercise erasure-aware code.",
+        "geometry": "1D chain with 1.5 spacing and shared blockade radius 1.5.",
+        "noise_behavior": "Runtime loss channel with 10% upfront loss and idle losses per gate.",
+        "persona": "loss-aware algorithms",
+    },
+    (
+        "quera.na_vm.sim",
+        "benchmark_chain",
+    ): {
+        "label": "Benchmark chain (20 qubits)",
+        "description": "Medium-size array for GHZ / volume tests with realistic depolarizing noise.",
+        "geometry": "1D chain of 20 qubits at 1.3 spacing, blockade radius 1.6.",
+        "noise_behavior": "Balanced single/two-qubit channels, correlated CZ errors, idle dephasing.",
+        "persona": "integration + benchmarking",
+    },
+    (
+        "quera.na_vm.sim",
+        "readout_stress",
+    ): {
+        "label": "Readout stress array",
+        "description": "Eight-qubit chain emphasizing SPAM noise and mild runtime loss.",
+        "geometry": "1D chain of 8 qubits with unit spacing and blockade radius 1.2.",
+        "noise_behavior": "3% symmetric readout flips plus mild depolarizing and idle phase noise.",
+        "persona": "diagnostics",
+    },
+}
+
 _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
-    # Legacy local runtime path: small two-qubit line.
+    # Legacy local runtime path: single pair of atoms.
     ("runtime", None): {
         "positions": [0.0, 1.0],
         "blockade_radius": 1.0,
         "noise": None,
     },
-    # UX-aligned device name; currently backed by the same runtime.
+    # UX-aligned ideal profile for quick tutorial runs.
     ("quera.na_vm.sim", "ideal_small_array"): {
-        "positions": [0.0, 1.0],
-        "blockade_radius": 1.0,
+        "positions": [float(i) for i in range(10)],
+        "blockade_radius": 1.5,
         "noise": None,
     },
+    # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
+    ("quera.na_vm.sim", "noisy_square_array"): {
+        "positions": [
+            0.0,
+            1.0,
+            2.0,
+            3.0,
+            0.0,
+            1.0,
+            2.0,
+            3.0,
+            0.0,
+            1.0,
+            2.0,
+            3.0,
+            0.0,
+            1.0,
+            2.0,
+            3.0,
+        ],
+        "blockade_radius": 2.0,
+        "noise": {
+            "gate": {
+                "single_qubit": {"px": 0.005, "py": 0.005, "pz": 0.005},
+                "two_qubit_control": {"px": 0.01, "py": 0.01, "pz": 0.01},
+                "two_qubit_target": {"px": 0.01, "py": 0.01, "pz": 0.01},
+            },
+            "idle_rate": 200.0,
+            "phase": {"idle": 0.02},
+        },
+    },
+    # Heavy loss channel illustrating erasure-dominated behavior.
+    ("quera.na_vm.sim", "lossy_chain"): {
+        "positions": [float(i) * 1.5 for i in range(6)],
+        "blockade_radius": 1.5,
+        "noise": {
+            "p_loss": 0.1,
+            "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
+        },
+    },
+    # 20-qubit benchmark chain for GHZ/volume experiments with moderate noise.
+    ("quera.na_vm.sim", "benchmark_chain"): {
+        "positions": [float(i) * 1.3 for i in range(20)],
+        "blockade_radius": 1.6,
+        "noise": {
+            "gate": {
+                "single_qubit": {"px": 0.002, "py": 0.002, "pz": 0.001},
+                "two_qubit_control": {"px": 0.006, "py": 0.006, "pz": 0.004},
+                "two_qubit_target": {"px": 0.006, "py": 0.006, "pz": 0.004},
+            },
+            "phase": {
+                "single_qubit": 0.001,
+                "two_qubit_control": 0.004,
+                "two_qubit_target": 0.004,
+                "idle": 0.012,
+            },
+            "idle_rate": 120.0,
+            "correlated_gate": {
+                "matrix": [
+                    [0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.002, 0.0, 0.0],
+                    [0.0, 0.0, 0.002, 0.0],
+                    [0.0, 0.0, 0.0, 0.0005],
+                ]
+            },
+        },
+    },
+    # SPAM-focused preset with notable readout flips and mild runtime loss.
+    ("quera.na_vm.sim", "readout_stress"): {
+        "positions": [float(i) for i in range(8)],
+        "blockade_radius": 1.2,
+        "noise": {
+            "readout": {"p_flip0_to_1": 0.03, "p_flip1_to_0": 0.03},
+            "gate": {
+                "single_qubit": {"px": 0.003, "py": 0.003, "pz": 0.002},
+                "two_qubit_control": {"px": 0.005, "py": 0.005, "pz": 0.005},
+                "two_qubit_target": {"px": 0.005, "py": 0.005, "pz": 0.005},
+            },
+            "p_loss": 0.02,
+            "phase": {"idle": 0.03},
+            "loss_runtime": {"per_gate": 0.01, "idle_rate": 3.0},
+        },
+    },
 }
+
+
+def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
+    """Return a structured view of the built-in device/profile presets."""
+
+    presets: Dict[str, Dict[Optional[str], Dict[str, Any]]] = {}
+    for key, config in _PROFILE_TABLE.items():
+        device_id, profile = key
+        entry: Dict[str, Any] = {
+            "positions": list(config.get("positions", [])),
+            "blockade_radius": float(config.get("blockade_radius", 0.0)),
+        }
+        if "noise" in config:
+            entry["noise"] = deepcopy(config["noise"])
+        metadata = _PROFILE_METADATA.get(key)
+        if metadata:
+            entry["metadata"] = dict(metadata)
+        presets.setdefault(device_id, {})[profile] = entry
+    return presets
 
 
 def build_device_from_config(
