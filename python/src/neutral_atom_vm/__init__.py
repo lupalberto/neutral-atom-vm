@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .device import connect_device, Device, JobHandle
-from .job import HardwareConfig, JobRequest, submit_job
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job
 from .squin_lowering import to_vm_program, LoweringError
 from . import cli
 
@@ -13,6 +13,7 @@ __all__ = [
     "Device",
     "JobHandle",
     "HardwareConfig",
+    "SimpleNoiseConfig",
     "JobRequest",
     "to_vm_program",
     "LoweringError",

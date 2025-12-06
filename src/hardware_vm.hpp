@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@ struct DeviceProfile {
     std::string id;
     ISAVersion isa_version = kCurrentISAVersion;
     HardwareConfig hardware;
+    std::shared_ptr<const NoiseEngine> noise_engine;
     // Future extensions: noise configuration, backend kind, resource limits.
 };
 

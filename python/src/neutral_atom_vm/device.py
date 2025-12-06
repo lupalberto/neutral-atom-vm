@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
 
-from .job import HardwareConfig, JobRequest, submit_job
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job
 from .squin_lowering import to_vm_program
 
 ProgramType = Sequence[Dict[str, Any]]
@@ -34,11 +34,18 @@ class Device:
         self,
         program_or_kernel: Union[ProgramType, KernelType],
         shots: int = 1,
+        noise: SimpleNoiseConfig | Mapping[str, Any] | None = None,
     ) -> JobHandle:
         if callable(program_or_kernel):
             program = to_vm_program(program_or_kernel)
         else:
             program = list(program_or_kernel)
+
+        noise_config: SimpleNoiseConfig | None = None
+        if isinstance(noise, SimpleNoiseConfig):
+            noise_config = noise
+        elif isinstance(noise, Mapping):
+            noise_config = SimpleNoiseConfig.from_mapping(noise)
 
         request = JobRequest(
             program=program,
@@ -49,6 +56,7 @@ class Device:
             device_id=self.id,
             profile=self.profile,
             shots=shots,
+            noise=noise_config,
         )
         job_result = submit_job(request)
         return JobHandle(job_result)

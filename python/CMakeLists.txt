@@ -4,7 +4,13 @@ project(neutral_atom_vm_bindings LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(pybind11 CONFIG REQUIRED)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c
+        "import pybind11, os; print(os.path.join(os.path.dirname(pybind11.__file__), 'share', 'cmake', 'pybind11'))"
+    OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+find_package(pybind11 CONFIG REQUIRED HINTS ${PYBIND11_CMAKE_DIR})
 
 add_library(vm STATIC
     ../src/engine_statevector.cpp

@@ -1,3 +1,6 @@
+#include <iostream>
+
+#include "noise.hpp"
 #include "service/job.hpp"
 
 #include <pybind11/pybind11.h>
@@ -75,6 +78,51 @@ py::dict job_result_to_dict(const service::JobResult& result) {
     return out;
 }
 
+void fill_measurement_noise_config(
+    const py::dict& src,
+    MeasurementNoiseConfig& dst
+) {
+    if (src.contains("p_flip0_to_1")) {
+        dst.p_flip0_to_1 = py::cast<double>(src["p_flip0_to_1"]);
+    }
+    if (src.contains("p_flip1_to_0")) {
+        dst.p_flip1_to_0 = py::cast<double>(src["p_flip1_to_0"]);
+    }
+}
+
+void fill_pauli_config(
+    const py::dict& src,
+    SingleQubitPauliConfig& dst
+) {
+    if (src.contains("px")) {
+        dst.px = py::cast<double>(src["px"]);
+    }
+    if (src.contains("py")) {
+        dst.py = py::cast<double>(src["py"]);
+    }
+    if (src.contains("pz")) {
+        dst.pz = py::cast<double>(src["pz"]);
+    }
+}
+
+void fill_gate_noise_config(
+    const py::dict& src,
+    GateNoiseConfig& dst
+) {
+    if (src.contains("single_qubit")) {
+        const auto single = py::cast<py::dict>(src["single_qubit"]);
+        fill_pauli_config(single, dst.single_qubit);
+    }
+    if (src.contains("two_qubit_control")) {
+        const auto ctrl = py::cast<py::dict>(src["two_qubit_control"]);
+        fill_pauli_config(ctrl, dst.two_qubit_control);
+    }
+    if (src.contains("two_qubit_target")) {
+        const auto tgt = py::cast<py::dict>(src["two_qubit_target"]);
+        fill_pauli_config(tgt, dst.two_qubit_target);
+    }
+}
+
 py::dict submit_job(const py::dict& job_obj) {
     service::JobRequest job;
 
@@ -126,6 +174,24 @@ py::dict submit_job(const py::dict& job_obj) {
     // Optional metadata: accept a mapping of str->str.
     if (job_obj.contains("metadata")) {
         job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
+    }
+
+    if (job_obj.contains("noise")) {
+        const auto noise = py::cast<py::dict>(job_obj["noise"]);
+        SimpleNoiseConfig cfg;
+        if (noise.contains("p_quantum_flip")) {
+            cfg.p_quantum_flip = py::cast<double>(noise["p_quantum_flip"]);
+        }
+        if (noise.contains("p_loss")) {
+            cfg.p_loss = py::cast<double>(noise["p_loss"]);
+        }
+        if (noise.contains("readout")) {
+            fill_measurement_noise_config(py::cast<py::dict>(noise["readout"]), cfg.readout);
+        }
+        if (noise.contains("gate")) {
+            fill_gate_noise_config(py::cast<py::dict>(noise["gate"]), cfg.gate);
+        }
+        job.noise_config = cfg;
     }
 
     service::JobRunner runner;

@@ -32,6 +32,9 @@ std::vector<MeasurementRecord> HardwareVM::run(
         // (e.g., MoveAtom) do not leak across repetitions.
         HardwareConfig hw = profile_.hardware;
         StatevectorEngine engine(hw);
+        if (profile_.noise_engine) {
+            engine.set_noise_model(profile_.noise_engine);
+        }
         engine.run(program);
         const auto& measurements = engine.state().measurements;
         all_measurements.insert(

@@ -88,7 +88,11 @@ quera-vm serve --config vm-service.toml
 Client interaction (gRPC/REST):
 1. `JobRequest` includes:
    - Device ID (e.g., `quera-na-vm-noisy-cpu`).
-   - Profile metadata (geometry, noise model, supported gates).
+   - Profile metadata (geometry, noise model, supported gates and connectivity).
+   - ISA version and **hardware constraints**:
+     - Gate durations and scheduling/parallelism rules.
+     - Native gate set and connectivity graph.
+     - Microarchitectural limits (cooldown times, maximum concurrent operations, etc.).
    - Instruction program (same schema as the Python SDK uses).
 2. Server enqueues the job, dispatches it to the selected backend (ideal, noisy Pauli, full physics), and streams measurement batches / pulse logs.
 3. Clients poll or subscribe to job status and receive rich diagnostics and error codes.
@@ -109,7 +113,10 @@ This mode supports CI, staging, and production setups where multiple users submi
 
 3. **Service contract**
    - Job statuses, structured errors, logs, and streaming measurements make the VM service feel like hardware rather than a library.
-   - Capabilities reporting allows the client to know what gates/noise/backends are available.
+   - Capabilities and constraint reporting let clients discover:
+     - Supported gates and connectivity.
+     - Timing/duration ranges and allowed parallelism.
+     - Noise models and resource limits for each device/profile.
 
 4. **Multiple backends**
    - Behind the machin: ideal statevector, noisy Pauli, future Rydberg physics, or even real chip connectors.

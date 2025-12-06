@@ -13,11 +13,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "kirin-toolchain~=0.22.4",
+    "bloqade",
+    "pybind11",
 ]
 
 [project.scripts]
 quera-vm = "neutral_atom_vm.cli:main"
 
 [tool.scikit-build]
+editable.rebuild = true
+editable.verbose = false
+build-dir = "build-editable"
 cmake.version = ">=3.20"
 wheel.packages = ["src/neutral_atom_vm"]
+

@@ -7,6 +7,121 @@ from typing import Any, Dict, Mapping, MutableMapping, Sequence
 Program = Sequence[Dict[str, Any]]
 
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    return float(value)
+
+
+def _normalize_mapping(mapping: Mapping[str, Any]) -> Dict[str, Any]:
+    return dict(mapping)
+
+
+@dataclass(frozen=True)
+class MeasurementNoiseConfig:
+    """Classical readout-noise probabilities for measurements."""
+
+    p_flip0_to_1: float = 0.0
+    p_flip1_to_0: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "p_flip0_to_1": self.p_flip0_to_1,
+            "p_flip1_to_0": self.p_flip1_to_0,
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "MeasurementNoiseConfig":
+        return cls(
+            p_flip0_to_1=_to_float(mapping.get("p_flip0_to_1")),
+            p_flip1_to_0=_to_float(mapping.get("p_flip1_to_0")),
+        )
+
+
+@dataclass(frozen=True)
+class SingleQubitPauliConfig:
+    px: float = 0.0
+    py: float = 0.0
+    pz: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"px": self.px, "py": self.py, "pz": self.pz}
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "SingleQubitPauliConfig":
+        return cls(
+            px=_to_float(mapping.get("px")),
+            py=_to_float(mapping.get("py")),
+            pz=_to_float(mapping.get("pz")),
+        )
+
+
+@dataclass(frozen=True)
+class GateNoiseConfig:
+    single_qubit: SingleQubitPauliConfig = field(default_factory=SingleQubitPauliConfig)
+    two_qubit_control: SingleQubitPauliConfig = field(
+        default_factory=SingleQubitPauliConfig
+    )
+    two_qubit_target: SingleQubitPauliConfig = field(
+        default_factory=SingleQubitPauliConfig
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "single_qubit": self.single_qubit.to_dict(),
+            "two_qubit_control": self.two_qubit_control.to_dict(),
+            "two_qubit_target": self.two_qubit_target.to_dict(),
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "GateNoiseConfig":
+        single = mapping.get("single_qubit")
+        two_control = mapping.get("two_qubit_control")
+        two_target = mapping.get("two_qubit_target")
+        return cls(
+            single_qubit=SingleQubitPauliConfig.from_mapping(
+                _normalize_mapping(single) if isinstance(single, Mapping) else {}
+            ),
+            two_qubit_control=SingleQubitPauliConfig.from_mapping(
+                _normalize_mapping(two_control) if isinstance(two_control, Mapping) else {}
+            ),
+            two_qubit_target=SingleQubitPauliConfig.from_mapping(
+                _normalize_mapping(two_target) if isinstance(two_target, Mapping) else {}
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class SimpleNoiseConfig:
+    p_quantum_flip: float = 0.0
+    p_loss: float = 0.0
+    readout: MeasurementNoiseConfig = field(default_factory=MeasurementNoiseConfig)
+    gate: GateNoiseConfig = field(default_factory=GateNoiseConfig)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "p_quantum_flip": self.p_quantum_flip,
+            "p_loss": self.p_loss,
+            "readout": self.readout.to_dict(),
+            "gate": self.gate.to_dict(),
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "SimpleNoiseConfig":
+        readout = mapping.get("readout")
+        gate = mapping.get("gate")
+        return cls(
+            p_quantum_flip=_to_float(mapping.get("p_quantum_flip")),
+            p_loss=_to_float(mapping.get("p_loss")),
+            readout=MeasurementNoiseConfig.from_mapping(
+                _normalize_mapping(readout) if isinstance(readout, Mapping) else {}
+            ),
+            gate=GateNoiseConfig.from_mapping(
+                _normalize_mapping(gate) if isinstance(gate, Mapping) else {}
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class HardwareConfig:
     """Low-level hardware configuration for a VM job.
@@ -41,6 +156,7 @@ class JobRequest:
     shots: int = 1
     job_id: str = "python-client"
     metadata: Dict[str, str] = field(default_factory=dict)
+    noise: SimpleNoiseConfig | None = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -53,6 +169,8 @@ class JobRequest:
         }
         if self.metadata:
             data["metadata"] = dict(self.metadata)
+        if self.noise:
+            data["noise"] = self.noise.to_dict()
         return data
 
 
@@ -61,7 +179,11 @@ def _normalize_job_mapping(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any
         return job.to_dict()
     # Accept plain mappings/dicts for flexibility; copy into a mutable dict so
     # we can safely add defaults.
-    return dict(job)
+    normalized = dict(job)
+    noise = normalized.get("noise")
+    if isinstance(noise, SimpleNoiseConfig):
+        normalized["noise"] = noise.to_dict()
+    return normalized
 
 
 def submit_job(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any]:

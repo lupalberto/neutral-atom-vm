@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -166,6 +167,9 @@ JobResult JobRunner::run(const JobRequest& job) {
         profile.id = job.device_id;
         profile.isa_version = job.isa_version;
         profile.hardware = job.hardware;
+        if (job.noise_config) {
+            profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
+        }
 
         HardwareVM vm(profile);
         result.measurements = vm.run(job.program, shots);

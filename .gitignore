@@ -6,6 +6,7 @@ cmake-build-*/
 python/build/
 python/.pytest_cache/
 python/src/neutral_atom_vm/*.so
+python/build-editable/
 **/__pycache__/
 *.pyc
 *.o

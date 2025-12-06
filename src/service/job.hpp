@@ -1,11 +1,13 @@
 #pragma once
 
+#include "noise.hpp"
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
 
 #include <map>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace service {
 
@@ -25,6 +27,7 @@ struct JobRequest {
     int shots = 1;
     std::map<std::string, std::string> metadata;
     ISAVersion isa_version = kCurrentISAVersion;
+    std::optional<SimpleNoiseConfig> noise_config;
 };
 
 struct JobResult {

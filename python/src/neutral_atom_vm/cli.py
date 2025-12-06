@@ -9,6 +9,7 @@ from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
 from .device import connect_device
+from .job import SimpleNoiseConfig
 
 
 def _load_kernel(target: str) -> Callable[..., Any]:
@@ -93,8 +94,10 @@ def _summarize_result(
 def _cmd_run(args: argparse.Namespace) -> int:
     kernel = _load_kernel(args.target)
 
+    noise_config = _parse_noise_config(args.noise) if args.noise else None
+
     device = connect_device(args.device, profile=args.profile)
-    job = device.submit(kernel, shots=args.shots)
+    job = device.submit(kernel, shots=args.shots, noise=noise_config)
     result = job.result()
 
     if args.output == "json":
@@ -109,6 +112,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_noise_config(raw: str) -> SimpleNoiseConfig:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid noise JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit("Noise config must be a JSON object")
+    return SimpleNoiseConfig.from_mapping(payload)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="quera-vm", description="Neutral Atom VM CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -119,6 +132,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("summary", "json"),
         default="summary",
         help="Output format (summary or json)",
+    )
+    run_parser.add_argument(
+        "--noise",
+        help="JSON string describing a SimpleNoiseConfig (e.g. '{\"p_loss\":0.1}')",
     )
     run_parser.add_argument(
         "--device",

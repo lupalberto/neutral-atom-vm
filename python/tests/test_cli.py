@@ -1,3 +1,4 @@
+import json
 import pytest
 
 pytest.importorskip("bloqade")
@@ -30,6 +31,56 @@ def test_quera_vm_run_executes_kernel_and_prints_result(capsys):
     # The CLI should emit a JSON dict with at least these keys.
     assert '"status": "completed"' in out or '"status":"completed"' in out
     assert '"measurements"' in out
+
+
+def test_quera_vm_run_accepts_noise_flag(capsys, tmp_path):
+    """CLI noise flag should run through to the VM and mutate measurements."""
+
+    from neutral_atom_vm import cli
+
+    script = tmp_path / "noise_script.py"
+    script.write_text(
+        "from bloqade import squin\n"
+        "\n"
+        "@squin.kernel\n"
+        "def bell_pair():\n"
+        "    q = squin.qalloc(2)\n"
+        "    squin.h(q[0])\n"
+        "    squin.cx(q[0], q[1])\n"
+        "    squin.measure(q)\n"
+    )
+
+    noise_payload = json.dumps(
+        {
+            "p_loss": 1.0,
+        }
+    )
+
+    argv = [
+        "run",
+        "--output",
+        "json",
+        "--noise",
+        noise_payload,
+        "--device",
+        "quera.na_vm.sim",
+        "--profile",
+        "ideal_small_array",
+        "--shots",
+        "2",
+        f"{script}:bell_pair",
+    ]
+
+    exit_code = cli.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    result = json.loads(captured.out)
+    assert all(
+        bit == -1
+        for record in result["measurements"]
+        for bit in record["bits"]
+    )
 
 
 def test_quera_vm_run_accepts_script_path_with_kernel(capsys, tmp_path):

@@ -63,6 +63,13 @@ In the current repository:
 
 At this stage, timing and pulse semantics are deliberately minimal: the VM uses them mostly as bookkeeping, not as full continuous‑time dynamics.
 
+In the near term we will evolve this into a **constrained ISA** in the hardware sense:
+
+- Every instruction will have an associated **duration** or timing semantics (either explicit on the op, or implied by the device profile).
+- The ISA semantics will include **scheduling rules**: what can be parallelized, what must be serialized, and how `Wait` interacts with idle noise.
+- Device profiles will include **connectivity graphs** and **native gate sets**, and the VM will reject programs that use non‑native gates or invalid couplings.
+- Microarchitectural rules (cooldown times, pulse overlap limits, resource usage) will be surfaced at the ISA level as validation constraints, not hidden inside individual engines.
+
 ### 2.2 Service/Job API
 
 - `src/service/job.hpp`, `src/service/job.cpp` define:
@@ -155,6 +162,11 @@ To fully align with the “hardware VM” vision, the next steps are:
 1. **Formalize the VM ISA**
    - Document the instruction set, timing, and geometry semantics.
    - Introduce versioning for the VM dialect consumed by the job API.
+   - Extend the ISA to cover hardware constraints explicitly:
+     - Gate durations and pulse timing.
+     - Scheduling/parallelism rules.
+     - Connectivity constraints and native gate sets.
+     - Microarchitectural limits (cooldown times, maximum concurrent operations, etc.).
 
 2. **Device and backend abstractions**
    - Define device profiles and capability descriptors.
