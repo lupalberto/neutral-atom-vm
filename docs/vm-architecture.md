@@ -1,0 +1,169 @@
+# Neutral Atom VM Architecture
+
+This document clarifies what we mean by a multi‑level *hardware virtual machine* for neutral‑atom devices, and how the current prototype fits into that picture.
+
+The goal is to distinguish clearly between:
+
+- The **hardware VM**: a stable abstraction of neutral‑atom hardware (ISA + device model + service API).
+- The **execution engines**: simulators/physics engines that implement the VM semantics.
+- The **compilation stack**: high‑level DSLs and passes that target the VM.
+
+---
+
+## 1. Layers at a Glance
+
+From top to bottom:
+
+1. **DSLs and Compilation Stack**
+   - Languages: Bloqade, Squin, Kirin IR.
+   - Passes: synthesis, scheduling, neutral‑atom specific rewrites, noise insertion (`pauli_channel`, loss).
+   - Output: programs in a **VM dialect** (hardware‑oriented instructions + metadata).
+
+2. **Hardware Virtual Machine (VM)**
+   - Defines a **virtual instruction set** for neutral‑atom devices:
+     - `AllocArray`, `ApplyGate`, `MoveAtom`, `Wait`, `Pulse`, `Measure`, etc.
+     - Timing/ordering semantics, geometry references, and resource usage are part of the contract.
+   - Exposes a **service / job API**:
+     - Submit jobs (`JobRequest`), track status, stream measurements and logs (`JobResult`).
+     - Select device profiles (geometry, capabilities, noise models).
+   - Presents a **device‑like interface**:
+     - Multiple engines and hardware backends sit behind a single VM abstraction.
+
+3. **Execution Engines (Backends)**
+   - Implement the VM semantics for different purposes:
+     - Ideal statevector engine (what we have today).
+     - Noisy Pauli engine (current `SimpleNoiseEngine` + VM core).
+     - Full neutral‑atom physics engine (Rydberg Hamiltonian + pulse‑level dynamics, future work).
+     - Real hardware driver(s) in the long term.
+   - Each engine is responsible for:
+     - Evolving the quantum state and hardware state (positions, time, pulses).
+     - Applying noise according to a device configuration.
+     - Producing measurements, logs, and diagnostics compatible with the VM API.
+
+---
+
+## 2. Current Prototype: What We Have
+
+### 2.1 VM Core and ISA
+
+In the current repository:
+
+- The C++ `VM` class (`src/vm.hpp`, `src/vm.cpp`) implements:
+  - A small instruction set:
+    - `AllocArray` – allocate qubits/sites.
+    - `ApplyGate` – apply a logical gate (`X`, `H`, `Z`, `CX`, `CZ`).
+    - `Measure` – projectively measure a subset of qubits.
+    - `MoveAtom` – update atomic positions (geometry).
+    - `Wait` – advance logical time.
+    - `Pulse` – log pulses applied to targets.
+  - A `VMState` with:
+    - Statevector amplitudes.
+    - Hardware configuration (`HardwareConfig`).
+    - Logical time, pulse log, measurement records.
+
+At this stage, timing and pulse semantics are deliberately minimal: the VM uses them mostly as bookkeeping, not as full continuous‑time dynamics.
+
+### 2.2 Service/Job API
+
+- `src/service/job.hpp`, `src/service/job.cpp` define:
+  - `JobRequest`: job identifier, hardware config, program (vector of `Instruction`), `shots`, and metadata.
+  - `JobResult`: status, elapsed time, measurements, message.
+  - `JobRunner`: runs a job by constructing a fresh `VM` per shot and executing the program.
+  - A JSON serialization of `JobRequest` used by tests.
+
+- `src/bindings/python/module.cpp` exposes a Python binding:
+  - `neutral_atom_vm._neutral_atom_vm.submit_job(program, positions, blockade_radius, shots)`:
+    - Converts the instruction dictionaries into `Instruction` objects.
+    - Builds a `JobRequest` and uses `JobRunner` to execute it.
+
+From the client’s perspective, this is already a **device‑like** API: you submit a job and get measurements back, even though everything is currently in‑process.
+
+### 2.3 Noise and Device Configuration
+
+- `src/noise.hpp`, `src/noise.cpp` define:
+  - `NoiseEngine` interface:
+    - Measurement noise (`apply_measurement_noise`).
+    - Optional per‑gate noise hooks (`apply_single_qubit_gate_noise`, `apply_two_qubit_gate_noise`).
+  - `SimpleNoiseConfig` and `SimpleNoiseEngine`:
+    - Measurement‑time combined noise: loss, quantum bit‑flip, and readout flips.
+    - Per‑gate Pauli channels applied to the statevector after gates.
+
+- `VM` holds a `std::shared_ptr<const NoiseEngine>` and an RNG, and calls the engine at well‑defined hook points.
+
+This gives us a **first device model**: a configuration that determines how noisy the simulated hardware is using effective Pauli/loss channels.
+
+### 2.4 DSL Integration
+
+- `python/src/neutral_atom_vm/squin_lowering.py`:
+  - `to_vm_program(kernel: Method) -> list[dict]` lowers a Squin kernel (Kirin IR) to the VM instruction schema.
+  - Tests validate this for simple kernels (`python/tests/test_client.py`).
+
+At the moment, only the gate‑level lowering from Squin → VM schema is implemented; richer pulse/schedule lowering and noise annotations from Bloqade are future work.
+
+---
+
+## 3. What “Hardware Virtual Machine” Adds Beyond the Simulator
+
+The job description emphasizes a **multi‑level hardware virtual machine**. Relative to a standalone simulator, this implies:
+
+1. **Stable VM ISA and semantics**
+   - Clearly specified, versioned instruction set:
+     - Meaning of `MoveAtom`, `Wait`, `Pulse`, blockade checks, etc.
+     - Rules for timing, parallelism, and conflict (e.g., overlapping pulses).
+   - Backward‑compatible evolution of the ISA as hardware features are added.
+
+2. **Device profiles and capabilities**
+   - Named device types/configurations:
+     - Geometry (1D/2D arrays, zones).
+     - Supported gate sets and pulse shapes.
+     - Noise profiles and resource limits.
+   - A way for clients to select profiles per job and for the VM to validate programs against them.
+
+3. **Service / driver behavior**
+   - Job queues, cancellation, status transitions (pending, running, completed, failed).
+   - Streaming outputs: measurement batches, pulse logs, diagnostics.
+   - Well‑defined error reporting (invalid programs, resource exhaustion, backend failures).
+
+4. **Multiple execution engines behind the VM**
+   - Ideal logical engine (current implementation).
+   - Noisy Pauli engine (current `SimpleNoiseEngine` + VM).
+   - Full neutral‑atom physics engine for pulse‑level programs.
+   - Eventually, connectors to real hardware.
+
+From the perspective of the compilation stack and client SDKs, these engines are interchangeable hardware instances, selected by configuration and capability flags.
+
+---
+
+## 4. Planned Evolution
+
+The current codebase already provides:
+
+- A minimal VM instruction set and state model.
+- A job/service layer around the VM.
+- A first noise engine prototype.
+- A Squin → VM lowering pass.
+
+To fully align with the “hardware VM” vision, the next steps are:
+
+1. **Formalize the VM ISA**
+   - Document the instruction set, timing, and geometry semantics.
+   - Introduce versioning for the VM dialect consumed by the job API.
+
+2. **Device and backend abstractions**
+   - Define device profiles and capability descriptors.
+   - Add a backend registry so the job runner can dispatch to different execution engines based on device selection.
+
+3. **Pulse‑level VM dialect**
+   - Extend the instruction set (or add a companion dialect) to model pulse schedules, shaped pulses, and zones explicitly.
+   - Integrate with Bloqade/Squin passes that lower pulse‑level DSLs into this dialect.
+
+4. **Noise model integration**
+   - Connect `SimpleNoiseConfig` (and successors) to Bloqade’s Pauli and loss channels so device configurations can be derived from calibration/noise IR.
+   - Add idle/time‑dependent noise (dephasing during `Wait`, pulse‑dependent errors, etc.).
+
+5. **Service‑level robustness**
+   - Enrich `JobRequest`/`JobResult` with device IDs, profile selection, richer status codes, and structured error messages.
+   - Provide streaming interfaces and batching where appropriate.
+
+These changes will turn the current prototype from “a simulator with a small API” into a proper **hardware virtual machine**: a stable target for the QuEra DSL and compilation stack, with multiple underlying engines and realistic device models.
+
