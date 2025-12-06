@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, MutableMapping, Sequence
+from typing import Any, Dict, Mapping, MutableMapping, Sequence, Tuple
 
 
 Program = Sequence[Dict[str, Any]]
@@ -92,12 +92,100 @@ class GateNoiseConfig:
 
 
 @dataclass(frozen=True)
+class TwoQubitCorrelatedPauliConfig:
+    matrix: tuple[tuple[float, float, float, float], ...] = (
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"matrix": [list(row) for row in self.matrix]}
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "TwoQubitCorrelatedPauliConfig":
+        matrix = mapping.get("matrix")
+        if isinstance(matrix, Sequence):
+            rows: list[tuple[float, float, float, float]] = []
+            for row in matrix:
+                if not isinstance(row, Sequence):
+                    rows.append((0.0, 0.0, 0.0, 0.0))
+                    continue
+                raw = list(row)
+                values = tuple(
+                    _to_float(raw[i]) if i < len(raw) else 0.0 for i in range(4)
+                )
+                rows.append(values)
+            while len(rows) < 4:
+                rows.append((0.0, 0.0, 0.0, 0.0))
+            matrix_tuple = tuple(rows[:4])
+        else:
+            matrix_tuple = (
+                (0.0, 0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 0.0),
+            )
+        return cls(matrix=matrix_tuple)
+
+
+@dataclass(frozen=True)
+class LossRuntimeConfig:
+    per_gate: float = 0.0
+    idle_rate: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "per_gate": self.per_gate,
+            "idle_rate": self.idle_rate,
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "LossRuntimeConfig":
+        return cls(
+            per_gate=_to_float(mapping.get("per_gate")),
+            idle_rate=_to_float(mapping.get("idle_rate")),
+        )
+
+
+@dataclass(frozen=True)
+class PhaseNoiseConfig:
+    single_qubit: float = 0.0
+    two_qubit_control: float = 0.0
+    two_qubit_target: float = 0.0
+    idle: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "single_qubit": self.single_qubit,
+            "two_qubit_control": self.two_qubit_control,
+            "two_qubit_target": self.two_qubit_target,
+            "idle": self.idle,
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "PhaseNoiseConfig":
+        return cls(
+            single_qubit=_to_float(mapping.get("single_qubit")),
+            two_qubit_control=_to_float(mapping.get("two_qubit_control")),
+            two_qubit_target=_to_float(mapping.get("two_qubit_target")),
+            idle=_to_float(mapping.get("idle")),
+        )
+
+
+@dataclass(frozen=True)
 class SimpleNoiseConfig:
     p_quantum_flip: float = 0.0
     p_loss: float = 0.0
     readout: MeasurementNoiseConfig = field(default_factory=MeasurementNoiseConfig)
     gate: GateNoiseConfig = field(default_factory=GateNoiseConfig)
+    correlated_gate: TwoQubitCorrelatedPauliConfig = field(
+        default_factory=TwoQubitCorrelatedPauliConfig
+    )
     idle_rate: float = 0.0
+    phase: PhaseNoiseConfig = field(default_factory=PhaseNoiseConfig)
+    loss_runtime: LossRuntimeConfig = field(default_factory=LossRuntimeConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -105,13 +193,18 @@ class SimpleNoiseConfig:
             "p_loss": self.p_loss,
             "readout": self.readout.to_dict(),
             "gate": self.gate.to_dict(),
+            "correlated_gate": self.correlated_gate.to_dict(),
             "idle_rate": self.idle_rate,
+            "phase": self.phase.to_dict(),
+            "loss_runtime": self.loss_runtime.to_dict(),
         }
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "SimpleNoiseConfig":
         readout = mapping.get("readout")
         gate = mapping.get("gate")
+        correlated = mapping.get("correlated_gate")
+        loss_runtime = mapping.get("loss_runtime")
         return cls(
             p_quantum_flip=_to_float(mapping.get("p_quantum_flip")),
             p_loss=_to_float(mapping.get("p_loss")),
@@ -121,7 +214,18 @@ class SimpleNoiseConfig:
             gate=GateNoiseConfig.from_mapping(
                 _normalize_mapping(gate) if isinstance(gate, Mapping) else {}
             ),
+            correlated_gate=TwoQubitCorrelatedPauliConfig.from_mapping(
+                _normalize_mapping(correlated) if isinstance(correlated, Mapping) else {}
+            ),
             idle_rate=_to_float(mapping.get("idle_rate")),
+            phase=PhaseNoiseConfig.from_mapping(
+                _normalize_mapping(mapping.get("phase"))
+                if isinstance(mapping.get("phase"), Mapping)
+                else {}
+            ),
+            loss_runtime=LossRuntimeConfig.from_mapping(
+                _normalize_mapping(loss_runtime) if isinstance(loss_runtime, Mapping) else {}
+            ),
         )
 
 

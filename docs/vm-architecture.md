@@ -97,10 +97,12 @@ From the client’s perspective, this is already a **device‑like** API: you su
 - `src/noise.hpp`, `src/noise.cpp` define:
   - `NoiseEngine` interface:
     - Measurement noise (`apply_measurement_noise`).
-    - Optional per‑gate noise hooks (`apply_single_qubit_gate_noise`, `apply_two_qubit_gate_noise`).
+    - Optional per-gate noise hooks (`apply_single_qubit_gate_noise`, `apply_two_qubit_gate_noise`).
   - `SimpleNoiseConfig` and `SimpleNoiseEngine`:
-    - Measurement‑time combined noise: loss, quantum bit‑flip, and readout flips.
-    - Per‑gate Pauli channels applied to the statevector after gates.
+    - Measurement-time combined noise: loss, quantum bit-flip, and readout flips.
+    - Per-gate Pauli channels (single-qubit and correlated two-qubit tables) applied to the statevector after gates.
+    - Runtime loss modeling (per-gate / idle) so erasures persist across the program.
+    - Z-phase kick distributions after gates plus idle-phase drift to capture laser phase noise.
 
 - `VM` holds a `std::shared_ptr<const NoiseEngine>` and an RNG, and calls the engine at well‑defined hook points.
 

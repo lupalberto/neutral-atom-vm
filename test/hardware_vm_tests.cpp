@@ -92,4 +92,33 @@ TEST(HardwareVMTests, IdleNoiseInducesPhaseFlip) {
     EXPECT_EQ(measurements[0].bits, std::vector<int>({1}));
 }
 
+TEST(HardwareVMTests, LossStateResetsEachShot) {
+    DeviceProfile profile;
+    profile.id = "loss-reset";
+    profile.hardware.positions = {0.0};
+    profile.hardware.blockade_radius = 1.0;
+
+    SimpleNoiseConfig cfg;
+    cfg.loss_runtime.per_gate = 1.0;
+    profile.noise_engine = std::make_shared<SimpleNoiseEngine>(cfg);
+
+    HardwareVM vm(profile);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    const auto measurements = vm.run(program, 2);
+    ASSERT_EQ(measurements.size(), 2u);
+    EXPECT_EQ(measurements[0].bits, std::vector<int>({-1}));
+    EXPECT_EQ(measurements[1].bits, std::vector<int>({-1}));
+}
+
 }  // namespace

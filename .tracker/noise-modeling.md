@@ -13,3 +13,5 @@ Introduce configurable noise models for the Neutral Atom VM so simulations can c
 
 ## 2025-12-06
 - Refactored the C++ `NoiseEngine` into a composable framework backed by a new `RandomStream` abstraction so new noise sources can be added without touching the VM hooks. The legacy `SimpleNoiseEngine` now builds on a `CompositeNoiseEngine` plus dedicated measurement, gate, and idle components, and the statevector engine simply supplies a `StdRandomStream` adapter.
+- Added configurable phase-noise sources (gate kicks + idle drift) to `SimpleNoiseConfig`, letting device profiles model laser phase noise via stochastic Z rotations.
+- Added correlated two-qubit Pauli channels plus runtime loss tracking (gate/idle + measurement) backed by per-shot-cloneable noise engines, so entangling gates can draw from 15-parameter tables and atom loss persists consistently across a program.

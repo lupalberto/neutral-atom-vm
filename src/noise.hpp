@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cstdint>
 #include <memory>
@@ -35,6 +36,29 @@ struct GateNoiseConfig {
     SingleQubitPauliConfig two_qubit_target;
 };
 
+// Correlated two-qubit Pauli probabilities arranged as a 4x4 table in
+// control-target order (I, X, Y, Z). Total probability should not exceed 1.
+struct TwoQubitCorrelatedPauliConfig {
+    std::array<double, 16> matrix{};
+};
+
+struct LossRuntimeConfig {
+    double per_gate = 0.0;
+    double idle_rate = 0.0;  // per second
+};
+
+// Phase-noise configuration describing random Z-rotations applied after
+// gates or during idle periods. Magnitudes are interpreted as maximum
+// absolute phase kicks in radians; sampling draws uniformly from
+// [-magnitude, +magnitude]. The idle term is a per-second magnitude so that
+// longer waits accumulate proportionally larger drifts.
+struct PhaseNoiseConfig {
+    double single_qubit = 0.0;
+    double two_qubit_control = 0.0;
+    double two_qubit_target = 0.0;
+    double idle = 0.0;
+};
+
 // Aggregated measurement-time noise model, combining:
 // - Quantum bit-flip-like effects accumulated before measurement.
 // - Classical readout noise.
@@ -54,8 +78,17 @@ struct SimpleNoiseConfig {
     // Effective Pauli channels applied after gates.
     GateNoiseConfig gate{};
 
+    // Correlated two-qubit Pauli channel applied after entangling gates.
+    TwoQubitCorrelatedPauliConfig correlated_gate{};
+
     // Idle/dephasing rate per second for `Wait`/idle periods.
     double idle_rate = 0.0;
+
+    // Random Z-phase kicks applied around gates and idles.
+    PhaseNoiseConfig phase{};
+
+    // Runtime loss probabilities (per gate or per second during idle).
+    LossRuntimeConfig loss_runtime{};
 };
 
 class RandomStream {
@@ -77,6 +110,8 @@ class StdRandomStream : public RandomStream {
 class NoiseEngine {
   public:
     virtual ~NoiseEngine() = default;
+
+    virtual std::shared_ptr<const NoiseEngine> clone() const = 0;
 
     // Optional hooks for measurement, gate, and idle noise. Default
     // implementations are no-ops to keep engines composable.
@@ -116,6 +151,8 @@ class CompositeNoiseEngine : public NoiseEngine {
     );
 
     void add_source(std::shared_ptr<const NoiseEngine> source);
+
+    std::shared_ptr<const NoiseEngine> clone() const override;
 
     void apply_measurement_noise(
         MeasurementRecord& record,
@@ -157,6 +194,8 @@ class CompositeNoiseEngine : public NoiseEngine {
 class SimpleNoiseEngine : public CompositeNoiseEngine {
   public:
     explicit SimpleNoiseEngine(SimpleNoiseConfig config);
+
+    std::shared_ptr<const NoiseEngine> clone() const override;
 
   private:
     static void validate_config(const SimpleNoiseConfig& config);

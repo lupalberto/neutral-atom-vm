@@ -200,7 +200,10 @@ Planned expansions include:
 
 - Extending the effective model to include:
   - Single- and two-qubit Pauli channels around gates and idles.
+  - Random Z-phase kicks around gates and idles to capture laser phase noise and slow drift.
+  - Correlated two-qubit Pauli faults (15-parameter tables) for entangling gates.
   - Atom loss / erasure modeled explicitly in the measurement record and state.
+  - Runtime loss processes (per-gate and idle-time) so erasures occur before measurement as well.
   - Separation of **quantum** (intrinsic) and **instrumental** (control/measurement) contributions in configuration, while still applying them via one unified engine.
 - Wiring a device-level configuration (possibly derived from Bloqade noise annotations or calibration data) through the job/service API so that each job can select a hardware-relevant noise profile.
 - Providing additional `NoiseEngine` implementations to explore different approximation strategies (e.g., Pauli-only vs. small Lindblad updates) without changing user programs or the VM core.

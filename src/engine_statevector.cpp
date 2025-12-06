@@ -15,7 +15,11 @@ StatevectorEngine::StatevectorEngine(HardwareConfig cfg) {
 }
 
 void StatevectorEngine::set_noise_model(std::shared_ptr<const NoiseEngine> noise) {
-    noise_ = std::move(noise);
+    if (noise) {
+        noise_ = noise->clone();
+    } else {
+        noise_.reset();
+    }
 }
 
 void StatevectorEngine::set_random_seed(std::uint64_t seed) {

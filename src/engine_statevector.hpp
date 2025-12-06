@@ -63,4 +63,3 @@ class StatevectorEngine {
         const std::array<std::complex<double>, 16>& U
     );
 };
-

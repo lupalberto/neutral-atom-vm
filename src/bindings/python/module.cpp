@@ -123,6 +123,57 @@ void fill_gate_noise_config(
     }
 }
 
+void fill_correlated_gate_config(
+    const py::dict& src,
+    TwoQubitCorrelatedPauliConfig& dst
+) {
+    if (!src.contains("matrix")) {
+        return;
+    }
+    const auto matrix = py::cast<py::list>(src["matrix"]);
+    std::size_t idx = 0;
+    for (const auto& row_obj : matrix) {
+        if (idx >= 4) {
+            break;
+        }
+        const auto row = py::cast<py::list>(row_obj);
+        for (std::size_t j = 0; j < 4 && j < row.size(); ++j) {
+            dst.matrix[4 * idx + j] = py::cast<double>(row[j]);
+        }
+        ++idx;
+    }
+}
+
+void fill_loss_runtime_config(
+    const py::dict& src,
+    LossRuntimeConfig& dst
+) {
+    if (src.contains("per_gate")) {
+        dst.per_gate = py::cast<double>(src["per_gate"]);
+    }
+    if (src.contains("idle_rate")) {
+        dst.idle_rate = py::cast<double>(src["idle_rate"]);
+    }
+}
+
+void fill_phase_noise_config(
+    const py::dict& src,
+    PhaseNoiseConfig& dst
+) {
+    if (src.contains("single_qubit")) {
+        dst.single_qubit = py::cast<double>(src["single_qubit"]);
+    }
+    if (src.contains("two_qubit_control")) {
+        dst.two_qubit_control = py::cast<double>(src["two_qubit_control"]);
+    }
+    if (src.contains("two_qubit_target")) {
+        dst.two_qubit_target = py::cast<double>(src["two_qubit_target"]);
+    }
+    if (src.contains("idle")) {
+        dst.idle = py::cast<double>(src["idle"]);
+    }
+}
+
 py::dict submit_job(const py::dict& job_obj) {
     service::JobRequest job;
 
@@ -191,8 +242,23 @@ py::dict submit_job(const py::dict& job_obj) {
         if (noise.contains("gate")) {
             fill_gate_noise_config(py::cast<py::dict>(noise["gate"]), cfg.gate);
         }
+        if (noise.contains("correlated_gate")) {
+            fill_correlated_gate_config(
+                py::cast<py::dict>(noise["correlated_gate"]),
+                cfg.correlated_gate
+            );
+        }
         if (noise.contains("idle_rate")) {
             cfg.idle_rate = py::cast<double>(noise["idle_rate"]);
+        }
+        if (noise.contains("phase")) {
+            fill_phase_noise_config(py::cast<py::dict>(noise["phase"]), cfg.phase);
+        }
+        if (noise.contains("loss_runtime")) {
+            fill_loss_runtime_config(
+                py::cast<py::dict>(noise["loss_runtime"]),
+                cfg.loss_runtime
+            );
         }
         job.noise_config = cfg;
     }
