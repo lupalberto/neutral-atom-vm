@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import runpy
+import sys
 from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
@@ -73,6 +74,9 @@ def _summarize_result(
     print(f"Status: {status}")
     if elapsed is not None:
         print(f"Elapsed time: {elapsed:.6f} s")
+    message = result.get("message")
+    if message:
+        print(f"Message: {message}")
 
     counts: Counter[str] = Counter()
     for rec in measurements:
@@ -104,7 +108,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     else:
         device = connect_device(args.device, profile=args.profile)
 
-    job = device.submit(kernel, shots=args.shots)
+    try:
+        job = device.submit(kernel, shots=args.shots)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     result = job.result()
 
     if args.output == "json":

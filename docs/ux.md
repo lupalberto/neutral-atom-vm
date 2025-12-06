@@ -97,6 +97,8 @@ quera-vm run --device quera.na_vm.sim --profile benchmark_chain \
   --shots 1000 examples/ghz.py
 ```
 
+If a request violates a hardware constraint (for example, a CX between tweezers outside the preset blockade), the CLI now prints the reason on stderr and exits with status 1 so you can fix the circuit before spending shots. Successful runs also echo any backend `message` (e.g., rich diagnostics or loss counts) in the summary.
+
 From the SDK, the same preset is available via:
 
 ```python

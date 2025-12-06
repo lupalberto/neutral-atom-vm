@@ -43,6 +43,8 @@ class Device:
         else:
             program = list(program_or_kernel)
 
+        _validate_blockade_constraints(program, self.positions, self.blockade_radius)
+
         request = JobRequest(
             program=program,
             hardware=HardwareConfig(
@@ -56,6 +58,51 @@ class Device:
         )
         job_result = submit_job(request)
         return JobHandle(job_result)
+
+
+def _validate_blockade_constraints(
+    program: Sequence[Dict[str, Any]],
+    positions: Sequence[float],
+    blockade_radius: float,
+) -> None:
+    if not positions or blockade_radius <= 0.0:
+        return
+
+    pos_list = list(positions)
+    limit = len(pos_list)
+    threshold = blockade_radius + 1e-12
+
+    for instruction in program:
+        if instruction.get("op") != "ApplyGate":
+            continue
+
+        targets = instruction.get("targets") or []
+        indices: list[int] = []
+        for raw in targets:
+            try:
+                idx = int(raw)
+            except (TypeError, ValueError):
+                continue
+            indices.append(idx)
+
+        if len(indices) < 2:
+            continue
+
+        gate_name = instruction.get("name", "<unknown>")
+        for idx in indices:
+            if idx < 0 or idx >= limit:
+                raise ValueError(
+                    f"Gate {gate_name} references qubit {idx}, but device has positions 0..{limit - 1}"
+                )
+
+        for i in range(len(indices)):
+            for j in range(i + 1, len(indices)):
+                q0 = indices[i]
+                q1 = indices[j]
+                if abs(pos_list[q0] - pos_list[q1]) > threshold:
+                    raise ValueError(
+                        f"Gate {gate_name} on qubits {q0}/{q1} violates blockade radius {blockade_radius:.3f}"
+                    )
 
 
 _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {

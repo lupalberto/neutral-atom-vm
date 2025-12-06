@@ -77,3 +77,15 @@ def test_connect_device_supports_new_presets(profile, expected_qubits):
     assert len(device.positions) == expected_qubits
     assert device.noise is not None
     assert device.noise.gate.single_qubit.px >= 0.0
+
+
+def test_device_submit_raises_on_blockade_violation():
+    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    program = [
+        {"op": "AllocArray", "n_qubits": 16},
+        {"op": "ApplyGate", "name": "CX", "targets": [0, 15], "param": 0.0},
+        {"op": "Measure", "targets": [0, 15]},
+    ]
+
+    with pytest.raises(ValueError, match="blockade radius"):
+        device.submit(program, shots=1)

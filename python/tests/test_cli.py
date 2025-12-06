@@ -125,3 +125,35 @@ def test_quera_vm_run_accepts_script_path_with_kernel(capsys, tmp_path):
     out = captured.out.strip()
     assert '"status": "completed"' in out or '"status":"completed"' in out
     assert '"measurements"' in out
+
+
+def test_quera_vm_run_reports_blockade_violation(capsys, tmp_path):
+    from neutral_atom_vm import cli
+
+    script = tmp_path / "wide_gate.py"
+    script.write_text(
+        "from bloqade import squin\n\n"
+        "@squin.kernel\n"
+        "def wide():\n"
+        "    q = squin.qalloc(16)\n"
+        "    squin.h(q[0])\n"
+        "    squin.cx(q[0], q[15])\n"
+        "    squin.measure(q)\n"
+    )
+
+    argv = [
+        "run",
+        "--device",
+        "quera.na_vm.sim",
+        "--profile",
+        "benchmark_chain",
+        "--shots",
+        "2",
+        f"{script}:wide",
+    ]
+
+    exit_code = cli.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Gate CX on qubits 0/15 violates blockade radius" in captured.err
