@@ -37,6 +37,7 @@ if(NA_VM_BUILD_TESTS)
     add_executable(vm_tests
         test/vm_tests.cpp
         test/service_api_tests.cpp
+        test/noise_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)
     include(GoogleTest)

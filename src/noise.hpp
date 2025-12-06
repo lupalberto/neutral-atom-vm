@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <cstdint>
+#include <memory>
 #include <random>
 #include <vector>
+#include <complex>
 
 #include "vm/measurement_record.types.hpp"
 
@@ -56,22 +58,38 @@ struct SimpleNoiseConfig {
     double idle_rate = 0.0;
 };
 
+class RandomStream {
+  public:
+    virtual ~RandomStream() = default;
+    virtual double uniform(double lo = 0.0, double hi = 1.0) = 0;
+};
+
+class StdRandomStream : public RandomStream {
+  public:
+    explicit StdRandomStream(std::mt19937_64& rng);
+
+    double uniform(double lo, double hi) override;
+
+  private:
+    std::mt19937_64& rng_;
+};
+
 class NoiseEngine {
   public:
     virtual ~NoiseEngine() = default;
 
+    // Optional hooks for measurement, gate, and idle noise. Default
+    // implementations are no-ops to keep engines composable.
     virtual void apply_measurement_noise(
-        MeasurementRecord& record,
-        std::mt19937_64& rng
-    ) const = 0;
+        MeasurementRecord& /*record*/,
+        RandomStream& /*rng*/
+    ) const {}
 
-    // Optional hooks for gate and idle noise. Default implementations
-    // are no-ops to keep engines composable.
     virtual void apply_single_qubit_gate_noise(
         int /*target*/,
         int /*n_qubits*/,
         std::vector<std::complex<double>>& /*amplitudes*/,
-        std::mt19937_64& /*rng*/
+        RandomStream& /*rng*/
     ) const {}
 
     virtual void apply_two_qubit_gate_noise(
@@ -79,34 +97,36 @@ class NoiseEngine {
         int /*q1*/,
         int /*n_qubits*/,
         std::vector<std::complex<double>>& /*amplitudes*/,
-        std::mt19937_64& /*rng*/
+        RandomStream& /*rng*/
     ) const {}
 
     virtual void apply_idle_noise(
         int /*n_qubits*/,
         std::vector<std::complex<double>>& /*amplitudes*/,
         double /*duration*/,
-        std::mt19937_64& /*rng*/
+        RandomStream& /*rng*/
     ) const {}
 };
 
-// Simple engine that realizes SimpleNoiseConfig as a measurement-time
-// stochastic channel. It does not modify the underlying statevector, only
-// the recorded classical bits.
-class SimpleNoiseEngine : public NoiseEngine {
+class CompositeNoiseEngine : public NoiseEngine {
   public:
-    explicit SimpleNoiseEngine(SimpleNoiseConfig config);
+    CompositeNoiseEngine() = default;
+    explicit CompositeNoiseEngine(
+        std::vector<std::shared_ptr<const NoiseEngine>> sources
+    );
+
+    void add_source(std::shared_ptr<const NoiseEngine> source);
 
     void apply_measurement_noise(
         MeasurementRecord& record,
-        std::mt19937_64& rng
+        RandomStream& rng
     ) const override;
 
     void apply_single_qubit_gate_noise(
         int target,
         int n_qubits,
         std::vector<std::complex<double>>& amplitudes,
-        std::mt19937_64& rng
+        RandomStream& rng
     ) const override;
 
     void apply_two_qubit_gate_noise(
@@ -114,18 +134,33 @@ class SimpleNoiseEngine : public NoiseEngine {
         int q1,
         int n_qubits,
         std::vector<std::complex<double>>& amplitudes,
-        std::mt19937_64& rng
+        RandomStream& rng
     ) const override;
 
     void apply_idle_noise(
         int n_qubits,
         std::vector<std::complex<double>>& amplitudes,
         double duration,
-        std::mt19937_64& rng
+        RandomStream& rng
     ) const override;
 
-  private:
-    SimpleNoiseConfig config_;
+  protected:
+    const std::vector<std::shared_ptr<const NoiseEngine>>& sources() const {
+        return sources_;
+    }
 
+  private:
+    std::vector<std::shared_ptr<const NoiseEngine>> sources_;
+};
+
+// Simple engine realized as a composition of smaller noise sources.
+class SimpleNoiseEngine : public CompositeNoiseEngine {
+  public:
+    explicit SimpleNoiseEngine(SimpleNoiseConfig config);
+
+  private:
     static void validate_config(const SimpleNoiseConfig& config);
+    static std::vector<std::shared_ptr<const NoiseEngine>> build_sources(
+        const SimpleNoiseConfig& config
+    );
 };

@@ -169,12 +169,13 @@ void StatevectorEngine::apply_gate(const Gate& g) {
     }
 
     if (noise_) {
+        StdRandomStream noise_rng(rng_);
         if (g.targets.size() == 1) {
             noise_->apply_single_qubit_gate_noise(
                 g.targets[0],
                 state_.n_qubits,
                 state_.state,
-                rng_
+                noise_rng
             );
         } else if (g.targets.size() == 2) {
             noise_->apply_two_qubit_gate_noise(
@@ -182,7 +183,7 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                 g.targets[1],
                 state_.n_qubits,
                 state_.state,
-                rng_
+                noise_rng
             );
         }
     }
@@ -204,11 +205,12 @@ void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
     }
     state_.logical_time += wait_instr.duration;
     if (noise_) {
+        StdRandomStream noise_rng(rng_);
         noise_->apply_idle_noise(
             state_.n_qubits,
             state_.state,
             wait_instr.duration,
-            rng_
+            noise_rng
         );
     }
 }
@@ -318,7 +320,8 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
     }
 
     if (noise_) {
-        noise_->apply_measurement_noise(record, rng_);
+        StdRandomStream noise_rng(rng_);
+        noise_->apply_measurement_noise(record, noise_rng);
     }
 
     state_.measurements.push_back(std::move(record));
