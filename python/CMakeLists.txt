@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(neutral_atom_vm_bindings LANGUAGES CXX)
 
+cmake_policy(SET CMP0148 NEW)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -15,6 +17,15 @@ find_package(pybind11 CONFIG REQUIRED HINTS ${PYBIND11_CMAKE_DIR})
 add_library(vm STATIC
     ../src/engine_statevector.cpp
     ../src/noise.cpp
+    ../src/noise/pauli_utils.cpp
+    ../src/noise/measurement_noise_source.cpp
+    ../src/noise/single_qubit_pauli_source.cpp
+    ../src/noise/two_qubit_pauli_source.cpp
+    ../src/noise/correlated_pauli_source.cpp
+    ../src/noise/idle_dephasing_source.cpp
+    ../src/noise/phase_kick_noise_source.cpp
+    ../src/noise/idle_phase_drift_source.cpp
+    ../src/noise/loss_tracking_source.cpp
     ../src/hardware_vm.cpp
     ../src/service/job.cpp
 )
