@@ -1,10 +1,17 @@
 # Ticket: UX vs Runtime Mismatch
 
 - **Priority:** High
-- **Status:** In Progress
+- **Status:** Completed
 
 ## Summary
-The Python UX documented in `docs/ux.md` (device/profile-based API, hardware VM abstraction, backend selection) does not fully match the current implementation, which still routes directly to a single statevector runtime without surfacing device IDs, profiles, or noise configuration through the service layer.
+The previously described UX gap—where the Python stack claimed device/profile-based APIs and backend selection but the runtime exposed only the bare `StatevectorEngine`—is now resolved:
+
+* `connect_device` / `Device.submit` now build a full `JobRequest` (with hardware config, device_id, profile, shots, and optional `SimpleNoiseConfig`) that the pybind layer forwards to `_neutral_atom_vm.submit_job`.  
+* `JobRunner` now creates a `DeviceProfile` and routes every job through `HardwareVM`, which can attach noise engines and provides an explicit hook for backend selection.
+* The new `quera-vm` CLI (`neutral_atom_vm.cli`) exercises the same path, accepts MODULE:FUNC or script targets, honors `--noise`, and can render summaries or JSON results.
+* Documentation (`docs/vm-architecture.md` and `docs/ux.md`) now states the intent to encode timing, connectivity, native gates, and microarchitectural constraints in the ISA/service contract.
+
+With these changes, the UX+service implementation now matches the documented journey, so this ticket can be closed.
 
 ## Findings
 - `docs/ux.md` advertises:
@@ -33,4 +40,3 @@ The Python UX documented in `docs/ux.md` (device/profile-based API, hardware VM 
   - Extend `JobRequest` metadata to include a `noise_profile`/`profile_id` field derived from the Python device/profile.
   - Document that the current implementation ignores it, but that it is part of the public contract.
 - Update `docs/ux.md` to describe the actual under-the-hood path (device/profile carried in the JobRequest, runtime selection hook in `JobRunner`) while keeping the user-facing API unchanged.
-

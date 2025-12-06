@@ -41,4 +41,9 @@ if(NA_VM_BUILD_TESTS)
     target_link_libraries(vm_tests PRIVATE vm gtest_main)
     include(GoogleTest)
     gtest_discover_tests(vm_tests)
+    add_executable(hardware_vm_tests
+        test/hardware_vm_tests.cpp
+    )
+    target_link_libraries(hardware_vm_tests PRIVATE vm gtest_main)
+    gtest_discover_tests(hardware_vm_tests)
 endif()
