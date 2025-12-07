@@ -61,6 +61,12 @@ const std::vector<std::complex<double>>& StatevectorEngine::state_vector() const
 void StatevectorEngine::set_noise_model(std::shared_ptr<const NoiseEngine> noise) {
     if (noise) {
         noise_ = noise->clone();
+        auto sink = [this](const std::string& category, const std::string& message) {
+            this->log_event(category, message);
+        };
+        // const_cast is safe here because we immediately drop the shared_ptr
+        // reference and only hold the cloned, mutable engine.
+        const_cast<NoiseEngine*>(noise_.get())->set_log_sink(std::move(sink));
     } else {
         noise_.reset();
     }
@@ -105,6 +111,10 @@ void StatevectorEngine::alloc_array(int n) {
     if (state_.hw.positions.size() < static_cast<std::size_t>(n)) {
         state_.hw.positions.resize(static_cast<std::size_t>(n), 0.0);
     }
+    state_.last_measurement_time.assign(
+        static_cast<std::size_t>(state_.n_qubits),
+        std::numeric_limits<double>::lowest()
+    );
     backend_->sync_host_to_device();
     std::ostringstream oss;
     oss << "AllocArray n_qubits=" << n;
@@ -113,6 +123,84 @@ void StatevectorEngine::alloc_array(int n) {
 
 void StatevectorEngine::apply_gate(const Gate& g) {
     backend_->sync_host_to_device();
+
+    const double cooldown = state_.hw.timing_limits.measurement_cooldown_ns;
+    if (cooldown > 0.0) {
+        const double now = state_.logical_time;
+        for (int target : g.targets) {
+            if (target < 0 || target >= static_cast<int>(state_.last_measurement_time.size())) {
+                continue;
+            }
+            const double last = state_.last_measurement_time[static_cast<std::size_t>(target)];
+            if (now - last < cooldown) {
+                std::ostringstream oss;
+                oss << "Gate violates measurement cooldown on qubit " << target
+                    << " (now=" << now << " last=" << last << " cooldown=" << cooldown << ")";
+                log_event("TimingConstraint", oss.str());
+                throw std::runtime_error("Gate violates measurement cooldown on qubit " + std::to_string(target));
+            }
+        }
+    }
+
+    // Enforce native-gate catalog constraints when configured (ISA v1.1).
+    if (!state_.hw.native_gates.empty()) {
+        const int arity = static_cast<int>(g.targets.size());
+        const NativeGate* desc = nullptr;
+        for (const auto& candidate : state_.hw.native_gates) {
+            if (candidate.name == g.name && candidate.arity == arity) {
+                desc = &candidate;
+                break;
+            }
+        }
+        if (!desc) {
+            throw std::runtime_error("Gate not supported by hardware: " + g.name);
+        }
+        if (desc->angle_max > desc->angle_min) {
+            if (g.param < desc->angle_min || g.param > desc->angle_max) {
+                throw std::invalid_argument("Gate parameter out of range for " + g.name);
+            }
+        }
+        if (arity >= 2) {
+            if (desc->connectivity == ConnectivityKind::NearestNeighborChain) {
+                // Simple nearest-neighbor chain constraint over logical indices.
+                for (int i = 0; i < arity; ++i) {
+                    for (int j = i + 1; j < arity; ++j) {
+                        const int a = g.targets[static_cast<std::size_t>(i)];
+                        const int b = g.targets[static_cast<std::size_t>(j)];
+                        if (std::abs(a - b) != 1) {
+                            throw std::runtime_error("Gate violates nearest-neighbor chain connectivity");
+                        }
+                    }
+                }
+            } else if (desc->connectivity == ConnectivityKind::NearestNeighborGrid) {
+                // Enforce 2D grid connectivity using the v1.1 site descriptors.
+                if (state_.hw.sites.empty()) {
+                    throw std::runtime_error(
+                        "Nearest-neighbor grid connectivity requires site coordinates");
+                }
+                const auto& sites = state_.hw.sites;
+                for (int i = 0; i < arity; ++i) {
+                    for (int j = i + 1; j < arity; ++j) {
+                        const int a = g.targets[static_cast<std::size_t>(i)];
+                        const int b = g.targets[static_cast<std::size_t>(j)];
+                        if (a < 0 || b < 0 ||
+                            a >= static_cast<int>(sites.size()) ||
+                            b >= static_cast<int>(sites.size())) {
+                            throw std::runtime_error("Gate targets out of range for grid connectivity");
+                        }
+                        const auto& sa = sites[static_cast<std::size_t>(a)];
+                        const auto& sb = sites[static_cast<std::size_t>(b)];
+                        const double dx = std::abs(sa.x - sb.x);
+                        const double dy = std::abs(sa.y - sb.y);
+                        // Use Manhattan distance 1 as the definition of nearest neighbors.
+                        if (std::abs(dx) + std::abs(dy) != 1.0) {
+                            throw std::runtime_error("Gate violates nearest-neighbor grid connectivity");
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (g.name == "X" && g.targets.size() == 1) {
         std::array<std::complex<double>, 4> U{
@@ -159,6 +247,9 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                 backend_->state(),
                 noise_rng
             );
+            std::ostringstream oss;
+            oss << "Single-qubit noise applied to target=" << g.targets[0];
+            log_event("Noise", oss.str());
         } else if (g.targets.size() == 2) {
             noise_->apply_two_qubit_gate_noise(
                 g.targets[0],
@@ -167,6 +258,9 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                 backend_->state(),
                 noise_rng
             );
+            std::ostringstream oss;
+            oss << "Two-qubit noise applied to targets=" << format_targets(g.targets);
+            log_event("Noise", oss.str());
         }
     }
 
@@ -191,6 +285,22 @@ void StatevectorEngine::move_atom(const MoveAtomInstruction& move) {
 void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
     if (wait_instr.duration < 0.0) {
         throw std::invalid_argument("Wait duration must be non-negative");
+    }
+    if (state_.hw.timing_limits.min_wait_ns > 0.0 &&
+        wait_instr.duration < state_.hw.timing_limits.min_wait_ns) {
+        std::ostringstream oss;
+        oss << "Wait duration below minimum limit: " << wait_instr.duration
+            << " < " << state_.hw.timing_limits.min_wait_ns;
+        log_event("TimingConstraint", oss.str());
+        throw std::invalid_argument("Wait duration below hardware minimum");
+    }
+    if (state_.hw.timing_limits.max_wait_ns > 0.0 &&
+        wait_instr.duration > state_.hw.timing_limits.max_wait_ns) {
+        std::ostringstream oss;
+        oss << "Wait duration above maximum limit: " << wait_instr.duration
+            << " > " << state_.hw.timing_limits.max_wait_ns;
+        log_event("TimingConstraint", oss.str());
+        throw std::invalid_argument("Wait duration above hardware maximum");
     }
     state_.logical_time += wait_instr.duration;
     if (noise_) {
@@ -217,6 +327,25 @@ void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
     }
     if (pulse.duration < 0.0) {
         throw std::invalid_argument("Pulse duration must be non-negative");
+    }
+    const auto& limits = state_.hw.pulse_limits;
+    if (limits.detuning_max > limits.detuning_min) {
+        if (pulse.detuning < limits.detuning_min || pulse.detuning > limits.detuning_max) {
+            std::ostringstream oss;
+            oss << "Pulse detuning " << pulse.detuning << " outside "
+                << limits.detuning_min << ".." << limits.detuning_max;
+            log_event("TimingConstraint", oss.str());
+            throw std::invalid_argument("Pulse detuning outside hardware limits");
+        }
+    }
+    if (limits.duration_max_ns > limits.duration_min_ns) {
+        if (pulse.duration < limits.duration_min_ns || pulse.duration > limits.duration_max_ns) {
+            std::ostringstream oss;
+            oss << "Pulse duration " << pulse.duration << " outside "
+                << limits.duration_min_ns << ".." << limits.duration_max_ns;
+            log_event("TimingConstraint", oss.str());
+            throw std::invalid_argument("Pulse duration outside hardware limits");
+        }
     }
     state_.pulse_log.push_back(pulse);
     std::ostringstream oss;
@@ -323,6 +452,12 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
     }
 
     state_.measurements.push_back(std::move(record));
+
+    for (int target : state_.measurements.back().targets) {
+        if (target >= 0 && target < static_cast<int>(state_.last_measurement_time.size())) {
+            state_.last_measurement_time[static_cast<std::size_t>(target)] = state_.logical_time;
+        }
+    }
 
     backend_->sync_host_to_device();
 

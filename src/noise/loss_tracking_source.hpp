@@ -44,5 +44,5 @@ class LossTrackingSource : public NoiseEngine {
 
     void ensure_size(int n_qubits) const;
     void ensure_target(int q) const;
-    void maybe_mark_loss(int q, double probability, RandomStream& rng) const;
+    void maybe_mark_loss(int q, double probability, RandomStream& rng, const char* context) const;
 };

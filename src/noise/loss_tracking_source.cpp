@@ -20,7 +20,7 @@ void LossTrackingSource::apply_single_qubit_gate_noise(
     RandomStream& rng
 ) const {
     ensure_size(n_qubits);
-    maybe_mark_loss(target, cfg_.per_gate, rng);
+    maybe_mark_loss(target, cfg_.per_gate, rng, "gate");
 }
 
 void LossTrackingSource::apply_two_qubit_gate_noise(
@@ -31,8 +31,8 @@ void LossTrackingSource::apply_two_qubit_gate_noise(
     RandomStream& rng
 ) const {
     ensure_size(n_qubits);
-    maybe_mark_loss(q0, cfg_.per_gate, rng);
-    maybe_mark_loss(q1, cfg_.per_gate, rng);
+    maybe_mark_loss(q0, cfg_.per_gate, rng, "gate");
+    maybe_mark_loss(q1, cfg_.per_gate, rng, "gate");
 }
 
 void LossTrackingSource::apply_idle_noise(
@@ -47,7 +47,7 @@ void LossTrackingSource::apply_idle_noise(
     }
     const double probability = 1.0 - std::exp(-cfg_.idle_rate * duration);
     for (int q = 0; q < n_qubits; ++q) {
-        maybe_mark_loss(q, probability, rng);
+        maybe_mark_loss(q, probability, rng, "idle");
     }
 }
 
@@ -69,6 +69,11 @@ void LossTrackingSource::apply_measurement_noise(
                     lost_[q] = true;
                 }
                 record.bits[idx] = -1;
+                log_event(
+                    "Noise",
+                    "type=loss_measurement qubit=" + std::to_string(q) +
+                        " p=" + std::to_string(measurement_loss_)
+                );
             }
         }
     }
@@ -95,7 +100,8 @@ void LossTrackingSource::ensure_target(int q) const {
 void LossTrackingSource::maybe_mark_loss(
     int q,
     double probability,
-    RandomStream& rng
+    RandomStream& rng,
+    const char* context
 ) const {
     if (probability <= 0.0 || q < 0) {
         return;
@@ -108,5 +114,11 @@ void LossTrackingSource::maybe_mark_loss(
     }
     if (rng.uniform(0.0, 1.0) < probability) {
         lost_[q] = true;
+        log_event(
+            "Noise",
+            std::string("type=loss_runtime context=") + context +
+                " qubit=" + std::to_string(q) +
+                " p=" + std::to_string(probability)
+        );
     }
 }

@@ -76,7 +76,11 @@ you see gate calls, waits, pulses, and measurements in order. Supply
 `--log-file path/to/log.txt` to divert those log entries into a standard log file
 with timestamped `INFO` lines via Python’s logging framework; the JSON printed to
 stdout stays focused on measurements/status and omits the `logs` array entirely
-when a log file is requested.
+when a log file is requested. The log file now expands the set of categories to
+include `Noise` entries (gate/measurement noise events) and `TimingConstraint`
+entries (measurement cooldown or wait/pulse violations), providing a chronological
+audit trail of enforced hardware constraints plus the existing gate/measurement
+events.
 
 For ad-hoc experiments, `--profile-config path/to/profile.json` can override the
 built-in profile definitions. The JSON file can specify geometry (`positions`,

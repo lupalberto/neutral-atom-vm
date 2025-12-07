@@ -232,6 +232,143 @@ TEST(StatevectorEngineTests, BlockadeBlocksDistantQubits) {
     EXPECT_THROW(engine.run(program), std::runtime_error);
 }
 
+TEST(StatevectorEngineTests, EnforcesNativeGateConnectivityForNearestNeighborChain) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0, 1.0, 2.0};
+    NativeGate cx_native;
+    cx_native.name = "CX";
+    cx_native.arity = 2;
+    cx_native.connectivity = ConnectivityKind::NearestNeighborChain;
+    cfg.native_gates.push_back(cx_native);
+
+    StatevectorEngine engine(cfg);
+
+    // Neighboring qubits 0-1 are allowed.
+    std::vector<Instruction> ok_program;
+    ok_program.push_back(Instruction{Op::AllocArray, 3});
+    ok_program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 1}, 0.0},
+    });
+    EXPECT_NO_THROW(engine.run(ok_program));
+
+    // Non-neighboring qubits 0-2 violate the chain connectivity.
+    std::vector<Instruction> bad_program;
+    bad_program.push_back(Instruction{Op::AllocArray, 3});
+    bad_program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 2}, 0.0},
+    });
+    EXPECT_THROW(engine.run(bad_program), std::runtime_error);
+}
+
+TEST(StatevectorEngineTests, EnforcesWaitDurationLimitsWhenConfigured) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0};
+    cfg.timing_limits.min_wait_ns = 1.0;
+    cfg.timing_limits.max_wait_ns = 5.0;
+
+    StatevectorEngine engine(cfg);
+
+    std::vector<Instruction> short_wait_prog;
+    short_wait_prog.push_back(Instruction{Op::AllocArray, 1});
+    short_wait_prog.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{0.5},
+    });
+    EXPECT_THROW(engine.run(short_wait_prog), std::invalid_argument);
+
+    std::vector<Instruction> long_wait_prog;
+    long_wait_prog.push_back(Instruction{Op::AllocArray, 1});
+    long_wait_prog.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{10.0},
+    });
+    EXPECT_THROW(engine.run(long_wait_prog), std::invalid_argument);
+
+    std::vector<Instruction> ok_wait_prog;
+    ok_wait_prog.push_back(Instruction{Op::AllocArray, 1});
+    ok_wait_prog.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{3.0},
+    });
+    EXPECT_NO_THROW(engine.run(ok_wait_prog));
+}
+
+TEST(StatevectorEngineTests, EnforcesPulseLimitsWhenConfigured) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0};
+    cfg.pulse_limits.detuning_min = -1.0;
+    cfg.pulse_limits.detuning_max = 1.0;
+    cfg.pulse_limits.duration_min_ns = 1.0;
+    cfg.pulse_limits.duration_max_ns = 10.0;
+
+    StatevectorEngine engine(cfg);
+
+    std::vector<Instruction> bad_detuning_prog;
+    bad_detuning_prog.push_back(Instruction{Op::AllocArray, 1});
+    bad_detuning_prog.push_back(Instruction{
+        Op::Pulse,
+        PulseInstruction{0, 2.0, 5.0},
+    });
+    EXPECT_THROW(engine.run(bad_detuning_prog), std::invalid_argument);
+
+    std::vector<Instruction> bad_duration_prog;
+    bad_duration_prog.push_back(Instruction{Op::AllocArray, 1});
+    bad_duration_prog.push_back(Instruction{
+        Op::Pulse,
+        PulseInstruction{0, 0.0, 0.5},
+    });
+    EXPECT_THROW(engine.run(bad_duration_prog), std::invalid_argument);
+
+    std::vector<Instruction> ok_pulse_prog;
+    ok_pulse_prog.push_back(Instruction{Op::AllocArray, 1});
+    ok_pulse_prog.push_back(Instruction{
+        Op::Pulse,
+        PulseInstruction{0, 0.5, 5.0},
+    });
+    EXPECT_NO_THROW(engine.run(ok_pulse_prog));
+}
+
+TEST(StatevectorEngineTests, EnforcesMeasurementCooldown) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0};
+    cfg.timing_limits.measurement_cooldown_ns = 2.0;
+
+    StatevectorEngine engine(cfg);
+
+    std::vector<Instruction> bad_prog;
+    bad_prog.push_back(Instruction{Op::AllocArray, 1});
+    bad_prog.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+    bad_prog.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+
+    EXPECT_THROW(engine.run(bad_prog), std::runtime_error);
+
+    StatevectorEngine engine_ok(cfg);
+    std::vector<Instruction> ok_prog;
+    ok_prog.push_back(Instruction{Op::AllocArray, 1});
+    ok_prog.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+    ok_prog.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{2.5},
+    });
+    ok_prog.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+
+    EXPECT_NO_THROW(engine_ok.run(ok_prog));
+}
+
 TEST(StatevectorEngineTests, MeasurementNoiseBitFlipAllOnes) {
     HardwareConfig cfg;
     cfg.positions = {0.0};
@@ -365,10 +502,9 @@ TEST(HardwareVMTests, RejectsUnsupportedISAVersion) {
         (void)hvm.run(program, /*shots=*/1);
         FAIL() << "Expected std::runtime_error for unsupported ISA version";
     } catch (const std::runtime_error& ex) {
-        EXPECT_STREQ(
-            ex.what(),
-            "Unsupported ISA version 0.9 (supported: 1.0)"
-        );
+        const std::string msg = ex.what();
+        EXPECT_NE(msg.find("Unsupported ISA version 0.9"), std::string::npos);
+        EXPECT_NE(msg.find("supported:"), std::string::npos);
     }
 }
 

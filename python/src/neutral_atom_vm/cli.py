@@ -59,6 +59,37 @@ def _load_kernel(target: str) -> Callable[..., Any]:
     return kernel
 
 
+GRID_LAYOUTS: dict[str, tuple[int, int]] = {
+    "noisy_square_array": (4, 4),
+}
+
+
+def _grid_layout_for_profile(profile: str | None) -> tuple[int, int] | None:
+    if profile is None:
+        return None
+    return GRID_LAYOUTS.get(profile)
+
+
+def _display_bit(bit: int) -> str:
+    if bit == -1:
+        return "?"
+    return str(bit)
+
+
+def _grid_lines_for_bits(
+    bits: Sequence[int],
+    rows: int,
+    cols: int,
+) -> list[str] | None:
+    if len(bits) != rows * cols:
+        return None
+    lines: list[str] = []
+    for r in range(rows):
+        row_bits = bits[r * cols : (r + 1) * cols]
+        lines.append(" ".join(_display_bit(bit) for bit in row_bits))
+    return lines
+
+
 def _summarize_result(
     result: Mapping[str, Any],
     *,
@@ -87,10 +118,30 @@ def _summarize_result(
         key = "".join(str(int(b)) for b in bits)
         counts[key] += 1
 
+    grid_layout = _grid_layout_for_profile(profile)
+    grid_examples: dict[str, list[int]] = {}
+
+    for rec in measurements:
+        bits = rec.get("bits", [])
+        if not bits:
+            continue
+        key = "".join(str(int(b)) for b in bits)
+        if grid_layout:
+            rows, cols = grid_layout
+            if len(bits) == rows * cols:
+                grid_examples.setdefault(key, list(int(b) for b in bits))
+
     if counts:
         print("Counts:")
         for bitstring, count in sorted(counts.items()):
             print(f"  {bitstring}: {count}")
+            if grid_layout:
+                rows, cols = grid_layout
+                lines = _grid_lines_for_bits(grid_examples.get(bitstring, []), rows, cols)
+                if lines:
+                    print("    Grid:")
+                    for line in lines:
+                        print(f"      {line}")
     else:
         print("Counts: (no measurements)")
 

@@ -99,6 +99,109 @@ BackendKind backend_for_device(const std::string& device_id) {
     return BackendKind::kCpu;
 }
 
+namespace {
+
+void enrich_hardware_with_profile_constraints(
+    const JobRequest& job,
+    HardwareConfig& hw
+) {
+    const bool is_sim_device =
+        job.device_id == "quera.na_vm.sim" ||
+        job.device_id == "local-cpu" ||
+        job.device_id == "local-arc";
+    if (!is_sim_device) {
+        return;
+    }
+
+    if (job.profile == "benchmark_chain") {
+        NativeGate cx;
+        cx.name = "CX";
+        cx.arity = 2;
+        cx.duration_ns = 200.0;
+        cx.angle_min = 0.0;
+        cx.angle_max = 0.0;
+        cx.connectivity = ConnectivityKind::NearestNeighborChain;
+
+        NativeGate x;
+        x.name = "X";
+        x.arity = 1;
+        x.duration_ns = 50.0;
+
+        NativeGate h;
+        h.name = "H";
+        h.arity = 1;
+        h.duration_ns = 50.0;
+
+        NativeGate z;
+        z.name = "Z";
+        z.arity = 1;
+        z.duration_ns = 50.0;
+
+        hw.native_gates.clear();
+        hw.native_gates.push_back(x);
+        hw.native_gates.push_back(h);
+        hw.native_gates.push_back(z);
+        hw.native_gates.push_back(cx);
+
+        hw.pulse_limits.detuning_min = -10.0;
+        hw.pulse_limits.detuning_max = 10.0;
+        hw.pulse_limits.duration_min_ns = 0.0;
+        hw.pulse_limits.duration_max_ns = 1e6;
+        hw.pulse_limits.max_overlapping_pulses = 0;
+        hw.timing_limits.measurement_cooldown_ns = 5.0;
+    } else if (job.profile == "noisy_square_array") {
+        NativeGate cx;
+        cx.name = "CX";
+        cx.arity = 2;
+        cx.duration_ns = 200.0;
+        cx.angle_min = 0.0;
+        cx.angle_max = 0.0;
+        cx.connectivity = ConnectivityKind::NearestNeighborGrid;
+
+        NativeGate x;
+        x.name = "X";
+        x.arity = 1;
+        x.duration_ns = 50.0;
+
+        NativeGate h;
+        h.name = "H";
+        h.arity = 1;
+        h.duration_ns = 50.0;
+
+        NativeGate z;
+        z.name = "Z";
+        z.arity = 1;
+        z.duration_ns = 50.0;
+
+        hw.native_gates.clear();
+        hw.native_gates.push_back(x);
+        hw.native_gates.push_back(h);
+        hw.native_gates.push_back(z);
+        hw.native_gates.push_back(cx);
+
+        // Populate a simple 4x4 grid of site coordinates matching the
+        // conceptual geometry of the noisy_square_array preset.
+        const std::size_t n_sites = hw.positions.size();
+        hw.sites.clear();
+        if (n_sites > 0) {
+            const int side = static_cast<int>(std::sqrt(static_cast<double>(n_sites)) + 0.5);
+            if (side > 0 && static_cast<std::size_t>(side * side) == n_sites) {
+                hw.sites.reserve(n_sites);
+                for (int idx = 0; idx < side * side; ++idx) {
+                    SiteDescriptor site;
+                    site.id = idx;
+                    site.x = static_cast<double>(idx % side);
+                    site.y = static_cast<double>(idx / side);
+                    site.zone_id = 0;
+                    hw.sites.push_back(site);
+                }
+            }
+        }
+    }
+}
+
+}  // namespace
+
 std::string to_json(const JobRequest& job) {
     std::ostringstream out;
     out << std::setprecision(15);
@@ -177,6 +280,7 @@ JobResult JobRunner::run(const JobRequest& job) {
         profile.id = job.device_id;
         profile.isa_version = job.isa_version;
         profile.hardware = job.hardware;
+        enrich_hardware_with_profile_constraints(job, profile.hardware);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);

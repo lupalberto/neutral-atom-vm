@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <random>
 #include <vector>
@@ -121,6 +122,12 @@ class NoiseEngine {
 
     virtual std::shared_ptr<const NoiseEngine> clone() const = 0;
 
+    using LogSink = std::function<void(const std::string&, const std::string&)>;
+
+    void set_log_sink(LogSink sink) {
+        log_sink_ = std::move(sink);
+    }
+
     // Optional hooks for measurement, gate, and idle noise. Default
     // implementations are no-ops to keep engines composable.
     virtual void apply_measurement_noise(
@@ -149,6 +156,16 @@ class NoiseEngine {
         double /*duration*/,
         RandomStream& /*rng*/
     ) const {}
+
+  protected:
+    void log_event(const std::string& category, const std::string& message) const {
+        if (log_sink_) {
+            log_sink_(category, message);
+        }
+    }
+
+  private:
+    LogSink log_sink_;
 };
 
 class CompositeNoiseEngine : public NoiseEngine {

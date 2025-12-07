@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -77,6 +78,8 @@ HardwareVM::RunResult HardwareVM::run(
     std::vector<std::vector<ExecutionLog>> per_shot_logs(num_shots);
     std::vector<std::thread> workers;
     workers.reserve(worker_count);
+    std::mutex failure_mutex;
+    std::exception_ptr failure;
 
     const std::size_t base_shots = static_cast<std::size_t>(num_shots) / worker_count;
     const std::size_t remainder = static_cast<std::size_t>(num_shots) % worker_count;
@@ -96,18 +99,28 @@ HardwareVM::RunResult HardwareVM::run(
             &per_shot_logs,
             &seeds,
             start,
-            end
+            end,
+            &failure_mutex,
+            &failure
         ]() {
             for (std::size_t shot = start; shot < end; ++shot) {
-                HardwareConfig hw = profile_.hardware;
-                StatevectorEngine engine(hw, make_state_backend(profile_.backend), seeds[shot]);
-                engine.set_shot_index(static_cast<int>(shot));
-                if (profile_.noise_engine) {
-                    engine.set_noise_model(profile_.noise_engine);
+                try {
+                    HardwareConfig hw = profile_.hardware;
+                    StatevectorEngine engine(hw, make_state_backend(profile_.backend), seeds[shot]);
+                    engine.set_shot_index(static_cast<int>(shot));
+                    if (profile_.noise_engine) {
+                        engine.set_noise_model(profile_.noise_engine);
+                    }
+                    engine.run(program);
+                    per_shot_measurements[shot] = engine.state().measurements;
+                    per_shot_logs[shot] = engine.state().logs;
+                } catch (...) {
+                    std::lock_guard<std::mutex> lock(failure_mutex);
+                    if (!failure) {
+                        failure = std::current_exception();
+                    }
+                    return;
                 }
-                engine.run(program);
-                per_shot_measurements[shot] = engine.state().measurements;
-                per_shot_logs[shot] = engine.state().logs;
             }
         });
         shot_offset = end;
@@ -115,6 +128,9 @@ HardwareVM::RunResult HardwareVM::run(
 
     for (auto& worker : workers) {
         worker.join();
+    }
+    if (failure) {
+        std::rethrow_exception(failure);
     }
 
     RunResult result;

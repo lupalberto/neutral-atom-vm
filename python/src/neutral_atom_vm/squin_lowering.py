@@ -8,6 +8,7 @@ from kirin.dialects.py import constant as py_constant
 from kirin.dialects.py import indexing as py_indexing
 from kirin.dialects.py.binop import stmts as py_binop_stmts
 from kirin.dialects.scf import stmts as scf_stmts
+from kirin.dialects.ilist import stmts as ilist_stmts
 from kirin.ir.method import Method
 
 GateInstruction = dict[str, Any]
@@ -68,6 +69,22 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
             value_map[stmt.result] = stmt.value.data
             return
 
+        if isinstance(stmt, ilist_stmts.Range):
+            # Lower ilist.range(start, stop, step) into a concrete Python list so
+            # loop iterables can be resolved, even when the bounds depend on
+            # symbolic block arguments (e.g. `range(n)` inside nested loops).
+            start_val = _resolve_value(value_map, stmt.start)
+            stop_val = _resolve_value(value_map, stmt.stop)
+            step_val = _resolve_value(value_map, stmt.step)
+            try:
+                start_i = int(start_val)
+                stop_i = int(stop_val)
+                step_i = int(step_val)
+            except (TypeError, ValueError) as exc:
+                raise LoweringError("range() bounds must be integers") from exc
+            value_map[stmt.result] = list(range(start_i, stop_i, step_i))
+            return
+
         if isinstance(stmt, py_indexing.GetItem):
             base = _resolve_value(value_map, stmt.obj)
             index = _resolve_value(value_map, stmt.index)
@@ -84,6 +101,26 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
         if isinstance(stmt, func_stmts.Invoke):
             callee = stmt.callee.sym_name
             args = list(stmt.args)
+
+            if callee == "range":
+                resolved_args = [_resolve_value(value_map, arg) for arg in args]
+                try:
+                    if len(resolved_args) == 1:
+                        start, stop, step = 0, int(resolved_args[0]), 1
+                    elif len(resolved_args) == 2:
+                        start, stop = int(resolved_args[0]), int(resolved_args[1])
+                        step = 1
+                    elif len(resolved_args) == 3:
+                        start = int(resolved_args[0])
+                        stop = int(resolved_args[1])
+                        step = int(resolved_args[2])
+                    else:
+                        raise LoweringError("range() with unsupported number of arguments")
+                except (TypeError, ValueError) as exc:
+                    raise LoweringError("range() arguments must be integers") from exc
+
+                value_map[stmt.result] = list(range(start, stop, step))
+                return
 
             if callee == "qalloc":
                 n_qubits = int(_resolve_value(value_map, args[0]))
@@ -143,6 +180,14 @@ def to_vm_program(kernel: Method) -> list[GateInstruction]:
             if not isinstance(lhs_value, (int, float)) or not isinstance(rhs_value, (int, float)):
                 raise LoweringError("Unsupported operands for subtraction")
             value_map[stmt.result] = lhs_value - rhs_value
+            return
+
+        if isinstance(stmt, py_binop_stmts.Mult):
+            lhs_value = _resolve_value(value_map, stmt.lhs)
+            rhs_value = _resolve_value(value_map, stmt.rhs)
+            if not isinstance(lhs_value, (int, float)) or not isinstance(rhs_value, (int, float)):
+                raise LoweringError("Unsupported operands for multiplication")
+            value_map[stmt.result] = lhs_value * rhs_value
             return
 
         if isinstance(stmt, py_binop_stmts.Add):

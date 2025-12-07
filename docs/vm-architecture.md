@@ -219,3 +219,101 @@ This explicit version tag is how the VM can offer multiple ISA versions within t
 Currently the runtime enumerates the supported versions via `kSupportedISAVersions` (currently `[1.0]`), and `JobRunner` refuses to execute programs targeting anything else, returning a clear error that lists the acceptable versions.
 
 Currently the `JobRunner` enforces this contract by rejecting jobs whose `isa_version` differs from `kCurrentISAVersion`, returning a failed status and explaining that the ISA is unsupported.
+
+## 7. ISA v1.1 – Hardware‑Constrained ISA
+
+ISA v1 deliberately models an “idealized logical device”: it exposes a small instruction palette and a minimal `HardwareConfig` so compilers can target a stable contract without committing to particular hardware limits. For realistic hardware work (cooldowns, limited parallelism, non‑uniform connectivity, per‑gate timings), we need a slightly richer ISA that still feels like a neutral‑atom VM and remains backward compatible with v1.
+
+ISA v1.1 is a planned evolution of `src/vm/isa.hpp` that adds **explicit hardware constraints and timing metadata** while preserving the existing opcodes. Until the header is updated, v1.1 should be treated as a design target rather than an implemented wire format.
+
+### 7.1 Goals
+
+- Make hardware limits **first‑class** in the ISA, not an out‑of‑band comment in docs.
+- Keep the **same instruction palette** (`AllocArray`, `ApplyGate`, `Measure`, `MoveAtom`, `Wait`, `Pulse`) so existing compilers mostly need to enrich metadata, not rewrite programs.
+- Define a contract that can be used both by:
+  - compilers (to statically validate programs against hardware), and
+  - runtimes (to reject/diagnose illegal schedules at execution time).
+
+### 7.2 New/extended data structures
+
+Relative to v1, ISA v1.1 extends the hardware description rather than adding new opcodes.
+
+- **`ISAVersion`**
+  - v1.1 programs set `isa_version = {major = 1, minor = 1}`.
+  - v1.0 programs remain valid; the service advertises support via `kSupportedISAVersions` once the implementation lands.
+
+- **`HardwareConfig` (v1.1)**  
+  The existing fields remain:
+  - `positions: std::vector<double>` – 1D site positions (for legacy/v1 programs).
+  - `blockade_radius: double`.
+
+  v1.1 extends this with a richer, hardware‑oriented view (names illustrative – exact C++ layout will be decided when we update `isa.hpp`):
+
+  - `sites` – an array of per‑site descriptors:
+    - `id: int` – logical site index.
+    - `x, y: double` – 2D coordinates (1D devices set `y = 0`).
+    - `zone_id: int` – optional grouping label for per‑zone limits.
+  - `native_gates` – list of gate families supported by the hardware:
+    - `name: std::string` – `"X"`, `"RZ"`, `"CZ"`, `"MOVE"`, etc.
+    - `arity: int` – number of targets (1, 2, …).
+    - `duration_ns: double` – nominal duration of the gate in nanoseconds.
+    - `angle_min/angle_max: double` – allowed range for `Gate.param` (if applicable).
+    - `allowed_connectivity` – constraints on target combinations (nearest‑neighbor chain, full graph within a zone, etc.).
+  - `timing_limits` – global timing/resource limits:
+    - `min_wait_ns`, `max_wait_ns` – bounds for `Wait.duration`.
+    - `max_parallel_single_qubit`, `max_parallel_two_qubit` – total concurrent gate count across the device.
+    - `max_parallel_per_zone` – per‑`zone_id` concurrency cap.
+    - `measurement_cooldown_ns` – minimum logical time between `Measure` on a site and the next gate on that site.
+  - `pulse_limits` – optional constraints for `Pulse` instructions:
+    - allowed ranges for `detuning`, `duration`, and target sets,
+    - per‑zone or per‑site limits on overlapping pulses.
+
+These structures let both compilers and engines reason about what the hardware can actually do without baking those rules into ad‑hoc code paths.
+
+### 7.3 Instruction‑level semantics in v1.1
+
+The instruction palette is unchanged but gains stricter semantics:
+
+- **`AllocArray`**
+  - Must not allocate more sites than declared as available in `HardwareConfig.sites`.
+  - Engines may use a device‑specific mapping from logical indices to site descriptors; v1.1 requires that mapping to respect per‑site constraints (e.g., sites that are disabled or reserved must not be allocated).
+
+- **`ApplyGate`**
+  - `Gate.name` must reference a gate family listed in `HardwareConfig.native_gates`.
+  - `Gate.targets` must:
+    - be valid site indices, and
+    - satisfy the `allowed_connectivity` constraints for that gate family (e.g., nearest‑neighbor pairs in a chain).
+  - `Gate.param` must lie within `[angle_min, angle_max]` for parametric gates; static gates ignore the range.
+  - Scheduling constraints:
+    - Two `ApplyGate` instructions that operate on overlapping sites may not be scheduled at the same logical time.
+    - The total number of gates acting in parallel at a given logical time must not exceed `max_parallel_*` limits.
+
+- **`Measure`**
+  - May impose a **cooldown** on each measured site:
+    - If `measurement_cooldown_ns > 0`, then after measuring a site the engine must advance logical time by at least that amount before an `ApplyGate` involving that site is allowed.
+  - Engines may record measurement duration explicitly and treat it similarly to a long gate under the same parallelism limits.
+
+- **`MoveAtom`**
+  - Subject to geometry and blockade constraints:
+    - Moves must not place atoms closer than a hardware‑defined minimum spacing (derived from `blockade_radius` and the physical model).
+    - Engines may enforce per‑move duration and velocity bounds (e.g., max distance per unit time); these are expressed as constraints in `timing_limits` or a future `move_limits` sub‑structure.
+
+- **`Wait`**
+  - `Wait.duration` must satisfy `min_wait_ns <= duration <= max_wait_ns`.
+  - `Wait` is the primitive that advances logical time between operations; engines must treat it as the gap that enables cooldowns, pulse spacing, and idle noise.
+
+- **`Pulse`**
+  - Pulse parameters must fall within `pulse_limits` (if present).
+  - Pulses contribute to logical time and respect the same parallelism/zone limits as gates; engines must reject programs that attempt to exceed per‑zone or global pulse counts.
+
+### 7.4 Backward‑compatibility story
+
+- Existing v1.0 programs become v1.1 programs by:
+  - upgrading `isa_version` to `{1,1}`, and
+  - providing an enriched `HardwareConfig` that is consistent with the earlier 1D `positions` view.
+- Compilers that only know about v1 can continue to target v1.0; the service will keep accepting v1.0 jobs as long as `kSupportedISAVersions` includes `{1,0}`.
+- New compilers can:
+  - query device capabilities (via future service APIs), and
+  - target v1.1 to get static guarantees that programs respect durations, connectivity, and parallelism limits.
+
+Once we update `src/vm/isa.hpp` to encode these structures explicitly, this section and the header should again be treated as the **single source of truth** for the hardware‑constrained ISA. For now, this serves as the design document that guides that implementation work.

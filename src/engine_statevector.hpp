@@ -25,6 +25,7 @@ struct StatevectorState {
     std::vector<MeasurementRecord> measurements;
     std::vector<ExecutionLog> logs;
     int shot_index = 0;
+    std::vector<double> last_measurement_time;
 };
 
 class StatevectorEngine {

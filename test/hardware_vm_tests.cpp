@@ -27,7 +27,8 @@ TEST(HardwareVMTests, AppliesNoiseEngine) {
         std::vector<int>{0},
     });
 
-    const auto measurements = vm.run(program, 1);
+    const auto result = vm.run(program, 1);
+    const auto& measurements = result.measurements;
     ASSERT_EQ(measurements.size(), 1u);
     EXPECT_EQ(measurements[0].bits, std::vector<int>({-1}));
 }
@@ -51,8 +52,8 @@ TEST(HardwareVMTests, RunsMultipleShots) {
         std::vector<int>{0, 1},
     });
 
-    const auto measurements = vm.run(program, 3);
-    EXPECT_EQ(measurements.size(), 3u);
+    const auto result = vm.run(program, 3);
+    EXPECT_EQ(result.measurements.size(), 3u);
 }
 
 TEST(HardwareVMTests, IdleNoiseInducesPhaseFlip) {
@@ -86,7 +87,8 @@ TEST(HardwareVMTests, IdleNoiseInducesPhaseFlip) {
         std::vector<int>{0},
     });
 
-    const auto measurements = vm.run(program, 1);
+    const auto result = vm.run(program, 1);
+    const auto& measurements = result.measurements;
     ASSERT_EQ(measurements.size(), 1u);
     // With strong idle-phase noise (Z), the H-Z-H sequence acts like X, so measurement yields 1.
     EXPECT_EQ(measurements[0].bits, std::vector<int>({1}));
@@ -115,7 +117,8 @@ TEST(HardwareVMTests, LossStateResetsEachShot) {
         std::vector<int>{0},
     });
 
-    const auto measurements = vm.run(program, 2);
+    const auto result = vm.run(program, 2);
+    const auto& measurements = result.measurements;
     ASSERT_EQ(measurements.size(), 2u);
     EXPECT_EQ(measurements[0].bits, std::vector<int>({-1}));
     EXPECT_EQ(measurements[1].bits, std::vector<int>({-1}));

@@ -14,7 +14,7 @@ struct ISAVersion {
     int minor = 0;
 };
 
-inline constexpr ISAVersion kCurrentISAVersion{1, 0};
+inline constexpr ISAVersion kCurrentISAVersion{1, 1};
 
 inline bool operator==(const ISAVersion& lhs, const ISAVersion& rhs) {
     return lhs.major == rhs.major && lhs.minor == rhs.minor;
@@ -28,8 +28,9 @@ inline std::string to_string(const ISAVersion& version) {
     return std::to_string(version.major) + "." + std::to_string(version.minor);
 }
 
-inline constexpr std::array<ISAVersion, 1> kSupportedISAVersions{{
+inline constexpr std::array<ISAVersion, 2> kSupportedISAVersions{{
     ISAVersion{1, 0},
+    ISAVersion{1, 1},
 }};
 
 inline bool is_supported_isa_version(const ISAVersion& version) {
@@ -99,7 +100,58 @@ struct Instruction {
     // Pulse:      payload = PulseInstruction
 };
 
+// ISA v1.1 hardware description extends the original v1.0 view
+// with richer, hardware-oriented metadata. Existing fields remain
+// valid and are treated as a legacy 1D geometry when the newer
+// structures are left at their defaults.
+
+struct SiteDescriptor {
+    int id = 0;
+    double x = 0.0;
+    double y = 0.0;
+    int zone_id = 0;
+};
+
+enum class ConnectivityKind {
+    AllToAll,
+    NearestNeighborChain,
+    NearestNeighborGrid,
+};
+
+struct NativeGate {
+    std::string name;
+    int arity = 1;
+    double duration_ns = 0.0;
+    double angle_min = 0.0;
+    double angle_max = 0.0;
+    ConnectivityKind connectivity = ConnectivityKind::AllToAll;
+};
+
+struct TimingLimits {
+    double min_wait_ns = 0.0;
+    double max_wait_ns = 0.0;
+    int max_parallel_single_qubit = 0;  // 0 = unlimited
+    int max_parallel_two_qubit = 0;     // 0 = unlimited
+    int max_parallel_per_zone = 0;      // 0 = unlimited
+    double measurement_cooldown_ns = 0.0;
+};
+
+struct PulseLimits {
+    double detuning_min = 0.0;
+    double detuning_max = 0.0;
+    double duration_min_ns = 0.0;
+    double duration_max_ns = 0.0;
+    int max_overlapping_pulses = 0;  // 0 = unlimited
+};
+
 struct HardwareConfig {
+    // Legacy v1.0 fields.
     std::vector<double> positions;  // 1D positions for atoms
     double blockade_radius = 0.0;
+
+    // v1.1 extensions.
+    std::vector<SiteDescriptor> sites;
+    std::vector<NativeGate> native_gates;
+    TimingLimits timing_limits;
+    PulseLimits pulse_limits;
 };

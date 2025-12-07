@@ -191,3 +191,28 @@ def test_quera_vm_run_reports_blockade_violation(capsys, tmp_path):
 
     assert exit_code == 1
     assert "Gate CX on qubits 0/15 violates blockade radius" in captured.err
+
+
+def test_quera_vm_grid_output_for_noisy_square_array(capsys):
+    """Summary output for the 2D profile should include a grid view."""
+
+    from neutral_atom_vm import cli
+
+    pytest.importorskip("bloqade")
+
+    argv = [
+        "run",
+        "--device",
+        "quera.na_vm.sim",
+        "--profile",
+        "noisy_square_array",
+        "--shots",
+        "1",
+        "tests.squin_programs:grid_entangle_4x4",
+    ]
+
+    exit_code = cli.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Grid:" in captured.out

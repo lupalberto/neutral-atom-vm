@@ -54,6 +54,27 @@ def test_loop_kernel_lowers_and_runs():
     assert len(result["measurements"][0]["bits"]) == 2
 
 
+def test_complex_squin_kernel_runs_on_benchmark_chain():
+    """A more complex Squin kernel should run on benchmark_chain and emit logs."""
+
+    pytest.importorskip("bloqade")
+
+    from .squin_programs import benchmark_chain_complex
+
+    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    job = device.submit(benchmark_chain_complex, shots=4)
+    result = job.result()
+
+    assert result["status"] == "completed"
+    assert result["measurements"]
+    # Kernel allocates and measures 8 qubits.
+    assert len(result["measurements"][0]["bits"]) == 8
+    # Execution logs should include at least some gate/measurement events.
+    assert "logs" in result
+    categories = {entry.get("category") for entry in result["logs"]}
+    assert "ApplyGate" in categories
+
+
 def test_build_device_from_config_injects_noise():
     cfg = {
         "positions": [0.0],

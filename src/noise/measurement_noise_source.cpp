@@ -23,14 +23,23 @@ void MeasurementNoiseSource::apply_measurement_noise(
         return;
     }
 
-    for (int& bit : record.bits) {
+    for (std::size_t idx = 0; idx < record.bits.size(); ++idx) {
+        int& bit = record.bits[idx];
         if (bit == -1) {
             continue;
         }
 
+        const int original = bit;
         if (has_quantum) {
             if (rng.uniform(0.0, 1.0) < p_quantum_flip_) {
                 bit = (bit == 0) ? 1 : 0;
+                log_event(
+                    "Noise",
+                    "type=measure_quantum_flip qubit=" + std::to_string(record.targets[idx]) +
+                        " before=" + std::to_string(original) +
+                        " after=" + std::to_string(bit) +
+                        " p_quantum_flip=" + std::to_string(p_quantum_flip_)
+                );
             }
         }
 
@@ -39,10 +48,20 @@ void MeasurementNoiseSource::apply_measurement_noise(
             if (bit == 0) {
                 if (r < readout_.p_flip0_to_1) {
                     bit = 1;
+                    log_event(
+                        "Noise",
+                        "type=measure_readout_flip qubit=" + std::to_string(record.targets[idx]) +
+                            " before=0 after=1 p01=" + std::to_string(readout_.p_flip0_to_1)
+                    );
                 }
             } else if (bit == 1) {
                 if (r < readout_.p_flip1_to_0) {
                     bit = 0;
+                    log_event(
+                        "Noise",
+                        "type=measure_readout_flip qubit=" + std::to_string(record.targets[idx]) +
+                            " before=1 after=0 p10=" + std::to_string(readout_.p_flip1_to_0)
+                    );
                 }
             }
         }
