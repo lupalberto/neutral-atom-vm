@@ -97,6 +97,10 @@ quera-vm run --device quera.na_vm.sim --profile benchmark_chain \
   --shots 1000 examples/ghz.py
 ```
 
+We also expose `local-cpu` and `local-arc` as alternative device IDs. They share the same geometry/noise table as `quera.na_vm.sim`, but `local-cpu` explicitly picks the CPU statevector backend while `local-arc` routes the same program to the oneAPI/SYCL implementation. The metadata returned by `neutral_atom_vm.available_presets()` carries distinct labels/descriptions ("CPU" vs. "Arc GPU") so you can tell them apart.
+
+When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. If the backend is not enabled, the CLI prints an explanatory error mentioning `NA_VM_WITH_ONEAPI=ON` so you can rebuild with the toggle.
+
 If a request violates a hardware constraint (for example, a CX between tweezers outside the preset blockade), the CLI now prints the reason on stderr and exits with status 1 so you can fix the circuit before spending shots. Successful runs also echo any backend `message` (e.g., rich diagnostics or loss counts) in the summary.
 
 From the SDK, the same preset is available via:

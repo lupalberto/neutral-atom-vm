@@ -1,3 +1,4 @@
+#include "hardware_vm.hpp"
 #include "service/job.hpp"
 
 #include <gtest/gtest.h>
@@ -5,6 +6,11 @@
 #include <string>
 
 namespace {
+
+TEST(ServiceApiTests, BackendSelectionRespectsLocalDevices) {
+    EXPECT_EQ(service::backend_for_device("local-arc"), BackendKind::kOneApi);
+    EXPECT_EQ(service::backend_for_device("local-cpu"), BackendKind::kCpu);
+}
 
 TEST(ServiceApiTests, JobRequestJson) {
     HardwareConfig cfg;

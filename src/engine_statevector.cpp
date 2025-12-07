@@ -5,13 +5,31 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <random>
 #include <stdexcept>
 
-StatevectorEngine::StatevectorEngine(HardwareConfig cfg) {
+StatevectorEngine::StatevectorEngine(
+    HardwareConfig cfg,
+    std::unique_ptr<StateBackend> backend,
+    std::uint64_t seed
+)
+    : backend_(backend ? std::move(backend) : std::make_unique<CpuStateBackend>()) {
     state_.hw = std::move(cfg);
-    std::random_device rd;
-    rng_.seed(rd());
+    if (seed != std::numeric_limits<std::uint64_t>::max()) {
+        rng_.seed(seed);
+    } else {
+        std::random_device rd;
+        rng_.seed(rd());
+    }
+}
+
+std::vector<std::complex<double>>& StatevectorEngine::state_vector() {
+    return backend_->state();
+}
+
+const std::vector<std::complex<double>>& StatevectorEngine::state_vector() const {
+    return backend_->state();
 }
 
 void StatevectorEngine::set_noise_model(std::shared_ptr<const NoiseEngine> noise) {
@@ -55,122 +73,52 @@ void StatevectorEngine::alloc_array(int n) {
     if (n <= 0) {
         throw std::invalid_argument("AllocArray requires positive number of qubits");
     }
-    state_.n_qubits = n;
-    state_.state.assign(static_cast<std::size_t>(1) << n, {0.0, 0.0});
-    state_.state[0] = {1.0, 0.0};  // |0...0>
+    backend_->alloc_array(n);
+    state_.n_qubits = backend_->num_qubits();
     if (state_.hw.positions.size() < static_cast<std::size_t>(n)) {
         state_.hw.positions.resize(static_cast<std::size_t>(n), 0.0);
     }
-}
-
-void StatevectorEngine::apply_single_qubit_unitary(
-    int q,
-    const std::array<std::complex<double>, 4>& U
-) {
-    const int n = state_.n_qubits;
-    if (q < 0 || q >= n) {
-        throw std::out_of_range("Invalid qubit index");
-    }
-
-    const std::size_t dim = state_.state.size();
-    const std::size_t bit = static_cast<std::size_t>(1) << q;
-    for (std::size_t i = 0; i < dim; ++i) {
-        if ((i & bit) == 0) {
-            const std::size_t j = i | bit;
-            const auto a0 = state_.state[i];
-            const auto a1 = state_.state[j];
-            state_.state[i] = U[0] * a0 + U[1] * a1;
-            state_.state[j] = U[2] * a0 + U[3] * a1;
-        }
-    }
-}
-
-void StatevectorEngine::apply_two_qubit_unitary(
-    int q0,
-    int q1,
-    const std::array<std::complex<double>, 16>& U
-) {
-    if (q0 == q1) {
-        throw std::invalid_argument("Two-qubit gate requires distinct targets");
-    }
-    if (q0 > q1) {
-        std::swap(q0, q1);
-    }
-
-    const int n = state_.n_qubits;
-    if (q0 < 0 || q1 < 0 || q0 >= n || q1 >= n) {
-        throw std::out_of_range("Invalid qubit index");
-    }
-
-    const std::size_t dim = state_.state.size();
-    const std::size_t b0 = static_cast<std::size_t>(1) << q0;
-    const std::size_t b1 = static_cast<std::size_t>(1) << q1;
-
-    for (std::size_t i = 0; i < dim; ++i) {
-        if (((i & b0) == 0) && ((i & b1) == 0)) {
-            const std::size_t i01 = i | b0;
-            const std::size_t i10 = i | b1;
-            const std::size_t i11 = i | b0 | b1;
-
-            const auto a00 = state_.state[i];
-            const auto a01 = state_.state[i01];
-            const auto a10 = state_.state[i10];
-            const auto a11 = state_.state[i11];
-
-            const std::array<std::complex<double>, 4> in = {a00, a01, a10, a11};
-            std::array<std::complex<double>, 4> out{};
-
-            for (int row = 0; row < 4; ++row) {
-                out[row] = {0.0, 0.0};
-                for (int col = 0; col < 4; ++col) {
-                    out[row] += U[4 * row + col] * in[col];
-                }
-            }
-
-            state_.state[i] = out[0];
-            state_.state[i01] = out[1];
-            state_.state[i10] = out[2];
-            state_.state[i11] = out[3];
-        }
-    }
+    backend_->sync_host_to_device();
 }
 
 void StatevectorEngine::apply_gate(const Gate& g) {
+    backend_->sync_host_to_device();
+
     if (g.name == "X" && g.targets.size() == 1) {
         std::array<std::complex<double>, 4> U{
             {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
-        apply_single_qubit_unitary(g.targets[0], U);
+        backend_->apply_single_qubit_unitary(g.targets[0], U);
     } else if (g.name == "H" && g.targets.size() == 1) {
         const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
         std::array<std::complex<double>, 4> U{
             {{inv_sqrt2, 0.0}, {inv_sqrt2, 0.0}, {inv_sqrt2, 0.0}, {-inv_sqrt2, 0.0}}};
-        apply_single_qubit_unitary(g.targets[0], U);
+        backend_->apply_single_qubit_unitary(g.targets[0], U);
     } else if (g.name == "Z" && g.targets.size() == 1) {
         std::array<std::complex<double>, 4> U{
             {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {-1.0, 0.0}}};
-        apply_single_qubit_unitary(g.targets[0], U);
+        backend_->apply_single_qubit_unitary(g.targets[0], U);
     } else if (g.name == "CX" && g.targets.size() == 2) {
         enforce_blockade(g.targets[0], g.targets[1]);
-        // Standard CNOT matrix in computational basis order |00>,|01>,|10>,|11|
         std::array<std::complex<double>, 16> U{{
             {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0},
             {0.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0},
             {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0},
             {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}, {0.0, 0.0},
         }};
-        apply_two_qubit_unitary(g.targets[0], g.targets[1], U);
+        backend_->apply_two_qubit_unitary(g.targets[0], g.targets[1], U);
     } else if (g.name == "CZ" && g.targets.size() == 2) {
         enforce_blockade(g.targets[0], g.targets[1]);
         std::array<std::complex<double>, 16> U{};
-        // identity except -1 phase on |11>
         U[0] = {1.0, 0.0};
         U[5] = {1.0, 0.0};
         U[10] = {1.0, 0.0};
         U[15] = {-1.0, 0.0};
-        apply_two_qubit_unitary(g.targets[0], g.targets[1], U);
+        backend_->apply_two_qubit_unitary(g.targets[0], g.targets[1], U);
     } else {
         throw std::runtime_error("Unsupported gate: " + g.name);
     }
+
+    backend_->sync_device_to_host();
 
     if (noise_) {
         StdRandomStream noise_rng(rng_);
@@ -178,7 +126,7 @@ void StatevectorEngine::apply_gate(const Gate& g) {
             noise_->apply_single_qubit_gate_noise(
                 g.targets[0],
                 state_.n_qubits,
-                state_.state,
+                backend_->state(),
                 noise_rng
             );
         } else if (g.targets.size() == 2) {
@@ -186,7 +134,7 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                 g.targets[0],
                 g.targets[1],
                 state_.n_qubits,
-                state_.state,
+                backend_->state(),
                 noise_rng
             );
         }
@@ -212,7 +160,7 @@ void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
         StdRandomStream noise_rng(rng_);
         noise_->apply_idle_noise(
             state_.n_qubits,
-            state_.state,
+            backend_->state(),
             wait_instr.duration,
             noise_rng
         );
@@ -261,13 +209,14 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
         }
     }
 
-    const std::size_t dim = state_.state.size();
+    auto& amps = backend_->state();
+    const std::size_t dim = amps.size();
     const std::size_t k = targets.size();
     const std::size_t combos = static_cast<std::size_t>(1) << k;
     std::vector<double> outcome_probs(combos, 0.0);
 
     for (std::size_t i = 0; i < dim; ++i) {
-        const double p = std::norm(state_.state[i]);
+        const double p = std::norm(amps[i]);
         if (p == 0.0) {
             continue;
         }
@@ -310,9 +259,9 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
             outcome |= (bit << idx);
         }
         if (outcome == selected) {
-            state_.state[i] /= norm_factor;
+            amps[i] /= norm_factor;
         } else {
-            state_.state[i] = {0.0, 0.0};
+            amps[i] = {0.0, 0.0};
         }
     }
 
@@ -329,4 +278,6 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
     }
 
     state_.measurements.push_back(std::move(record));
+
+    backend_->sync_host_to_device();
 }

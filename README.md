@@ -29,3 +29,17 @@ Run tests:
 ctest
 ```
 
+## Optional: enable the oneAPI backend
+
+If you have an Intel oneAPI/SYCL toolchain installed, you can build
+the GPU-backed statevector engine by configuring CMake with
+`-DNA_VM_WITH_ONEAPI=ON`:
+
+```bash
+cmake -B build -DNA_VM_WITH_ONEAPI=ON ..
+cmake --build build
+```
+
+When the build includes the oneAPI backend, the CLI/SDK expose
+`local-arc` as a device ID that maps to the same profiles as
+`quera.na_vm.sim` but executes on Intel Arc hardware via SYCL.

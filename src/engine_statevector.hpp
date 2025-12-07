@@ -3,10 +3,12 @@
 #include <array>
 #include <complex>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <random>
 #include <vector>
 
+#include "cpu_state_backend.hpp"
 #include "noise.hpp"
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
@@ -16,7 +18,6 @@
 
 struct StatevectorState {
     int n_qubits = 0;
-    std::vector<std::complex<double>> state;  // size = 2^n_qubits
     HardwareConfig hw;
     double logical_time = 0.0;
     std::vector<PulseInstruction> pulse_log;
@@ -25,7 +26,11 @@ struct StatevectorState {
 
 class StatevectorEngine {
   public:
-    explicit StatevectorEngine(HardwareConfig cfg);
+    explicit StatevectorEngine(
+        HardwareConfig cfg,
+        std::unique_ptr<StateBackend> backend = nullptr,
+        std::uint64_t seed = std::numeric_limits<std::uint64_t>::max()
+    );
 
     // Attach a shared noise model instance. If nullptr, the engine
     // evolves without adding additional noise beyond ideal gates.
@@ -37,6 +42,9 @@ class StatevectorEngine {
 
     void run(const std::vector<Instruction>& program);
 
+    std::vector<std::complex<double>>& state_vector();
+    const std::vector<std::complex<double>>& state_vector() const;
+
     const StatevectorState& state() const { return state_; }
 
   private:
@@ -44,6 +52,7 @@ class StatevectorEngine {
 
     std::shared_ptr<const NoiseEngine> noise_;
     std::mt19937_64 rng_{};
+    std::unique_ptr<StateBackend> backend_;
 
     void alloc_array(int n);
     void apply_gate(const Gate& g);
@@ -52,14 +61,4 @@ class StatevectorEngine {
     void wait_duration(const WaitInstruction& wait_instr);
     void apply_pulse(const PulseInstruction& pulse);
     void enforce_blockade(int q0, int q1) const;
-
-    void apply_single_qubit_unitary(
-        int q,
-        const std::array<std::complex<double>, 4>& U
-    );
-    void apply_two_qubit_unitary(
-        int q0,
-        int q1,
-        const std::array<std::complex<double>, 16>& U
-    );
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hardware_vm.hpp"
 #include "noise.hpp"
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
@@ -37,6 +38,8 @@ struct JobResult {
     double elapsed_time = 0.0;
     std::string message;
 };
+
+BackendKind backend_for_device(const std::string& device_id);
 
 std::string to_json(const JobRequest& job);
 std::string status_to_string(JobStatus status);

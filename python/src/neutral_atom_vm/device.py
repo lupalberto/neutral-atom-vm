@@ -168,6 +168,21 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     },
 }
 
+for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
+    if device_id != "quera.na_vm.sim":
+        continue
+    cpu_meta = dict(meta)
+    cpu_meta["label"] = f"{meta['label']} (CPU)"
+    cpu_meta["description"] = meta["description"] + " Running on the local CPU backend."
+    _PROFILE_METADATA[("local-cpu", profile)] = cpu_meta
+
+    arc_meta = dict(meta)
+    arc_meta["label"] = f"{meta['label']} (Arc GPU)"
+    arc_meta["description"] = (
+        meta["description"] + " Executed on Intel Arc via the oneAPI backend."
+    )
+    _PROFILE_METADATA[("local-arc", profile)] = arc_meta
+
 _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     # Legacy local runtime path: single pair of atoms.
     ("runtime", None): {
@@ -265,6 +280,12 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
     },
 }
+
+for (device_id, profile), config in list(_PROFILE_TABLE.items()):
+    if device_id != "quera.na_vm.sim":
+        continue
+    for alias in ("local-cpu", "local-arc"):
+        _PROFILE_TABLE[(alias, profile)] = deepcopy(config)
 
 
 def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:

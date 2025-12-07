@@ -22,7 +22,7 @@ int main() {
 
     engine.run(program);
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     std::cout << "Final state amplitudes:\n";
     for (std::size_t i = 0; i < state.size(); ++i) {
         std::cout << i << ": " << state[i] << '\n';

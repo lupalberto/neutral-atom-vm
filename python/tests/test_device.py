@@ -75,6 +75,8 @@ def test_available_presets_lists_built_in_profiles():
 
     assert "quera.na_vm.sim" in presets
     assert "runtime" in presets
+    assert "local-cpu" in presets
+    assert "local-arc" in presets
 
     sim_profiles = presets["quera.na_vm.sim"]
     for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
@@ -82,6 +84,17 @@ def test_available_presets_lists_built_in_profiles():
         entry = sim_profiles[profile]
         assert entry["positions"], "expected positions in preset"
         assert "metadata" in entry and entry["metadata"].get("description")
+
+
+@pytest.mark.parametrize("device_id", ["local-cpu", "local-arc"])
+def test_connect_device_aliases_preserve_profiles(device_id):
+    reference = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    aliased = neutral_atom_vm.connect_device(device_id, profile="benchmark_chain")
+
+    assert aliased.positions == reference.positions
+    assert aliased.blockade_radius == reference.blockade_radius
+    assert aliased.noise is not None
+    assert aliased.profile == reference.profile
 
 
 @pytest.mark.parametrize(

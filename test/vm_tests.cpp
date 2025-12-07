@@ -5,9 +5,43 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
+#include <random>
 
 namespace {
+
+class SeededFlipNoiseEngine : public NoiseEngine {
+ public:
+  std::shared_ptr<const NoiseEngine> clone() const override {
+    return std::make_shared<SeededFlipNoiseEngine>();
+  }
+
+  void apply_single_qubit_gate_noise(
+      int target,
+      int /*n_qubits*/,
+      std::vector<std::complex<double>>& amplitudes,
+      RandomStream& rng) const override {
+    const double value = rng.uniform(0.0, 1.0);
+    if (value <= 0.5) {
+      return;
+    }
+    const std::size_t mask = static_cast<std::size_t>(1) << target;
+    const std::size_t dim = amplitudes.size();
+    for (std::size_t idx = 0; idx < dim; ++idx) {
+      if ((idx & mask) == 0) {
+        const std::size_t flipped = idx | mask;
+        std::swap(amplitudes[idx], amplitudes[flipped]);
+      }
+    }
+  }
+};
+
+int expected_seeded_flip_bit(std::uint64_t seed) {
+  std::mt19937_64 rng(seed);
+  std::uniform_real_distribution<double> dist(0.0, 1.0);
+  return (dist(rng) > 0.5) ? 0 : 1;
+}
 
 TEST(StatevectorEngineTests, BellState) {
     HardwareConfig cfg;
@@ -29,7 +63,7 @@ TEST(StatevectorEngineTests, BellState) {
 
     engine.run(program);
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
 
     ASSERT_EQ(state.size(), 4u);
@@ -131,7 +165,7 @@ TEST(StatevectorEngineTests, MeasureSingleQubitTargets) {
     EXPECT_EQ(records[0].targets, std::vector<int>({0}));
     EXPECT_EQ(records[0].bits, std::vector<int>({0}));
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
     EXPECT_NEAR(std::abs(state[0]), inv_sqrt2, 1e-6);
     EXPECT_NEAR(std::abs(state[2]), inv_sqrt2, 1e-6);
@@ -162,7 +196,7 @@ TEST(StatevectorEngineTests, MeasureAllQubitsRecordsBits) {
     EXPECT_EQ(records[0].targets, std::vector<int>({0, 1}));
     EXPECT_EQ(records[0].bits, std::vector<int>({0, 1}));
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     EXPECT_NEAR(std::abs(state[2] - std::complex<double>(1.0, 0.0)), 0.0, 1e-9);
 }
 
@@ -334,6 +368,36 @@ TEST(HardwareVMTests, RejectsUnsupportedISAVersion) {
             ex.what(),
             "Unsupported ISA version 0.9 (supported: 1.0)"
         );
+    }
+}
+
+TEST(HardwareVMTests, RespectsShotSeeds) {
+    DeviceProfile profile;
+    profile.id = "seeded-shot-profile";
+    profile.hardware.positions = {0.0};
+    profile.hardware.blockade_radius = 1.0;
+    profile.noise_engine = std::make_shared<SeededFlipNoiseEngine>();
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    std::vector<std::uint64_t> seeds = {42ull, 99ull, 123456ull};
+    HardwareVM hvm(profile);
+    const auto measurements = hvm.run(program, static_cast<int>(seeds.size()), seeds);
+
+    ASSERT_EQ(measurements.size(), seeds.size());
+    for (std::size_t idx = 0; idx < seeds.size(); ++idx) {
+        EXPECT_EQ(measurements[idx].targets, std::vector<int>({0}));
+        ASSERT_EQ(measurements[idx].bits.size(), 1u);
+        EXPECT_EQ(measurements[idx].bits[0], expected_seeded_flip_bit(seeds[idx]));
     }
 }
 

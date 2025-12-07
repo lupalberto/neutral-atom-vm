@@ -1,7 +1,7 @@
 import json
 import pytest
 
-pytest.importorskip("bloqade")
+import bloqade
 
 
 def test_quera_vm_run_executes_kernel_and_prints_result(capsys):

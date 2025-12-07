@@ -92,6 +92,13 @@ void append_instruction_json(const Instruction& instr, std::ostringstream& out) 
 
 namespace service {
 
+BackendKind backend_for_device(const std::string& device_id) {
+    if (device_id == "local-arc") {
+        return BackendKind::kOneApi;
+    }
+    return BackendKind::kCpu;
+}
+
 std::string to_json(const JobRequest& job) {
     std::ostringstream out;
     out << std::setprecision(15);
@@ -167,6 +174,7 @@ JobResult JobRunner::run(const JobRequest& job) {
         profile.id = job.device_id;
         profile.isa_version = job.isa_version;
         profile.hardware = job.hardware;
+        profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
         }

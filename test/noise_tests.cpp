@@ -119,7 +119,7 @@ TEST(PhaseNoiseSourceTests, SingleQubitPhaseKickMatchesRandomStream) {
 
     engine.run(program);
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     ASSERT_EQ(state.size(), 2u);
 
     std::mt19937_64 rng_copy(4242);
@@ -170,7 +170,7 @@ TEST(PhaseNoiseSourceTests, IdlePhaseNoiseScalesWithDuration) {
 
     engine.run(program);
 
-    const auto& state = engine.state().state;
+    const auto& state = engine.state_vector();
     ASSERT_EQ(state.size(), 2u);
 
     std::mt19937_64 rng_copy(2025);

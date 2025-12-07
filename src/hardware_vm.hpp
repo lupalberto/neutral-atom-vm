@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -10,12 +11,18 @@
 // High-level hardware VM façade that executes ISA programs on a concrete
 // backend engine (currently the statevector runtime) using a device profile.
 
+enum class BackendKind {
+    kCpu,
+    kOneApi,
+};
+
 struct DeviceProfile {
     std::string id;
     ISAVersion isa_version = kCurrentISAVersion;
     HardwareConfig hardware;
     std::shared_ptr<const NoiseEngine> noise_engine;
-    // Future extensions: noise configuration, backend kind, resource limits.
+    BackendKind backend = BackendKind::kCpu;
+    // Future extensions: noise configuration, resource limits, diagnostics.
 };
 
 class HardwareVM {
@@ -29,7 +36,8 @@ class HardwareVM {
     // records across all shots.
     std::vector<MeasurementRecord> run(
         const std::vector<Instruction>& program,
-        int shots = 1
+        int shots = 1,
+        const std::vector<std::uint64_t>& shot_seeds = {}
     );
 
   private:
