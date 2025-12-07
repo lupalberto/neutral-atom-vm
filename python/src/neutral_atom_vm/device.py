@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 
 from copy import deepcopy
 
-from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job, JobResult
 from .squin_lowering import to_vm_program
 
 ProgramType = Sequence[Dict[str, Any]]
@@ -15,11 +15,30 @@ KernelType = Callable[..., Any]
 class JobHandle:
     """Represents an in-flight job submitted to a VM device."""
 
-    def __init__(self, result: Dict[str, Any]) -> None:
-        self._result = result
+    def __init__(
+        self,
+        payload: Dict[str, Any],
+        *,
+        device_id: str,
+        profile: Optional[str],
+        shots: int,
+    ) -> None:
+        self._payload = dict(payload)
+        self.device_id = device_id
+        self.profile = profile
+        self.shots = shots
+        self._result: JobResult | None = None
 
-    def result(self) -> Dict[str, Any]:
+    def result(self) -> JobResult:
         """Wait for the job to finish (immediate for local runner)."""
+
+        if self._result is None:
+            self._result = JobResult(
+                self._payload,
+                device_id=self.device_id,
+                profile=self.profile,
+                shots=self.shots,
+            )
         return self._result
 
 
@@ -59,7 +78,14 @@ class Device:
             noise=self.noise,
         )
         job_result = submit_job(request)
-        return JobHandle(job_result)
+        if not isinstance(job_result, dict):
+            raise TypeError("submit_job returned a non-dict result")
+        return JobHandle(
+            job_result,
+            device_id=self.id,
+            profile=self.profile,
+            shots=shots,
+        )
 
 
 def _validate_blockade_constraints(

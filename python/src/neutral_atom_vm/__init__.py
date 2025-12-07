@@ -9,9 +9,10 @@ from .device import (
     Device,
     JobHandle,
 )
-from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job, JobResult
 from .squin_lowering import to_vm_program, LoweringError
 from . import cli
+from .widgets import ProfileConfigurator, JobResultViewer
 
 
 __all__ = [
@@ -23,8 +24,11 @@ __all__ = [
     "HardwareConfig",
     "SimpleNoiseConfig",
     "JobRequest",
+    "JobResult",
     "to_vm_program",
     "LoweringError",
     "submit_job",
     "cli",
+    "ProfileConfigurator",
+    "JobResultViewer",
 ]

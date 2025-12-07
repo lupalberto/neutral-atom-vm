@@ -131,6 +131,51 @@ start from a JSON template returned by `available_presets()` and tweak it, then
 pass it to the CLI's `--profile-config` or to
 `neutral_atom_vm.build_device_from_config` in Python.
 
+### Notebook profile configurator
+
+To help tutorial authors and solutions engineers iterate on profile settings
+without digging through JSON, we now expose
+`neutral_atom_vm.widgets.ProfileConfigurator`. It renders an ipywidgets-based UI
+directly in Jupyter/VS Code, combining:
+
+- Device/profile dropdowns backed by `available_presets()`, including metadata
+  callouts so users understand geometry, persona, and noise focus.
+- A geometry tab where blockade radius and the atom positions array can be
+  edited inline (comma or newline separated floats).
+- A noise tab that groups the most common top-level parameters (SPAM, Pauli
+  channels, phase, damping, runtime loss) plus a textarea for the correlated CZ
+  matrix.
+
+`configurator.profile_payload` returns a dictionary compatible with
+`build_device_from_config`/`--profile-config`, so a notebook can capture the
+selected profile and feed it into `connect_device` or the CLI. This keeps the
+“discover → tweak → run” flow in one place and mirrors the CLI/SDK UX described
+above.
+
+Pair it with `neutral_atom_vm.widgets.JobResultViewer` to summarize the job
+output inline instead of dumping JSON blobs. Call
+`viewer.load_result(result, device=device_id, profile=profile_name, shots=shots)`
+right after `job.result()` to render status, elapsed time, and a paginated probability histogram.
+When the selected profile maps to a known grid (`noisy_square_array`, etc.),
+the viewer and the default HTML repr now render compact grid previews ahead of
+the histogram so tutorials can surface spatial patterns and relative weights
+without wading through huge JSON dumps.
+
+Need something brand-new? The configurator now includes a “Create new profile”
+option:
+
+- Enter a name, specify how many slots you want plus the spacing between them,
+  and hit “Populate positions” to seed the geometry (you can still fine‑tune
+  the coordinates manually afterward).
+- Set the blockade radius and tweak the noise controls just like you would for
+  a preset. The resulting `profile_payload` carries your custom name so you can
+  pass it straight into `build_device_from_config` or `--profile-config`.
+
+Notebook ergonomics now also improve by default: `JobHandle.result()` returns a
+dict-like object with an HTML representation, so simply evaluating `result` in a
+cell renders the same summary/counts block that the CLI prints—no need for
+`print(json.dumps(...))` unless you explicitly want raw JSON.
+
 What happens:
 1. The CLI loads `examples/ghz.py`, uses Bloqade/Kirin to lower the kernel to the VM dialect, and builds a program.
 2. It sends a `JobRequest` to a local VM daemon (or an in-process runner) with the requested device/profile.

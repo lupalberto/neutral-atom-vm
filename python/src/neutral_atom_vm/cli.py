@@ -11,6 +11,7 @@ from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
 from .device import connect_device, build_device_from_config
+from .layouts import grid_layout_for_profile
 
 
 def _load_kernel(target: str) -> Callable[..., Any]:
@@ -57,17 +58,6 @@ def _load_kernel(target: str) -> Callable[..., Any]:
     if not callable(kernel):
         raise SystemExit(f"Target {target!r} is not callable")
     return kernel
-
-
-GRID_LAYOUTS: dict[str, tuple[int, int]] = {
-    "noisy_square_array": (4, 4),
-}
-
-
-def _grid_layout_for_profile(profile: str | None) -> tuple[int, int] | None:
-    if profile is None:
-        return None
-    return GRID_LAYOUTS.get(profile)
 
 
 def _display_bit(bit: int) -> str:
@@ -118,7 +108,7 @@ def _summarize_result(
         key = "".join(str(int(b)) for b in bits)
         counts[key] += 1
 
-    grid_layout = _grid_layout_for_profile(profile)
+    grid_layout = grid_layout_for_profile(profile)
     grid_examples: dict[str, list[int]] = {}
 
     for rec in measurements:

@@ -15,6 +15,7 @@ dependencies = [
     "kirin-toolchain~=0.22.4",
     "bloqade",
     "pybind11",
+    "ipywidgets>=8.1",
 ]
 
 [project.scripts]
@@ -26,4 +27,3 @@ editable.verbose = false
 build-dir = "build-editable"
 cmake.version = ">=3.20"
 wheel.packages = ["src/neutral_atom_vm"]
-

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+from .display import render_job_result_html
+
 
 Program = Sequence[Dict[str, Any]]
 
@@ -308,6 +310,31 @@ class JobRequest:
         if self.noise:
             data["noise"] = self.noise.to_dict()
         return data
+
+
+class JobResult(dict):
+    """Dict-like container that renders nicely in notebooks."""
+
+    def __init__(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        device_id: str,
+        profile: str | None,
+        shots: int,
+    ) -> None:
+        super().__init__(payload)
+        self.device_id = device_id
+        self.profile = profile
+        self.shots = shots
+
+    def _repr_html_(self) -> str:  # pragma: no cover - exercised in notebooks
+        return render_job_result_html(
+            result=self,
+            device=self.device_id,
+            profile=self.profile,
+            shots=self.shots,
+        )
 
 
 def _normalize_job_mapping(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any]:

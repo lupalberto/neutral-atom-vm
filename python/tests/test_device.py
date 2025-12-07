@@ -165,3 +165,21 @@ def test_device_submit_forwards_thread_limit(monkeypatch):
     device.submit(program, shots=1, max_threads=7)
 
     assert captured["job"].max_threads == 7
+
+
+def test_job_result_renders_summary_html():
+    device = neutral_atom_vm.connect_device("runtime")
+
+    program = [
+        {"op": "AllocArray", "n_qubits": 2},
+        {"op": "Measure", "targets": [0, 1]},
+    ]
+
+    job = device.submit(program, shots=3)
+    result = job.result()
+
+    assert isinstance(result, dict)
+    html = result._repr_html_()
+    assert "Device" in html
+    assert "Shots" in html
+    assert "Histogram" in html
