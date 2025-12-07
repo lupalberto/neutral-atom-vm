@@ -38,7 +38,7 @@ HardwareVM::HardwareVM(DeviceProfile profile)
     }
 }
 
-std::vector<MeasurementRecord> HardwareVM::run(
+HardwareVM::RunResult HardwareVM::run(
     const std::vector<Instruction>& program,
     int shots,
     const std::vector<std::uint64_t>& shot_seeds,
@@ -74,6 +74,7 @@ std::vector<MeasurementRecord> HardwareVM::run(
         static_cast<std::size_t>(num_shots), worker_limit);
 
     std::vector<std::vector<MeasurementRecord>> per_shot_measurements(num_shots);
+    std::vector<std::vector<ExecutionLog>> per_shot_logs(num_shots);
     std::vector<std::thread> workers;
     workers.reserve(worker_count);
 
@@ -92,6 +93,7 @@ std::vector<MeasurementRecord> HardwareVM::run(
             this,
             &program,
             &per_shot_measurements,
+            &per_shot_logs,
             &seeds,
             start,
             end
@@ -99,11 +101,13 @@ std::vector<MeasurementRecord> HardwareVM::run(
             for (std::size_t shot = start; shot < end; ++shot) {
                 HardwareConfig hw = profile_.hardware;
                 StatevectorEngine engine(hw, make_state_backend(profile_.backend), seeds[shot]);
+                engine.set_shot_index(static_cast<int>(shot));
                 if (profile_.noise_engine) {
                     engine.set_noise_model(profile_.noise_engine);
                 }
                 engine.run(program);
                 per_shot_measurements[shot] = engine.state().measurements;
+                per_shot_logs[shot] = engine.state().logs;
             }
         });
         shot_offset = end;
@@ -113,11 +117,15 @@ std::vector<MeasurementRecord> HardwareVM::run(
         worker.join();
     }
 
-    std::vector<MeasurementRecord> all_measurements;
+    RunResult result;
+    std::vector<ExecutionLog>& all_logs = result.logs;
     for (const auto& shot_records : per_shot_measurements) {
-        all_measurements.insert(
-            all_measurements.end(), shot_records.begin(), shot_records.end());
+        result.measurements.insert(
+            result.measurements.end(), shot_records.begin(), shot_records.end());
+    }
+    for (const auto& shot_logs : per_shot_logs) {
+        all_logs.insert(all_logs.end(), shot_logs.begin(), shot_logs.end());
     }
 
-    return all_measurements;
+    return result;
 }

@@ -97,4 +97,26 @@ TEST(ServiceApiTests, JobRunnerRejectsUnsupportedISAVersion) {
     EXPECT_EQ(result.message, "Unsupported ISA version 0.9 (supported: 1.0)");
 }
 
+TEST(ServiceApiTests, JobRunnerEmitsExecutionLogs) {
+    service::JobRequest job;
+    job.job_id = "job-logs";
+    job.hardware.positions = {0.0, 1.0};
+    job.hardware.blockade_radius = 1.0;
+    job.program.push_back(Instruction{Op::AllocArray, 2});
+    job.program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+    job.program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    service::JobRunner runner;
+    const auto result = runner.run(job);
+
+    ASSERT_FALSE(result.logs.empty());
+    EXPECT_EQ(result.logs.front().category, "AllocArray");
+}
+
 }  // namespace

@@ -6,6 +6,7 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "cpu_state_backend.hpp"
@@ -22,6 +23,8 @@ struct StatevectorState {
     double logical_time = 0.0;
     std::vector<PulseInstruction> pulse_log;
     std::vector<MeasurementRecord> measurements;
+    std::vector<ExecutionLog> logs;
+    int shot_index = 0;
 };
 
 class StatevectorEngine {
@@ -41,6 +44,8 @@ class StatevectorEngine {
     void set_random_seed(std::uint64_t seed);
 
     void run(const std::vector<Instruction>& program);
+    void set_shot_index(int shot);
+    const std::vector<ExecutionLog>& logs() const { return state_.logs; }
 
     std::vector<std::complex<double>>& state_vector();
     const std::vector<std::complex<double>>& state_vector() const;
@@ -54,6 +59,7 @@ class StatevectorEngine {
     std::mt19937_64 rng_{};
     std::unique_ptr<StateBackend> backend_;
 
+    void log_event(const std::string& category, const std::string& message);
     void alloc_array(int n);
     void apply_gate(const Gate& g);
     void measure(const std::vector<int>& targets);

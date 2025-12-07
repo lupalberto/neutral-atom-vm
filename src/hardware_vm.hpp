@@ -35,7 +35,12 @@ class HardwareVM {
     // Execute the given program for the requested number of shots using
     // the configured device profile. Returns concatenated measurement
     // records across all shots.
-    std::vector<MeasurementRecord> run(
+    struct RunResult {
+        std::vector<MeasurementRecord> measurements;
+        std::vector<ExecutionLog> logs;
+    };
+
+    RunResult run(
         const std::vector<Instruction>& program,
         int shots = 1,
         const std::vector<std::uint64_t>& shot_seeds = {},

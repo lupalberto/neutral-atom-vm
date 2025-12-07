@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import logging
 import os
 import runpy
 import sys
@@ -94,6 +95,36 @@ def _summarize_result(
         print("Counts: (no measurements)")
 
 
+def _write_log_file(path: str, logs: Sequence[Mapping[str, Any]]) -> None:
+    log_dir = os.path.dirname(path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(formatter)
+    logger = logging.Logger("neutral_atom_vm.cli.log_file")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.addHandler(handler)
+    try:
+        for entry in logs:
+            shot = entry.get("shot")
+            logical_time = entry.get("time")
+            category = entry.get("category")
+            message = entry.get("message")
+            logger.info(
+                "shot=%s time=%s category=%s message=%s",
+                shot,
+                logical_time,
+                category,
+                message,
+            )
+    finally:
+        handler.flush()
+        handler.close()
+        logger.removeHandler(handler)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     kernel = _load_kernel(args.target)
 
@@ -118,6 +149,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     result = job.result()
+    if args.log_file:
+        logs = result.get("logs", [])
+        try:
+            _write_log_file(args.log_file, logs)
+        except OSError as exc:
+            print(f"Error writing log file {args.log_file!r}: {exc}", file=sys.stderr)
+            return 1
+        result.pop("logs", None)
 
     if args.output == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -185,6 +224,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=0,
         help="Maximum number of worker threads for shot execution (0=auto)",
+    )
+    run_parser.add_argument(
+        "--log-file",
+        help="Path to dump detailed VM logs (JSON array) instead of embedding them in stdout.",
     )
     run_parser.add_argument(
         "target",

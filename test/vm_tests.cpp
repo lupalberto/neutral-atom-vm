@@ -338,7 +338,8 @@ TEST(HardwareVMTests, RunsProgramWithIdealEngine) {
     });
 
     HardwareVM hvm(profile);
-    const auto measurements = hvm.run(program, /*shots=*/1);
+    const auto result = hvm.run(program, /*shots=*/1);
+    const auto& measurements = result.measurements;
 
     ASSERT_EQ(measurements.size(), 1u);
     EXPECT_EQ(measurements[0].targets, std::vector<int>({0, 1}));
@@ -391,7 +392,8 @@ TEST(HardwareVMTests, RespectsShotSeeds) {
 
     std::vector<std::uint64_t> seeds = {42ull, 99ull, 123456ull};
     HardwareVM hvm(profile);
-    const auto measurements = hvm.run(program, static_cast<int>(seeds.size()), seeds);
+    const auto result = hvm.run(program, static_cast<int>(seeds.size()), seeds);
+    const auto& measurements = result.measurements;
 
     ASSERT_EQ(measurements.size(), seeds.size());
     for (std::size_t idx = 0; idx < seeds.size(); ++idx) {

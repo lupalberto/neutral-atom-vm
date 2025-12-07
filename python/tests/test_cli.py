@@ -33,6 +33,40 @@ def test_quera_vm_run_executes_kernel_and_prints_result(capsys):
     assert '"measurements"' in out
 
 
+def test_quera_vm_run_writes_logs_to_file(tmp_path, capsys):
+    """`--log-file` should capture VM event logs separately from stdout."""
+
+    from neutral_atom_vm import cli
+
+    log_path = tmp_path / "queravm.log"
+    argv = [
+        "run",
+        "--output",
+        "json",
+        "--device",
+        "quera.na_vm.sim",
+        "--profile",
+        "ideal_small_array",
+        "--shots",
+        "2",
+        "--log-file",
+        str(log_path),
+        "tests.squin_programs:bell_pair",
+    ]
+
+    exit_code = cli.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert '"logs"' not in captured.out
+
+    assert log_path.exists()
+    contents = log_path.read_text()
+    assert "category=" in contents
+    assert "shot=" in contents
+    assert "message=" in contents
+
+
 def test_quera_vm_run_accepts_profile_config(capsys, tmp_path):
     """CLI profile config should override defaults and allow custom noise."""
 

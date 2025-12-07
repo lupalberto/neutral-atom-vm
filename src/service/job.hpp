@@ -37,6 +37,7 @@ struct JobResult {
     std::string job_id;
     JobStatus status = JobStatus::Pending;
     std::vector<MeasurementRecord> measurements;
+    std::vector<ExecutionLog> logs;
     double elapsed_time = 0.0;
     std::string message;
 };

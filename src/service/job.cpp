@@ -183,7 +183,9 @@ JobResult JobRunner::run(const JobRequest& job) {
         }
 
         HardwareVM vm(profile);
-        result.measurements = vm.run(job.program, shots, {}, job.max_threads);
+        const auto run_result = vm.run(job.program, shots, {}, job.max_threads);
+        result.measurements = run_result.measurements;
+        result.logs = run_result.logs;
         result.status = JobStatus::Completed;
     } catch (const std::exception& ex) {
         result.status = JobStatus::Failed;

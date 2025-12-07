@@ -17,6 +17,8 @@ def test_device_submit_program_runtime():
     job = device.submit(program, shots=1)
     result = job.result()
     assert result["status"] == "completed"
+    assert "logs" in result
+    assert any(entry.get("category") == "AllocArray" for entry in result["logs"])
     assert result["measurements"]
     assert result["measurements"][0]["bits"] == [0, 1]
 

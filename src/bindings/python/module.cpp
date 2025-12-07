@@ -75,6 +75,16 @@ py::dict job_result_to_dict(const service::JobResult& result) {
     }
     out["measurements"] = measurements;
     out["message"] = result.message;
+    py::list log_list;
+    for (const auto& entry : result.logs) {
+        py::dict log;
+        log["shot"] = entry.shot;
+        log["time"] = entry.logical_time;
+        log["category"] = entry.category;
+        log["message"] = entry.message;
+        log_list.append(log);
+    }
+    out["logs"] = log_list;
     return out;
 }
 

@@ -9,6 +9,23 @@
 #include <random>
 #include <stdexcept>
 
+namespace {
+
+std::string format_targets(const std::vector<int>& targets) {
+    std::ostringstream oss;
+    oss << "[";
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        if (i > 0) {
+            oss << ",";
+        }
+        oss << targets[i];
+    }
+    oss << "]";
+    return oss.str();
+}
+
+}  // namespace
+
 StatevectorEngine::StatevectorEngine(
     HardwareConfig cfg,
     std::unique_ptr<StateBackend> backend,
@@ -22,6 +39,15 @@ StatevectorEngine::StatevectorEngine(
         std::random_device rd;
         rng_.seed(rd());
     }
+}
+
+void StatevectorEngine::set_shot_index(int shot) {
+    state_.shot_index = shot;
+}
+
+void StatevectorEngine::log_event(const std::string& category, const std::string& message) {
+    state_.logs.push_back(
+        ExecutionLog{state_.shot_index, state_.logical_time, category, message});
 }
 
 std::vector<std::complex<double>>& StatevectorEngine::state_vector() {
@@ -45,6 +71,7 @@ void StatevectorEngine::set_random_seed(std::uint64_t seed) {
 }
 
 void StatevectorEngine::run(const std::vector<Instruction>& program) {
+    state_.logs.clear();
     for (const auto& instr : program) {
         switch (instr.op) {
             case Op::AllocArray:
@@ -79,6 +106,9 @@ void StatevectorEngine::alloc_array(int n) {
         state_.hw.positions.resize(static_cast<std::size_t>(n), 0.0);
     }
     backend_->sync_host_to_device();
+    std::ostringstream oss;
+    oss << "AllocArray n_qubits=" << n;
+    log_event("AllocArray", oss.str());
 }
 
 void StatevectorEngine::apply_gate(const Gate& g) {
@@ -139,6 +169,10 @@ void StatevectorEngine::apply_gate(const Gate& g) {
             );
         }
     }
+
+    std::ostringstream oss;
+    oss << g.name << " targets=" << format_targets(g.targets) << " param=" << g.param;
+    log_event("ApplyGate", oss.str());
 }
 
 void StatevectorEngine::move_atom(const MoveAtomInstruction& move) {
@@ -149,6 +183,9 @@ void StatevectorEngine::move_atom(const MoveAtomInstruction& move) {
         throw std::out_of_range("MoveAtom target out of range");
     }
     state_.hw.positions[static_cast<std::size_t>(move.atom)] = move.position;
+    std::ostringstream oss;
+    oss << "MoveAtom atom=" << move.atom << " position=" << move.position;
+    log_event("MoveAtom", oss.str());
 }
 
 void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
@@ -165,6 +202,10 @@ void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
             noise_rng
         );
     }
+
+    std::ostringstream oss;
+    oss << "Wait duration=" << wait_instr.duration;
+    log_event("Wait", oss.str());
 }
 
 void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
@@ -178,6 +219,10 @@ void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
         throw std::invalid_argument("Pulse duration must be non-negative");
     }
     state_.pulse_log.push_back(pulse);
+    std::ostringstream oss;
+    oss << "Pulse target=" << pulse.target << " detuning=" << pulse.detuning
+        << " duration=" << pulse.duration;
+    log_event("Pulse", oss.str());
 }
 
 void StatevectorEngine::enforce_blockade(int q0, int q1) const {
@@ -280,4 +325,10 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
     state_.measurements.push_back(std::move(record));
 
     backend_->sync_host_to_device();
+
+    const auto& latest = state_.measurements.back();
+    std::ostringstream oss;
+    oss << "Measure targets=" << format_targets(latest.targets)
+        << " bits=" << format_targets(latest.bits);
+    log_event("Measure", oss.str());
 }
