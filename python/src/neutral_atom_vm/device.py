@@ -254,6 +254,10 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
                 "two_qubit_target": 0.004,
                 "idle": 0.012,
             },
+            "amplitude_damping": {
+                "per_gate": 0.0015,
+                "idle_rate": 0.08,
+            },
             "idle_rate": 120.0,
             "correlated_gate": {
                 "matrix": [

@@ -1,6 +1,7 @@
 #include "noise.hpp"
 
 #include <cmath>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -9,6 +10,7 @@
 #include "noise/idle_dephasing_source.hpp"
 #include "noise/idle_phase_drift_source.hpp"
 #include "noise/loss_tracking_source.hpp"
+#include "noise/amplitude_damping_source.hpp"
 #include "noise/measurement_noise_source.hpp"
 #include "noise/phase_kick_noise_source.hpp"
 #include "noise/single_qubit_pauli_source.hpp"
@@ -146,6 +148,13 @@ void SimpleNoiseEngine::validate_config(const SimpleNoiseConfig& config) {
         throw std::invalid_argument(
             "Loss runtime probabilities must be non-negative and <= 1 per gate");
     }
+
+    if (config.amplitude_damping.per_gate < 0.0 ||
+        config.amplitude_damping.per_gate > 1.0 ||
+        config.amplitude_damping.idle_rate < 0.0) {
+        throw std::invalid_argument(
+            "Amplitude damping parameters must be in [0, 1] for per-gate and non-negative for idle");
+    }
 }
 
 std::vector<std::shared_ptr<const NoiseEngine>> SimpleNoiseEngine::build_sources(
@@ -173,6 +182,15 @@ std::vector<std::shared_ptr<const NoiseEngine>> SimpleNoiseEngine::build_sources
         sources.push_back(std::make_shared<MeasurementNoiseSource>(
             config.p_quantum_flip,
             config.readout
+        ));
+    }
+
+    const bool has_amplitude =
+        config.amplitude_damping.per_gate > 0.0 ||
+        config.amplitude_damping.idle_rate > 0.0;
+    if (has_amplitude) {
+        sources.push_back(std::make_shared<AmplitudeDampingSource>(
+            config.amplitude_damping
         ));
     }
 

@@ -59,6 +59,11 @@ struct PhaseNoiseConfig {
     double idle = 0.0;
 };
 
+struct AmplitudeDampingConfig {
+    double per_gate = 0.0;
+    double idle_rate = 0.0;
+};
+
 // Aggregated measurement-time noise model, combining:
 // - Quantum bit-flip-like effects accumulated before measurement.
 // - Classical readout noise.
@@ -86,6 +91,9 @@ struct SimpleNoiseConfig {
 
     // Random Z-phase kicks applied around gates and idles.
     PhaseNoiseConfig phase{};
+
+    // Probabilistic amplitude damping applied after gates/idle periods.
+    AmplitudeDampingConfig amplitude_damping{};
 
     // Runtime loss probabilities (per gate or per second during idle).
     LossRuntimeConfig loss_runtime{};

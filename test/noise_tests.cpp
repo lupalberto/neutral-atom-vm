@@ -255,4 +255,66 @@ TEST(LossTrackingSourceTests, GateLossSetsMeasurementToErasure) {
     EXPECT_EQ(records[0].bits, (std::vector<int>{-1}));
 }
 
+TEST(AmplitudeDampingSourceTests, GateDampingRelaxesExcitedState) {
+    HardwareConfig hw;
+    hw.positions = {0.0};
+
+    SimpleNoiseConfig cfg;
+    cfg.amplitude_damping.per_gate = 1.0;
+
+    auto noise = std::make_shared<SimpleNoiseEngine>(cfg);
+    StatevectorEngine engine(hw);
+    engine.set_noise_model(noise);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    engine.run(program);
+
+    const auto& records = engine.state().measurements;
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].bits, (std::vector<int>{0}));
+}
+
+TEST(AmplitudeDampingSourceTests, IdleDampingDrivesStateToGround) {
+    HardwareConfig hw;
+    hw.positions = {0.0};
+
+    SimpleNoiseConfig cfg;
+    cfg.amplitude_damping.idle_rate = 100.0;
+
+    auto noise = std::make_shared<SimpleNoiseEngine>(cfg);
+    StatevectorEngine engine(hw);
+    engine.set_noise_model(noise);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Wait,
+        WaitInstruction{0.1},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    engine.run(program);
+
+    const auto& records = engine.state().measurements;
+    ASSERT_EQ(records.size(), 1u);
+    EXPECT_EQ(records[0].bits, (std::vector<int>{0}));
+}
+
 }  // namespace

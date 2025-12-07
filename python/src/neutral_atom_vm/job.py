@@ -175,6 +175,25 @@ class PhaseNoiseConfig:
 
 
 @dataclass(frozen=True)
+class AmplitudeDampingConfig:
+    per_gate: float = 0.0
+    idle_rate: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "per_gate": self.per_gate,
+            "idle_rate": self.idle_rate,
+        }
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> "AmplitudeDampingConfig":
+        return cls(
+            per_gate=_to_float(mapping.get("per_gate")),
+            idle_rate=_to_float(mapping.get("idle_rate")),
+        )
+
+
+@dataclass(frozen=True)
 class SimpleNoiseConfig:
     p_quantum_flip: float = 0.0
     p_loss: float = 0.0
@@ -185,6 +204,7 @@ class SimpleNoiseConfig:
     )
     idle_rate: float = 0.0
     phase: PhaseNoiseConfig = field(default_factory=PhaseNoiseConfig)
+    amplitude_damping: AmplitudeDampingConfig = field(default_factory=AmplitudeDampingConfig)
     loss_runtime: LossRuntimeConfig = field(default_factory=LossRuntimeConfig)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -196,6 +216,7 @@ class SimpleNoiseConfig:
             "correlated_gate": self.correlated_gate.to_dict(),
             "idle_rate": self.idle_rate,
             "phase": self.phase.to_dict(),
+            "amplitude_damping": self.amplitude_damping.to_dict(),
             "loss_runtime": self.loss_runtime.to_dict(),
         }
 
@@ -221,6 +242,11 @@ class SimpleNoiseConfig:
             phase=PhaseNoiseConfig.from_mapping(
                 _normalize_mapping(mapping.get("phase"))
                 if isinstance(mapping.get("phase"), Mapping)
+                else {}
+            ),
+            amplitude_damping=AmplitudeDampingConfig.from_mapping(
+                _normalize_mapping(mapping.get("amplitude_damping"))
+                if isinstance(mapping.get("amplitude_damping"), Mapping)
                 else {}
             ),
             loss_runtime=LossRuntimeConfig.from_mapping(

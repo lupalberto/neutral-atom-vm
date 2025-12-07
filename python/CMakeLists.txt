@@ -38,6 +38,7 @@ add_library(vm STATIC
     ../src/oneapi_state_backend.cpp
     ../src/noise.cpp
     ../src/noise/pauli_utils.cpp
+    ../src/noise/amplitude_damping_source.cpp
     ../src/noise/measurement_noise_source.cpp
     ../src/noise/single_qubit_pauli_source.cpp
     ../src/noise/two_qubit_pauli_source.cpp
