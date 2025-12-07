@@ -37,6 +37,7 @@ class Device:
         self,
         program_or_kernel: Union[ProgramType, KernelType],
         shots: int = 1,
+        max_threads: Optional[int] = None,
     ) -> JobHandle:
         if callable(program_or_kernel):
             program = to_vm_program(program_or_kernel)
@@ -54,6 +55,7 @@ class Device:
             device_id=self.id,
             profile=self.profile,
             shots=shots,
+            max_threads=max_threads,
             noise=self.noise,
         )
         job_result = submit_job(request)

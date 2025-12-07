@@ -5,6 +5,7 @@
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
 
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@ struct JobRequest {
     HardwareConfig hardware;
     std::vector<Instruction> program;
     int shots = 1;
+    std::size_t max_threads = 0;
     std::map<std::string, std::string> metadata;
     ISAVersion isa_version = kCurrentISAVersion;
     std::optional<SimpleNoiseConfig> noise_config;

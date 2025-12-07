@@ -227,6 +227,10 @@ py::dict submit_job(const py::dict& job_obj) {
         job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
     }
 
+    if (job_obj.contains("max_threads")) {
+        job.max_threads = py::cast<std::size_t>(job_obj["max_threads"]);
+    }
+
     if (job_obj.contains("noise")) {
         const auto noise = py::cast<py::dict>(job_obj["noise"]);
         SimpleNoiseConfig cfg;

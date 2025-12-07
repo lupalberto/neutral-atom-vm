@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, MutableMapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 
 Program = Sequence[Dict[str, Any]]
@@ -261,6 +261,7 @@ class JobRequest:
     device_id: str = "runtime"
     profile: str | None = None
     shots: int = 1
+    max_threads: Optional[int] = None
     job_id: str = "python-client"
     metadata: Dict[str, str] = field(default_factory=dict)
     noise: SimpleNoiseConfig | None = None
@@ -274,6 +275,8 @@ class JobRequest:
             "hardware": self.hardware.to_dict(),
             "shots": int(self.shots),
         }
+        if self.max_threads is not None:
+            data["max_threads"] = int(self.max_threads)
         if self.metadata:
             data["metadata"] = dict(self.metadata)
         if self.noise:

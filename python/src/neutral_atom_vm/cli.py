@@ -108,8 +108,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     else:
         device = connect_device(args.device, profile=args.profile)
 
+    if args.threads < 0:
+        raise SystemExit("--threads must be >= 0")
+    thread_limit: int | None = args.threads if args.threads > 0 else None
+
     try:
-        job = device.submit(kernel, shots=args.shots)
+        job = device.submit(kernel, shots=args.shots, max_threads=thread_limit)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -175,6 +179,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=1,
         help="Number of shots to execute",
+    )
+    run_parser.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="Maximum number of worker threads for shot execution (0=auto)",
     )
     run_parser.add_argument(
         "target",

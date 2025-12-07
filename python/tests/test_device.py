@@ -1,4 +1,5 @@
 import neutral_atom_vm
+import neutral_atom_vm.device as device_mod
 
 import pytest
 from neutral_atom_vm import to_vm_program
@@ -122,3 +123,22 @@ def test_device_submit_raises_on_blockade_violation():
 
     with pytest.raises(ValueError, match="blockade radius"):
         device.submit(program, shots=1)
+
+
+def test_device_submit_forwards_thread_limit(monkeypatch):
+    captured = {}
+
+    def fake_submit(job):
+        captured["job"] = job
+        return {"status": "completed", "measurements": []}
+
+    monkeypatch.setattr(device_mod, "submit_job", fake_submit)
+
+    device = neutral_atom_vm.connect_device("runtime")
+    program = [
+        {"op": "AllocArray", "n_qubits": 1},
+        {"op": "Measure", "targets": [0]},
+    ]
+    device.submit(program, shots=1, max_threads=7)
+
+    assert captured["job"].max_threads == 7

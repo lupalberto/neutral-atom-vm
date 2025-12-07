@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -37,7 +38,8 @@ class HardwareVM {
     std::vector<MeasurementRecord> run(
         const std::vector<Instruction>& program,
         int shots = 1,
-        const std::vector<std::uint64_t>& shot_seeds = {}
+        const std::vector<std::uint64_t>& shot_seeds = {},
+        std::size_t max_threads = 0
     );
 
   private:

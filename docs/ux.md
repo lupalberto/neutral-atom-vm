@@ -67,6 +67,9 @@ quera-vm run \
   examples/ghz.py
 ```
 
+If you need to cap CPU usage or force a deterministic scheduling order, use `--threads N`
+to limit VM worker threads per shot (0 falls back to the hardware concurrency default).
+
 For ad-hoc experiments, `--profile-config path/to/profile.json` can override the
 built-in profile definitions. The JSON file can specify geometry (`positions`,
 `blockade_radius`) and the noise configuration that eventually becomes

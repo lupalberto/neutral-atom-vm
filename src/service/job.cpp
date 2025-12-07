@@ -127,6 +127,9 @@ std::string to_json(const JobRequest& job) {
         append_instruction_json(job.program[i], out);
     }
     out << "],";
+    if (job.max_threads > 0) {
+        out << "\"max_threads\":" << job.max_threads << ",";
+    }
     out << "\"metadata\":{";
     bool first_entry = true;
     for (const auto& [key, value] : job.metadata) {
@@ -180,7 +183,7 @@ JobResult JobRunner::run(const JobRequest& job) {
         }
 
         HardwareVM vm(profile);
-        result.measurements = vm.run(job.program, shots);
+        result.measurements = vm.run(job.program, shots, {}, job.max_threads);
         result.status = JobStatus::Completed;
     } catch (const std::exception& ex) {
         result.status = JobStatus::Failed;

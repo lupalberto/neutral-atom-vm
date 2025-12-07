@@ -2,6 +2,7 @@
 #include "oneapi_state_backend.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
@@ -40,7 +41,8 @@ HardwareVM::HardwareVM(DeviceProfile profile)
 std::vector<MeasurementRecord> HardwareVM::run(
     const std::vector<Instruction>& program,
     int shots,
-    const std::vector<std::uint64_t>& shot_seeds
+    const std::vector<std::uint64_t>& shot_seeds,
+    std::size_t max_threads
 ) {
     if (!is_supported_isa_version(profile_.isa_version)) {
         throw std::runtime_error(
@@ -65,10 +67,11 @@ std::vector<MeasurementRecord> HardwareVM::run(
         }
     }
 
-    const unsigned int concurrency_hint = std::thread::hardware_concurrency();
-    const unsigned int worker_limit = concurrency_hint > 0 ? concurrency_hint : 1u;
+    const std::size_t hardware_threads = std::thread::hardware_concurrency();
+    const std::size_t default_threads = hardware_threads > 0 ? hardware_threads : 1;
+    const std::size_t worker_limit = max_threads > 0 ? max_threads : default_threads;
     const std::size_t worker_count = std::min<std::size_t>(
-        static_cast<std::size_t>(num_shots), static_cast<std::size_t>(worker_limit));
+        static_cast<std::size_t>(num_shots), worker_limit);
 
     std::vector<std::vector<MeasurementRecord>> per_shot_measurements(num_shots);
     std::vector<std::thread> workers;
