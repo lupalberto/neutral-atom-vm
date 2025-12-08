@@ -1,6 +1,7 @@
 import { defineConfig } from "astro/config";
 
 export default defineConfig({
-  site: "https://quera.example.com/neutral-atom-vm",
+  // GitHub Pages project URL so Astro can generate correct absolute links.
+  site: "https://lupalberto.github.io/neutral-atom-vm",
   integrations: [],
 });
