@@ -18,8 +18,8 @@ RUN apt-get update && \
         python3-venv && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g 1000 quera && \
-    useradd -m -u 1000 -g 1000 -s /bin/bash quera
+RUN groupadd -g 1001 quera && \
+    useradd -m -u 1001 -g 1001 -s /bin/bash quera
 
 WORKDIR /workspace
 COPY . /workspace
