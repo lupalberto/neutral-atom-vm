@@ -9,8 +9,9 @@ import logging
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
-from neutral_atom_vm.job import submit_job
+from neutral_atom_vm.job import job_result, job_status, submit_job_async
 
 
 logger = logging.getLogger("neutral_atom_vm.vm_service")
@@ -23,14 +24,52 @@ class VMJobRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # pragma: no cover - coverage not needed for service stub
         logger.info("%s - - %s", self.client_address[0], format % args)
 
-    def do_GET(self) -> None:  # pragma: no cover - coverage not needed for service stub
-        if self.path == "/healthz":
-            self._send_json({"status": "ok"})
+    def _parsed_path(self) -> str:
+        path = urlparse(self.path).path
+        normalized = path.rstrip("/")
+        return normalized if normalized else "/"
+
+    def _canonical_job_base(self) -> str:
+        trimmed = self.job_endpoint.rstrip("/")
+        return trimmed if trimmed else "/"
+
+    def _match_job_suffix(self, normalized_path: str, job_base: str) -> tuple[str, str] | None:
+        if job_base == "/":
+            tail = normalized_path.lstrip("/")
         else:
-            self.send_error(404, "not found")
+            prefix = job_base + "/"
+            if not normalized_path.startswith(prefix):
+                return None
+            tail = normalized_path[len(prefix) :]
+        if not tail:
+            return None
+        parts = tail.split("/")
+        if len(parts) != 2:
+            return None
+        job_id, verb = parts
+        if verb not in {"status", "result"}:
+            return None
+        return job_id, verb
+
+    def do_GET(self) -> None:  # pragma: no cover - coverage not needed for service stub
+        normalized = self._parsed_path()
+        job_base = self._canonical_job_base()
+        if normalized == "/healthz":
+            self._send_json({"status": "ok"})
+            return
+        match = self._match_job_suffix(normalized, job_base)
+        if match:
+            job_id, verb = match
+            if verb == "status":
+                self._handle_job_status(job_id)
+            else:
+                self._handle_job_result(job_id)
+            return
+        self.send_error(404, "not found")
 
     def do_POST(self) -> None:
-        if self.path != self.job_endpoint:
+        normalized = self._parsed_path()
+        if normalized != self._canonical_job_base():
             self.send_error(404, "job endpoint is %s" % self.job_endpoint)
             return
 
@@ -54,13 +93,40 @@ class VMJobRequestHandler(BaseHTTPRequestHandler):
             payload = dict(self.default_profile, **payload)
 
         try:
-            result = submit_job(payload)
+            result = submit_job_async(payload)
         except Exception as exc:  # pragma: no cover - defensive guard
-            logger.exception("Job submission failed")
+            logger.exception("Async job submission failed")
             self.send_error(500, f"job submission failed: {exc}")
             return
 
-        self._send_json(result)
+        job_id = result.get("job_id")
+        if not job_id:
+            logger.error("Async submission returned no job_id: %s", result)
+            self.send_error(500, "job submission returned invalid payload")
+            return
+
+        self._send_json({"job_id": job_id, "status": "pending"})
+
+    def _handle_job_status(self, job_id: str) -> None:
+        try:
+            payload = job_status(job_id)
+        except Exception as exc:
+            logger.exception("Job status check failed")
+            self.send_error(500, f"job status failed: {exc}")
+            return
+        self._send_json(payload)
+
+    def _handle_job_result(self, job_id: str) -> None:
+        try:
+            payload = job_result(job_id)
+        except RuntimeError as exc:
+            self.send_error(404, f"job result not ready: {exc}")
+            return
+        except Exception as exc:
+            logger.exception("Job result retrieval failed")
+            self.send_error(500, f"job result failed: {exc}")
+            return
+        self._send_json(payload)
 
     def _send_json(self, body: Any, status: int = 200) -> None:
         payload = json.dumps(body).encode("utf-8")

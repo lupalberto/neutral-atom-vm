@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import runpy
+import shlex
+import subprocess
 import sys
 from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
@@ -91,19 +93,20 @@ def _summarize_result(
     device: str,
     profile: str | None,
     shots: int,
-) -> None:
+) -> str:
     status = result.get("status", "unknown")
     elapsed = result.get("elapsed_time", None)
     measurements = result.get("measurements", [])
+    lines: list[str] = []
 
-    print(f"Device: {device} (profile={profile!r})")
-    print(f"Shots: {shots}")
-    print(f"Status: {status}")
+    lines.append(f"Device: {device} (profile={profile!r})")
+    lines.append(f"Shots: {shots}")
+    lines.append(f"Status: {status}")
     if elapsed is not None:
-        print(f"Elapsed time: {elapsed:.6f} s")
+        lines.append(f"Elapsed time: {elapsed:.6f} s")
     message = result.get("message")
     if message:
-        print(f"Message: {message}")
+        lines.append(f"Message: {message}")
 
     counts: Counter[str] = Counter()
     for rec in measurements:
@@ -125,19 +128,21 @@ def _summarize_result(
             grid_examples.setdefault(key, list(int(b) for b in bits))
 
     if counts:
-        print("Counts:")
+        lines.append("Counts:")
         for bitstring, count in sorted(counts.items()):
-            print(f"  {bitstring}: {count}")
+            lines.append(f"  {bitstring}: {count}")
             if grid_layout:
-                lines = _grid_lines_for_bits(
+                grid_lines = _grid_lines_for_bits(
                     grid_examples.get(bitstring, []), grid_layout
                 )
-                if lines:
-                    print("    Grid:")
-                    for line in lines:
-                        print(f"      {line}")
+                if grid_lines:
+                    lines.append("    Grid:")
+                    for line in grid_lines:
+                        lines.append(f"      {line}")
     else:
-        print("Counts: (no measurements)")
+        lines.append("Counts: (no measurements)")
+
+    return "\n".join(lines)
 
 
 def _write_log_file(path: str, logs: Sequence[Mapping[str, Any]]) -> None:
@@ -170,6 +175,23 @@ def _write_log_file(path: str, logs: Sequence[Mapping[str, Any]]) -> None:
         logger.removeHandler(handler)
 
 
+def _page_output(text: str) -> None:
+    if not text.endswith("\n"):
+        text += "\n"
+    pager_cmd = os.environ.get("PAGER", "less -R")
+    try:
+        pager_args = shlex.split(pager_cmd)
+    except ValueError:
+        pager_args = pager_cmd.split()
+    if not pager_args:
+        print(text, end="")
+        return
+    try:
+        subprocess.run(pager_args, input=text, encoding="utf-8", check=False)
+    except OSError:
+        print(text, end="")
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     kernel = _load_kernel(args.target)
 
@@ -188,6 +210,38 @@ def _cmd_run(args: argparse.Namespace) -> int:
         raise SystemExit("--threads must be >= 0")
     thread_limit: int | None = args.threads if args.threads > 0 else None
 
+    status_callback: Callable[[Mapping[str, Any]], None] | None = None
+    status_line_active = False
+    if args.service_url:
+        last_status_line: str | None = None
+        bar_width = 20
+        line_width = 0
+
+        def log_status(payload: Mapping[str, Any]) -> None:
+            nonlocal last_status_line
+            nonlocal line_width
+            nonlocal status_line_active
+            job_id = payload.get("job_id", "<unknown>")
+            status_name = payload.get("status", "unknown")
+            percent = payload.get("percent_complete")
+            if isinstance(percent, (int, float)):
+                progress = max(0.0, min(1.0, float(percent)))
+                filled = int(progress * bar_width)
+                bar = "[" + "#" * filled + "-" * (bar_width - filled) + "]"
+                status_line = (
+                    f"Job {job_id}: {status_name} {bar} {progress * 100:.0f}%"
+                )
+            else:
+                status_line = f"Job {job_id}: {status_name}"
+             if status_line != last_status_line:
+                 line_width = max(line_width, len(status_line))
+                 padded = status_line.ljust(line_width)
+                 print(f"\r{padded}", end="", file=sys.stderr, flush=True)
+                 status_line_active = True
+                 last_status_line = status_line
+
+        status_callback = log_status
+
     try:
         if args.service_url:
             job_request = device.build_job_request(
@@ -199,6 +253,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 job_request,
                 args.service_url,
                 timeout=args.service_timeout,
+                status_callback=status_callback,
             )
         else:
             job = device.submit(kernel, shots=args.shots, max_threads=thread_limit)
@@ -222,12 +277,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.output == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        _summarize_result(
+        summary_text = _summarize_result(
             result,
             device=args.device,
             profile=device.profile,
             shots=args.shots,
         )
+        use_pager = args.use_pager
+        if use_pager is None:
+            use_pager = sys.stdout.isatty()
+        if use_pager and summary_text:
+            _page_output(summary_text)
+        else:
+            print(summary_text)
     return 0
 
 
@@ -300,10 +362,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=30.0,
         help="Seconds to wait when contacting the remote service (only used with --service-url).",
     )
+    pager_group = run_parser.add_mutually_exclusive_group()
+    pager_group.add_argument(
+        "--pager",
+        dest="use_pager",
+        action="store_true",
+        help="Display summary output through the configured pager (default when stdout is a TTY).",
+    )
+    pager_group.add_argument(
+        "--no-pager",
+        dest="use_pager",
+        action="store_false",
+        help="Disable pager output even if stdout is a TTY.",
+    )
     run_parser.add_argument(
         "target",
         help="Kernel target to run, as MODULE:FUNC",
     )
+    run_parser.set_defaults(use_pager=None)
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 

@@ -24,10 +24,12 @@ docker build -t neutral-atom-vm:oneapi .
 docker run --rm -p 8080:8080 neutral-atom-vm:oneapi
 ```
 
-By default the service listens on `0.0.0.0:8080` and exposes two endpoints:
+By default the service listens on `0.0.0.0:8080` and exposes a small REST surface:
 
 - `GET /healthz` — returns `{"status": "ok"}`.
-- `POST /job` — expects a JSON object shaped like `neutral_atom_vm.job.submit_job` takes (`program`, `hardware`, etc.).
+- `POST /job` — enqueues the JSON job payload with the shared VM runner and immediately returns an acknowledgement such as `{"job_id": "job-0", "status": "pending"}`. The job keeps running in the background; use the job-specific endpoints below to follow its progress.
+- `GET /job/{job_id}/status` — mirrors `neutral_atom_vm.job.job_status` (`status`, `percent_complete`, `message`, and recent logs) so callers can poll for updates.
+- `GET /job/{job_id}/result` — mirrors `neutral_atom_vm.job.job_result` and returns the completed measurements, logs, and diagnostics once the job finishes (returns `404`/`job_id not found` while the job is still running).
 
 You can override the listen parameters via `CMD` arguments. The default entrypoint command is:
 
@@ -50,7 +52,54 @@ curl -X POST http://localhost:8080/job \
   }'
 ```
 
-The response mirrors `submit_job`, returning the job status, measurements, and diagnostics.
+The response mirrors the new asynchronous queue, returning just the job identifier and an initial status message:
+
+```json
+{
+  "job_id": "job-0",
+  "status": "pending"
+}
+```
+
+Use the job-specific endpoints (`GET /job/job-0/status` and `GET /job/job-0/result`) to check progress and fetch the final measurements once the job completes.
+
+### Polling jobs
+
+The service deliberately splits scheduling (a quick HTTP `POST /job`) from execution so you can submit many jobs even if they take a while to finish. Use `curl` (or `quera-vm run` with `--service-url`) to poll the JSON status/result endpoints:
+
+```bash
+curl -s http://localhost:8080/job/job-0/status
+```
+
+Typical responses look like:
+
+```json
+{
+  "job_id": "job-0",
+  "status": "running",
+  "percent_complete": 0.42,
+  "message": "",
+  "recent_logs": [
+    {"shot": 0, "time": 0.1, "category": "Timing", "message": "ApplyGate CX"}
+  ]
+}
+```
+
+```bash
+curl -s http://localhost:8080/job/job-0/result
+```
+
+When the job has finished, the `/result` response mirrors `submit_job`'s output (measurements, logs, diagnostics). While the job is still running `/result` returns a `404` / `job_id not found`.
+
+### Host connectivity
+
+When you run the Docker image you must publish port `8080` for the host to reach the service. The recommended command is:
+
+```bash
+docker run --rm -p 8080:8080 neutral-atom-vm:oneapi
+```
+
+Inside the container `localhost:8080` already hits the service, so `quera-vm run --service-url http://localhost:8080/job` works there without extra flags. From the host the same URL only succeeds if the port was published; otherwise the connection is refused (the CLI sees a `ConnectionError`). This explains why the command worked inside the container but failed from the host after the recent service change. Keep the port mapping so host-side tooling can reach the VM service.
 
 ## Optional profile
 
