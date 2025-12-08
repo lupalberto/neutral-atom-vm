@@ -42,7 +42,6 @@ class GridLayout:
 
 # Profiles that correspond to conceptual grids.
 _GRID_LAYOUTS: Dict[str, GridLayout] = {
-    "runtime": GridLayout(dim=1, rows=1, cols=2, spacing=(1.0, 1.0, 1.0)),
     "ideal_small_array": GridLayout(dim=1, rows=1, cols=10, spacing=(1.0, 1.0, 1.0)),
     "noisy_square_array": GridLayout(dim=2, rows=4, cols=4, spacing=(1.0, 1.0, 1.0)),
     "lossy_chain": GridLayout(dim=1, rows=1, cols=6, spacing=(1.5, 1.0, 1.0)),

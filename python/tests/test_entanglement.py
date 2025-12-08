@@ -12,7 +12,7 @@ from .squin_programs import bell_pair  # noqa: E402
 def test_bell_pair_produces_correlated_bits():
     """Bell pair should yield perfectly correlated measurement outcomes."""
 
-    device = connect_device("runtime")
+    device = connect_device("local-cpu", profile="ideal_small_array")
     handle = device.submit(bell_pair, shots=32)
     result = handle.result()
 
@@ -24,4 +24,3 @@ def test_bell_pair_produces_correlated_bits():
         bits = record.get("bits")
         # Expect two-qubit readout where both bits are always equal (00 or 11).
         assert bits == [0, 0] or bits == [1, 1]
-

@@ -19,7 +19,7 @@ Each persona interacts with the VM via different surfaces, but they all rely on 
 
 ## 1. Python SDK / Bloqade Journey
 
-Goal: `connect_device("quera.na_vm.sim", profile="ideal_small_array")` returns a device handle that behaves like actual hardware.
+Goal: `connect_device("local-cpu", profile="ideal_small_array")` returns a device handle that behaves like actual hardware.
 
 Flow:
 
@@ -39,7 +39,7 @@ Flow:
 3. Device selection:
    ```python
    from neutral_atom_vm import connect_device
-   dev = connect_device("quera.na_vm.sim", profile="ideal_small_array")
+   dev = connect_device("local-cpu", profile="ideal_small_array")
    ```
 4. Job submission:
    ```python
@@ -47,7 +47,7 @@ Flow:
    result = job.result()
    print(result.measurements)
    ```
-   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we also expose `device_id="runtime"` which still drives the local C++ runtime directly using a built-in default profile.
+   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we also expose `device_id="local-cpu"` (and `local-arc`) to reach the same local C++ runtime with the legacy defaults.
 5. Under the hood: the Python SDK builds a `JobRequest`, attaches hardware/noise profiles, and submits to `JobRunner`, which picks the appropriate backend (ideal, noisy Pauli, etc.) and returns `JobResult`.
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.
@@ -67,7 +67,7 @@ def reuse_measured_qubit():
     squin.h(q[0])  # fails the benchmark_chain cooldown without an intervening Wait
 ```
 
-Running this via `connect_device("quera.na_vm.sim", profile="benchmark_chain")` will raise `runtime_error: Gate violates measurement cooldown on qubit 0`. The fix is to insert a `Wait` (or otherwise let the lowered program advance `logical_time`) before applying another gate to that site. This demonstrates how the ISA/profile contract surfaces hardware constraints, and why compilers/users must respect timing limits or the VM will reject the program before it reaches the engine.
+Running this via `connect_device("local-cpu", profile="benchmark_chain")` will raise `runtime_error: Gate violates measurement cooldown on qubit 0`. The fix is to insert a `Wait` (or otherwise let the lowered program advance `logical_time`) before applying another gate to that site. This demonstrates how the ISA/profile contract surfaces hardware constraints, and why compilers/users must respect timing limits or the VM will reject the program before it reaches the engine.
 By adding `squin.wait(5.0)` (or any duration ≥ 5.0) between the `measure` and the following gate, the lowered program gains a `<Wait duration=5.0>` instruction. That increases `logical_time`, satisfies the cooldown, and allows the next `ApplyGate` to execute. This mirrors real hardware: you must budget time after measurements before reusing the same tweezers.
 
 ---
@@ -79,7 +79,7 @@ Goal: provide a shortcut for developers to run kernels without writing Python gl
 Example command:
 ```
 quera-vm run \
-  --device quera.na_vm.sim \
+  --device local-cpu \
   --profile dev_debug \
   --shots 1_000 \
   examples/ghz.py
@@ -114,24 +114,23 @@ only pick from vetted presets or load a full profile JSON. Both the CLI and the
 Python SDK share the same registry, which can be inspected via
 `neutral_atom_vm.available_presets()` for discoverability.
 
-| Device ID          | Profile             | Geometry summary                                         | Noise focus                                                     | Primary persona/use case        |
-|--------------------|---------------------|-----------------------------------------------------------|-----------------------------------------------------------------|---------------------------------|
-| `runtime`          | `default` (None)    | Two tweezers separated by 1.0 units                       | None - deterministic; legacy service regression                 | Native regression/unit testing  |
-| `quera.na_vm.sim` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
-| `quera.na_vm.sim` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
-| `quera.na_vm.sim` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
-| `quera.na_vm.sim` | `lossy_block`       | 16-site 2×4×2 block (1.5×1.0×1.0 spacing, blockade 1.5)    | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
-| `quera.na_vm.sim` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
-| `quera.na_vm.sim` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
+| Device ID   | Profile             | Geometry summary                                         | Noise focus                                                     | Primary persona/use case        |
+|-------------|---------------------|----------------------------------------------------------|-----------------------------------------------------------------|---------------------------------|
+| `local-cpu` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
+| `local-cpu` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
+| `local-cpu` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `local-cpu` | `lossy_block`       | 16-site 2×4×2 block (1.5×1.0×1.0 spacing, blockade 1.5)   | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `local-cpu` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
+| `local-cpu` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
 
 To use one of these presets from the CLI:
 
 ```
-quera-vm run --device quera.na_vm.sim --profile benchmark_chain \
+quera-vm run --device local-cpu --profile benchmark_chain \
   --shots 1000 examples/ghz.py
 ```
 
-We also expose `local-cpu` and `local-arc` as alternative device IDs. They share the same geometry/noise table as `quera.na_vm.sim`, but `local-cpu` explicitly picks the CPU statevector backend while `local-arc` routes the same program to the oneAPI/SYCL implementation. The metadata returned by `neutral_atom_vm.available_presets()` carries distinct labels/descriptions ("CPU" vs. "Arc GPU") so you can tell them apart.
+The `local-arc` device ID mirrors `local-cpu`’s profiles but selects the Intel Arc GPU backend when the oneAPI runtime is enabled. The metadata returned by `neutral_atom_vm.available_presets()` includes labels/descriptions that help you differentiate the CPU vs. Arc personas.
 
 When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. If the backend is not enabled, the CLI prints an explanatory error mentioning `NA_VM_WITH_ONEAPI=ON` so you can rebuild with the toggle.
 
@@ -146,7 +145,7 @@ From the SDK, the same preset is available via:
 ```python
 from neutral_atom_vm import connect_device
 
-dev = connect_device("quera.na_vm.sim", profile="benchmark_chain")
+dev = connect_device("local-cpu", profile="benchmark_chain")
 ```
 
 If you need a bespoke combination (e.g., larger footprint with custom noise),
@@ -247,7 +246,7 @@ quera-vm serve --config vm-service.toml
 
 Client interaction (gRPC/REST):
 1. `JobRequest` includes:
-   - Device ID (e.g., `quera-na-vm-noisy-cpu`).
+   - Device ID (e.g., `local-cpu`).
    - Profile metadata (geometry, noise model, supported gates and connectivity).
    - ISA version and **hardware constraints**:
      - Gate durations and scheduling/parallelism rules.
@@ -264,7 +263,7 @@ This mode supports CI, staging, and production setups where multiple users submi
 ## 4. Key UX Goals Moving Forward
 
 1. **Device abstraction**
-   - Named devices (`quera.na_vm.sim`, `quera.na_vm.noisy`, etc.) with profiles for geometry, capabilities, and noise.
+   - Named devices (`local-cpu`, `local-arc`, etc.) with profiles for geometry, capabilities, and noise.
    - Device IDs exposed through the SDK/CLI so users know what they are hitting.
 
 2. **Compiler visibility**

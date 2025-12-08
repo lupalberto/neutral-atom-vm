@@ -6,7 +6,7 @@ from neutral_atom_vm import to_vm_program
 from neutral_atom_vm.device import build_device_from_config, available_presets
 
 def test_device_submit_program_runtime():
-    device = neutral_atom_vm.connect_device("runtime")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},
@@ -28,7 +28,7 @@ def test_device_submit_kernel():
 
     from .squin_programs import bell_pair
 
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
     job = device.submit(bell_pair, shots=1)
     result = job.result()
     assert result["status"] == "completed"
@@ -46,7 +46,7 @@ def test_loop_kernel_lowers_and_runs():
         for instruction in program
     )
 
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
     job = device.submit(loop_cx, shots=1)
     result = job.result()
     assert result["status"] == "completed"
@@ -61,7 +61,7 @@ def test_complex_squin_kernel_runs_on_benchmark_chain():
 
     from .squin_programs import benchmark_chain_complex
 
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
     job = device.submit(benchmark_chain_complex, shots=4)
     result = job.result()
 
@@ -81,7 +81,7 @@ def test_build_device_from_config_injects_noise():
         "blockade_radius": 1.0,
         "noise": {"p_loss": 1.0},
     }
-    device = build_device_from_config("runtime", profile=None, config=cfg)
+    device = build_device_from_config("local-cpu", profile=None, config=cfg)
 
     program = [
         {"op": "AllocArray", "n_qubits": 1},
@@ -100,7 +100,7 @@ def test_build_device_from_config_with_coordinates():
         "coordinates": [[0, 0], [0, 2]],
         "blockade_radius": 1.0,
     }
-    device = build_device_from_config("runtime", profile=None, config=cfg)
+    device = build_device_from_config("local-cpu", profile=None, config=cfg)
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},
@@ -115,28 +115,30 @@ def test_build_device_from_config_with_coordinates():
 def test_available_presets_lists_built_in_profiles():
     presets = available_presets()
 
-    assert "quera.na_vm.sim" in presets
-    assert "runtime" in presets
     assert "local-cpu" in presets
     assert "local-arc" in presets
 
-    sim_profiles = presets["quera.na_vm.sim"]
+    cpu_profiles = presets["local-cpu"]
     for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
-        assert profile in sim_profiles
-        entry = sim_profiles[profile]
+        assert profile in cpu_profiles
+        entry = cpu_profiles[profile]
         assert entry["positions"], "expected positions in preset"
         assert "metadata" in entry and entry["metadata"].get("description")
 
 
 @pytest.mark.parametrize("device_id", ["local-cpu", "local-arc"])
 def test_connect_device_aliases_preserve_profiles(device_id):
-    reference = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    reference = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
     aliased = neutral_atom_vm.connect_device(device_id, profile="benchmark_chain")
 
     assert aliased.positions == reference.positions
     assert aliased.blockade_radius == reference.blockade_radius
     assert aliased.noise is not None
     assert aliased.profile == reference.profile
+
+def test_connect_device_rejects_legacy_quera_alias():
+    with pytest.raises(ValueError, match="Unknown device"):
+        neutral_atom_vm.connect_device("quera.na_vm.sim", profile="ideal_small_array")
 
 
 @pytest.mark.parametrize(
@@ -147,7 +149,7 @@ def test_connect_device_aliases_preserve_profiles(device_id):
     ],
 )
 def test_connect_device_supports_new_presets(profile, expected_qubits):
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile=profile)
+    device = neutral_atom_vm.connect_device("local-cpu", profile=profile)
 
     assert len(device.positions) == expected_qubits
     assert device.noise is not None
@@ -155,7 +157,7 @@ def test_connect_device_supports_new_presets(profile, expected_qubits):
 
 
 def test_connect_device_supports_lossy_block():
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="lossy_block")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="lossy_block")
 
     assert len(device.positions) == 16
     assert device.noise is not None
@@ -168,7 +170,7 @@ def test_connect_device_supports_lossy_block():
 
 
 def test_device_submit_raises_on_blockade_violation():
-    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="benchmark_chain")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
     program = [
         {"op": "AllocArray", "n_qubits": 16},
         {"op": "ApplyGate", "name": "CX", "targets": [0, 15], "param": 0.0},
@@ -188,7 +190,7 @@ def test_device_submit_forwards_thread_limit(monkeypatch):
 
     monkeypatch.setattr(device_mod, "submit_job", fake_submit)
 
-    device = neutral_atom_vm.connect_device("runtime")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
     program = [
         {"op": "AllocArray", "n_qubits": 1},
         {"op": "Measure", "targets": [0]},
@@ -199,7 +201,7 @@ def test_device_submit_forwards_thread_limit(monkeypatch):
 
 
 def test_job_result_renders_summary_html():
-    device = neutral_atom_vm.connect_device("runtime")
+    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},

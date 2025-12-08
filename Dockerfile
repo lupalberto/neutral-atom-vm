@@ -1,4 +1,4 @@
-FROM intel/oneapi-basekit:latest
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
@@ -7,7 +7,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-        clinfo \
         cmake \
         git \
         libssl-dev \
@@ -35,7 +34,7 @@ ENV PATH=$HOME/.local/bin:$PATH
 
 WORKDIR /workspace
 RUN pip install --upgrade pip setuptools wheel
-RUN CMAKE_ARGS="-DNA_VM_WITH_ONEAPI=ON" pip install --no-cache-dir ./python
+RUN pip install --no-cache-dir ./python
 
 EXPOSE 8080
 CMD ["python3", "/workspace/python/scripts/vm_service.py", "--host", "0.0.0.0", "--port", "8080"]

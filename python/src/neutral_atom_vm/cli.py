@@ -245,11 +245,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if progress_enabled:
         status_callback = log_status
 
-    job_request = device.build_job_request(
-        kernel,
-        shots=args.shots,
-        max_threads=thread_limit,
-    )
+    try:
+        job_request = device.build_job_request(
+            kernel,
+            shots=args.shots,
+            max_threads=thread_limit,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     try:
         if args.service_url:
             result = submit_job_to_service(
@@ -359,8 +363,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run_parser.add_argument(
         "--device",
-        default="quera.na_vm.sim",
-        help="Device identifier (e.g. quera.na_vm.sim, runtime)",
+        default="local-cpu",
+        help="Device identifier (e.g. local-cpu, local-arc)",
     )
     run_parser.add_argument(
         "--profile",

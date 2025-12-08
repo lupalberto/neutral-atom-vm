@@ -209,7 +209,7 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
     if (job_obj.contains("device_id")) {
         job.device_id = py::cast<std::string>(job_obj["device_id"]);
     } else {
-        job.device_id = "runtime";
+        job.device_id = "local-cpu";
     }
 
     if (job_obj.contains("profile") && !job_obj["profile"].is_none()) {

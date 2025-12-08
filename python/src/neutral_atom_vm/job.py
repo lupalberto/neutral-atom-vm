@@ -348,7 +348,7 @@ class JobRequest:
 
     program: Program
     hardware: HardwareConfig
-    device_id: str = "runtime"
+    device_id: str = "local-cpu"
     profile: str | None = None
     shots: int = 1
     max_threads: Optional[int] = None

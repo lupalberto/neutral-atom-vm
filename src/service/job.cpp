@@ -147,7 +147,6 @@ void enrich_hardware_with_profile_constraints(
     HardwareConfig& hw
 ) {
     const bool is_sim_device =
-        job.device_id == "quera.na_vm.sim" ||
         job.device_id == "local-cpu" ||
         job.device_id == "local-arc";
     if (!is_sim_device) {

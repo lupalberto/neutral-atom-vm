@@ -64,7 +64,7 @@ def ghz():
     squin.cx(q[0], q[2])
     squin.measure(q)
 
-dev = connect_device("quera.na_vm.sim", profile="ideal_small_array")
+dev = connect_device("local-cpu", profile="ideal_small_array")
 result = dev.submit(ghz, shots=1000).result()
 print(result["measurements"])
 </code></pre>
@@ -97,7 +97,7 @@ def reuse_measured_qubit():
     squin.h(q[0])  # fails benchmark_chain cooldown without an intervening Wait
 </code></pre>
       <p>
-        Running the kernel with <code>connect_device("quera.na_vm.sim", profile="benchmark_chain")</code> raises
+        Running the kernel with <code>connect_device("local-cpu", profile="benchmark_chain")</code> raises
         the timing constraint error unless the compiler inserts a <code>Wait</code> to advance <code>logical_time</code>.
       </p>
       <p>
@@ -109,7 +109,7 @@ def reuse_measured_qubit():
         To reproduce the validation, use the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>:
       </p>
     <pre><code>quera-vm run \
-  --device quera.na_vm.sim \
+  --device local-cpu \
   --profile benchmark_chain \
   --shots 1 \
   python/examples/benchmark_cooldown_violation.py</code></pre>
@@ -128,7 +128,7 @@ def reuse_measured_qubit():
       profile JSON overrides, log streaming, remote services). Example invocation:
     </p>
 <pre><code>quera-vm run \
-  --device quera.na_vm.sim \
+  --device local-cpu \
   --profile benchmark_chain \
   --shots 1000 \
   --output json \

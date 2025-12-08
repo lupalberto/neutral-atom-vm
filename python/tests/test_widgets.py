@@ -266,7 +266,7 @@ def test_job_result_viewer_handles_missing_measurements():
     viewer = JobResultViewer()
     viewer.load_result(
         {"status": "failed", "measurements": [], "message": "boom"},
-        device="runtime",
+        device="local-cpu",
         profile=None,
         shots=2,
     )
@@ -416,7 +416,7 @@ def test_display_shot_interactive_planar_for_1d():
     result = JobResult(
         payload,
         device_id="device-linear",
-        profile="runtime",
+        profile=None,
         shots=1,
         layout=layout,
     )
@@ -475,7 +475,7 @@ def test_display_shot_interactive_handles_multiple_indices():
     result = JobResult(
         {"measurements": measurements},
         device_id="device-linear",
-        profile="runtime",
+        profile=None,
         shots=2,
         layout=layout,
     )
@@ -508,7 +508,7 @@ def test_display_shot_handles_multiple_indices_non_interactive():
     result = JobResult(
         {"measurements": measurements},
         device_id="device-linear",
-        profile="runtime",
+        profile=None,
         shots=2,
         layout=layout,
     )
@@ -531,7 +531,7 @@ def test_display_shot_interactive_planar_handles_partial_measurement():
     result = JobResult(
         payload,
         device_id="device-linear",
-        profile="runtime",
+        profile=None,
         shots=1,
         layout=layout,
     )
@@ -551,7 +551,7 @@ def test_configurator_applies_grid_layout():
     presets = available_presets()
     configurator = ProfileConfigurator(
         presets=presets,
-        default_device="quera.na_vm.sim",
+        default_device="local-cpu",
     )
     label = configurator._label_for_value("lossy_block")
     configurator.profile_dropdown.value = label

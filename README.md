@@ -41,5 +41,5 @@ cmake --build build
 ```
 
 When the build includes the oneAPI backend, the CLI/SDK expose
-`local-arc` as a device ID that maps to the same profiles as
-`quera.na_vm.sim` but executes on Intel Arc hardware via SYCL.
+`local-arc` as a device ID that shares the same profiles as
+`local-cpu` but executes on Intel Arc hardware via SYCL.

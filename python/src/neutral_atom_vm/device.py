@@ -175,17 +175,7 @@ def _distance_between(
 
 _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     (
-        "runtime",
-        None,
-    ): {
-        "label": "Legacy runtime",
-        "description": "Minimal two-qubit local runner used by low-level tests.",
-        "geometry": "Pair of tweezers separated by 1.0 units (units are arbitrary).",
-        "noise_behavior": "Ideal evolution; only deterministic operations are applied.",
-        "persona": "service regression",
-    },
-    (
-        "quera.na_vm.sim",
+        "local-cpu",
         "ideal_small_array",
     ): {
         "label": "Ideal tutorial array",
@@ -195,7 +185,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "education",
     },
     (
-        "quera.na_vm.sim",
+        "local-cpu",
         "noisy_square_array",
     ): {
         "label": "Noisy square array",
@@ -205,7 +195,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "algorithm prototyping",
     },
     (
-        "quera.na_vm.sim",
+        "local-cpu",
         "lossy_chain",
     ): {
         "label": "Loss-dominated chain",
@@ -215,7 +205,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "loss-aware algorithms",
     },
     (
-        "quera.na_vm.sim",
+        "local-cpu",
         "lossy_block",
     ): {
         "label": "Lossy block array (2×4×2)",
@@ -225,7 +215,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "loss-aware algorithms",
     },
     (
-        "quera.na_vm.sim",
+        "local-cpu",
         "benchmark_chain",
     ): {
         "label": "Benchmark chain (20 qubits)",
@@ -235,7 +225,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "integration + benchmarking",
     },
     (
-        "quera.na_vm.sim",
+        "local-cpu",
         "readout_stress",
     ): {
         "label": "Readout stress array",
@@ -247,13 +237,8 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
 }
 
 for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
-    if device_id != "quera.na_vm.sim":
+    if device_id != "local-cpu":
         continue
-    cpu_meta = dict(meta)
-    cpu_meta["label"] = f"{meta['label']} (CPU)"
-    cpu_meta["description"] = meta["description"] + " Running on the local CPU backend."
-    _PROFILE_METADATA[("local-cpu", profile)] = cpu_meta
-
     arc_meta = dict(meta)
     arc_meta["label"] = f"{meta['label']} (Arc GPU)"
     arc_meta["description"] = (
@@ -262,21 +247,8 @@ for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
     _PROFILE_METADATA[("local-arc", profile)] = arc_meta
 
 _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
-    # Legacy local runtime path: single pair of atoms.
-    ("runtime", None): {
-        "positions": [0.0, 1.0],
-        "blockade_radius": 1.0,
-        "grid_layout": {
-            "dim": 1,
-            "rows": 1,
-            "cols": 2,
-            "layers": 1,
-            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
-        },
-        "noise": None,
-    },
     # UX-aligned ideal profile for quick tutorial runs.
-    ("quera.na_vm.sim", "ideal_small_array"): {
+    ("local-cpu", "ideal_small_array"): {
         "positions": [float(i) for i in range(10)],
         "blockade_radius": 1.5,
         "grid_layout": {
@@ -289,7 +261,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "noise": None,
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
-    ("quera.na_vm.sim", "noisy_square_array"): {
+    ("local-cpu", "noisy_square_array"): {
         "positions": [
             0.0,
             1.0,
@@ -345,7 +317,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
     },
     # Heavy loss channel illustrating erasure-dominated behavior.
-    ("quera.na_vm.sim", "lossy_chain"): {
+    ("local-cpu", "lossy_chain"): {
         "positions": [float(i) * 1.5 for i in range(6)],
         "blockade_radius": 1.5,
         "grid_layout": {
@@ -360,7 +332,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
         },
     },
-    ("quera.na_vm.sim", "lossy_block"): {
+    ("local-cpu", "lossy_block"): {
         "positions": [float(i) for i in range(16)],
         "coordinates": [
             [float(x) * 1.5, float(y), float(z)]
@@ -382,7 +354,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
     },
     # 20-qubit benchmark chain for GHZ/volume experiments with moderate noise.
-    ("quera.na_vm.sim", "benchmark_chain"): {
+    ("local-cpu", "benchmark_chain"): {
         "positions": [float(i) * 1.3 for i in range(20)],
         "blockade_radius": 1.6,
         "grid_layout": {
@@ -420,7 +392,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
     },
     # SPAM-focused preset with notable readout flips and mild runtime loss.
-    ("quera.na_vm.sim", "readout_stress"): {
+    ("local-cpu", "readout_stress"): {
         "positions": [float(i) for i in range(8)],
         "blockade_radius": 1.2,
         "grid_layout": {
@@ -445,10 +417,9 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
 }
 
 for (device_id, profile), config in list(_PROFILE_TABLE.items()):
-    if device_id != "quera.na_vm.sim":
+    if device_id != "local-cpu":
         continue
-    for alias in ("local-cpu", "local-arc"):
-        _PROFILE_TABLE[(alias, profile)] = deepcopy(config)
+    _PROFILE_TABLE[("local-arc", profile)] = deepcopy(config)
 
 
 def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
@@ -523,10 +494,10 @@ def connect_device(
 ) -> Device:
     """Return a handle that behaves like a virtual neutral atom device.
 
-    For now, both the legacy ``"runtime"`` device and the UX-aligned
-    ``"quera.na_vm.sim"`` / ``profile="ideal_small_array"`` are backed by the
-    same local C++ runtime. Profiles are resolved via an internal table so that
-    callers do not pass positions directly.
+    The local C++ runtime powers the ``"local-cpu"`` preset and the
+    ``"local-arc"`` alias, so callers simply request a device/profile pair and
+    ``connect_device`` looks up the matching preset rather than requiring raw
+    geometry.
     """
     key = (device_id, profile)
     if key not in _PROFILE_TABLE:

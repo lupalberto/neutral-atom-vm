@@ -35,7 +35,7 @@ def run_demo(*, positions: Sequence[float] | None = None, blockade_radius: float
     job = JobRequest(
         program=program,
         hardware=HardwareConfig(positions=demo_positions, blockade_radius=blockade_radius),
-        device_id="runtime",
+        device_id="local-cpu",
         profile=None,
         shots=shots,
     )
