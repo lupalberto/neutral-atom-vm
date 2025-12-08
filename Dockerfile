@@ -18,8 +18,8 @@ RUN apt-get update && \
         python3-venv && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g 1001 quera && \
-    useradd -m -u 1001 -g 1001 -s /bin/bash quera
+RUN groupadd -g 1000 quera && \
+    useradd -m -u 1000 -g 1000 -s /bin/bash quera
 
 WORKDIR /workspace
 COPY . /workspace
@@ -34,7 +34,7 @@ ENV HOME=/home/quera
 ENV PATH=$HOME/.local/bin:$PATH
 
 WORKDIR /workspace
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel jupyterhub
 RUN pip install --no-cache-dir ./python
 
 # Do not set CMD/ENTRYPOINT: repo2docker/Binder will launch Jupyter itself.
