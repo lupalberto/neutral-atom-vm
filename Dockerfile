@@ -25,8 +25,8 @@ WORKDIR /srv/repo
 COPY . /srv/repo
 
 # Install the Neutral Atom VM Python package (builds the C++ extension).
-RUN python3 -m pip install --upgrade pip setuptools wheel && \
-    python3 -m pip install --no-cache-dir ./python
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir ./python
 
 # Do not set CMD/ENTRYPOINT: repo2docker/Binder will launch Jupyter itself.
 
