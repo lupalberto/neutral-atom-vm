@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 from copy import deepcopy
 
 from .layouts import GridLayout, grid_layout_for_profile
-from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job, JobResult
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, has_oneapi_backend, submit_job, JobResult
 from .squin_lowering import to_vm_program
 
 ProgramType = Sequence[Dict[str, Any]]
@@ -236,8 +236,11 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     },
 }
 
+has_oneapi = has_oneapi_backend()
 for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
     if device_id != "local-cpu":
+        continue
+    if not has_oneapi:
         continue
     arc_meta = dict(meta)
     arc_meta["label"] = f"{meta['label']} (Arc GPU)"
@@ -416,10 +419,11 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     },
 }
 
-for (device_id, profile), config in list(_PROFILE_TABLE.items()):
-    if device_id != "local-cpu":
-        continue
-    _PROFILE_TABLE[("local-arc", profile)] = deepcopy(config)
+if has_oneapi:
+    for (device_id, profile), config in list(_PROFILE_TABLE.items()):
+        if device_id != "local-cpu":
+            continue
+        _PROFILE_TABLE[("local-arc", profile)] = deepcopy(config)
 
 
 def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:

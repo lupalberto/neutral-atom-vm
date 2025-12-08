@@ -364,7 +364,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "--device",
         default="local-cpu",
-        help="Device identifier (e.g. local-cpu, local-arc)",
+        help="Device identifier (e.g. local-cpu, local-arc when oneAPI is enabled)",
     )
     run_parser.add_argument(
         "--profile",

@@ -346,6 +346,14 @@ py::dict job_result(const std::string& job_id) {
     return job_result_to_dict(*result);
 }
 
+bool has_oneapi_backend() {
+#ifdef NA_VM_WITH_ONEAPI
+    return true;
+#else
+    return false;
+#endif
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_neutral_atom_vm, m) {
@@ -373,5 +381,10 @@ PYBIND11_MODULE(_neutral_atom_vm, m) {
         &job_result,
         py::arg("job_id"),
         "Fetch the final result for an async job (raises if not ready)."
+    );
+    m.def(
+        "has_oneapi_backend",
+        &has_oneapi_backend,
+        "Return true when the bindings were built with the oneAPI backend."
     );
 }

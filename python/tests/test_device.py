@@ -4,6 +4,7 @@ import neutral_atom_vm.device as device_mod
 import pytest
 from neutral_atom_vm import to_vm_program
 from neutral_atom_vm.device import build_device_from_config, available_presets
+from neutral_atom_vm.job import has_oneapi_backend
 
 def test_device_submit_program_runtime():
     device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
@@ -116,7 +117,10 @@ def test_available_presets_lists_built_in_profiles():
     presets = available_presets()
 
     assert "local-cpu" in presets
-    assert "local-arc" in presets
+    if HAS_ONEAPI:
+        assert "local-arc" in presets
+    else:
+        assert "local-arc" not in presets
 
     cpu_profiles = presets["local-cpu"]
     for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
@@ -126,7 +130,12 @@ def test_available_presets_lists_built_in_profiles():
         assert "metadata" in entry and entry["metadata"].get("description")
 
 
-@pytest.mark.parametrize("device_id", ["local-cpu", "local-arc"])
+HAS_ONEAPI = has_oneapi_backend()
+DEVICE_ALIAS_IDS = ["local-cpu"]
+if HAS_ONEAPI:
+    DEVICE_ALIAS_IDS.append("local-arc")
+
+@pytest.mark.parametrize("device_id", DEVICE_ALIAS_IDS)
 def test_connect_device_aliases_preserve_profiles(device_id):
     reference = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
     aliased = neutral_atom_vm.connect_device(device_id, profile="benchmark_chain")
