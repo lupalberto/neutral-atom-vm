@@ -9,10 +9,12 @@ import runpy
 import shlex
 import subprocess
 import sys
+import time
 from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
 from .device import connect_device, build_device_from_config
+from .job import JobRequest, job_result, job_status, submit_job_async
 from .layouts import GridLayout, grid_layout_for_profile
 from .service_client import RemoteServiceError, submit_job_to_service
 
@@ -212,43 +214,44 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     status_callback: Callable[[Mapping[str, Any]], None] | None = None
     status_line_active = False
-    if args.service_url:
-        last_status_line: str | None = None
-        bar_width = 20
-        line_width = 0
+    last_status_line: str | None = None
+    bar_width = 20
+    line_width = 0
+    progress_enabled = args.service_url or sys.stderr.isatty()
 
-        def log_status(payload: Mapping[str, Any]) -> None:
-            nonlocal last_status_line
-            nonlocal line_width
-            nonlocal status_line_active
-            job_id = payload.get("job_id", "<unknown>")
-            status_name = payload.get("status", "unknown")
-            percent = payload.get("percent_complete")
-            if isinstance(percent, (int, float)):
-                progress = max(0.0, min(1.0, float(percent)))
-                filled = int(progress * bar_width)
-                bar = "[" + "#" * filled + "-" * (bar_width - filled) + "]"
-                status_line = (
-                    f"Job {job_id}: {status_name} {bar} {progress * 100:.0f}%"
-                )
-            else:
-                status_line = f"Job {job_id}: {status_name}"
-             if status_line != last_status_line:
-                 line_width = max(line_width, len(status_line))
-                 padded = status_line.ljust(line_width)
-                 print(f"\r{padded}", end="", file=sys.stderr, flush=True)
-                 status_line_active = True
-                 last_status_line = status_line
+    def log_status(payload: Mapping[str, Any]) -> None:
+        nonlocal last_status_line
+        nonlocal line_width
+        nonlocal status_line_active
+        job_id = payload.get("job_id", "<unknown>")
+        status_name = payload.get("status", "unknown")
+        percent = payload.get("percent_complete")
+        if isinstance(percent, (int, float)):
+            progress = max(0.0, min(1.0, float(percent)))
+            filled = int(progress * bar_width)
+            bar = "[" + "#" * filled + "-" * (bar_width - filled) + "]"
+            status_line = (
+                f"Job {job_id}: {status_name} {bar} {progress * 100:.0f}%"
+            )
+        else:
+            status_line = f"Job {job_id}: {status_name}"
+        if status_line != last_status_line:
+            line_width = max(line_width, len(status_line))
+            padded = status_line.ljust(line_width)
+            print(f"\r{padded}", end="", file=sys.stderr, flush=True)
+            status_line_active = True
+            last_status_line = status_line
 
+    if progress_enabled:
         status_callback = log_status
 
+    job_request = device.build_job_request(
+        kernel,
+        shots=args.shots,
+        max_threads=thread_limit,
+    )
     try:
         if args.service_url:
-            job_request = device.build_job_request(
-                kernel,
-                shots=args.shots,
-                max_threads=thread_limit,
-            )
             result = submit_job_to_service(
                 job_request,
                 args.service_url,
@@ -256,8 +259,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 status_callback=status_callback,
             )
         else:
-            job = device.submit(kernel, shots=args.shots, max_threads=thread_limit)
-            result = job.result()
+            result = _run_local_job_with_progress(
+                job_request,
+                status_callback=status_callback,
+            )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -290,6 +295,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             _page_output(summary_text)
         else:
             print(summary_text)
+
+    if status_line_active:
+        print(file=sys.stderr)
     return 0
 
 
@@ -306,6 +314,29 @@ def _load_profile_config(path: str) -> Mapping[str, Any]:
     if "positions" not in payload:
         raise SystemExit("Profile config missing required 'positions' field")
     return payload
+
+
+def _run_local_job_with_progress(
+    job_request: JobRequest,
+    *,
+    status_callback: Callable[[Mapping[str, Any]], None] | None = None,
+) -> Mapping[str, Any]:
+    submission = submit_job_async(job_request)
+    job_id = submission.get("job_id")
+    if not job_id:
+        raise RemoteServiceError("async submission returned no job_id")
+    while True:
+        status_payload = job_status(job_id)
+        if status_callback:
+            status_callback(status_payload)
+        status = status_payload.get("status", "").lower()
+        if status in {"completed", "failed"}:
+            break
+        time.sleep(_LOCAL_POLL_INTERVAL)
+    return job_result(job_id)
+
+
+_LOCAL_POLL_INTERVAL = 0.1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
