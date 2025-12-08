@@ -10,6 +10,7 @@ from typing import Any, Dict, Mapping, MutableMapping, Sequence
 from .device import available_presets
 from .display import build_result_summary_html, format_histogram
 from .layouts import GridLayout
+from .service_client import RemoteServiceError, fetch_remote_device_catalog
 
 try:  # pragma: no cover - exercised indirectly in widget tests
     import ipywidgets as widgets
@@ -215,6 +216,9 @@ class ProfileConfigurator:
         self,
         *,
         presets: Mapping[str, Mapping[Any, Mapping[str, Any]]] | None = None,
+        service_url: str | None = None,
+        devices_endpoint: str = "/devices",
+        service_timeout: float = 10.0,
         default_device: str | None = None,
         default_profile: str | None = None,
         default_profile_payload: Mapping[str, Any] | None = None,
@@ -224,9 +228,20 @@ class ProfileConfigurator:
                 "ProfileConfigurator requires ipywidgets. Please install the 'ipywidgets' extra."
             ) from _WIDGET_IMPORT_ERROR
 
-        self._presets = presets or available_presets()
+        if service_url:
+            self._presets = self._load_presets_from_service(
+                service_url,
+                devices_endpoint,
+                service_timeout,
+            )
+        else:
+            self._presets = presets or available_presets()
         if not self._presets:
             raise ValueError("No device presets available to populate the configurator.")
+
+        self._service_url = service_url
+        self._devices_endpoint = devices_endpoint
+        self._service_timeout = service_timeout
 
         self._profile_label_to_value: Dict[str, Any] = {}
         self._suspend_profile_callback = False
@@ -724,6 +739,23 @@ class ProfileConfigurator:
                             ]
                         )
         return coords
+
+    def _load_presets_from_service(
+        self,
+        service_url: str,
+        devices_endpoint: str,
+        timeout: float,
+    ) -> Mapping[str, Mapping[Any, Mapping[str, Any]]]:
+        try:
+            return fetch_remote_device_catalog(
+                service_url,
+                devices_endpoint,
+                timeout=timeout,
+            )
+        except RemoteServiceError as exc:
+            raise RuntimeError(
+                f"failed to load presets from {service_url}: {exc}"
+            ) from exc
 
     def _generate_positions(self) -> None:
         layout_info = self._grid_layout_info()

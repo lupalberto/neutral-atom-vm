@@ -614,7 +614,16 @@ def format_histogram(
         bits = rec.get("bits")
         if not bits:
             continue
-        bitstring = "".join(str(int(bit)) for bit in bits)
+        bitstring_chars: list[str] = []
+        for bit in bits:
+            value, is_loss, text = _interpret_measurement_value(bit)
+            if is_loss:
+                bitstring_chars.append("L")
+            elif value is not None:
+                bitstring_chars.append(str(value))
+            else:
+                bitstring_chars.append(text)
+        bitstring = "".join(bitstring_chars)
         counts[bitstring] = counts.get(bitstring, 0) + 1
     if not counts:
         return "<em>No histogram data.</em>"

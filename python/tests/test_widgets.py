@@ -238,6 +238,37 @@ def test_profile_configurator_prefills_custom_payload():
     assert configurator.positions_editor.value.strip().startswith("0")
 
 
+def test_profile_configurator_fetches_remote_service(monkeypatch):
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    captured = {}
+
+    def fake_remote_catalog(url, endpoint="/devices", *, timeout=None):
+        captured["args"] = (url, endpoint, timeout)
+        return {
+            "remote-device": {
+                "noise_test": {
+                    "positions": [0.0, 1.0, 2.0],
+                    "blockade_radius": 1.4,
+                }
+            }
+        }
+
+    monkeypatch.setattr(
+        "neutral_atom_vm.widgets.fetch_remote_device_catalog",
+        fake_remote_catalog,
+    )
+
+    configurator = ProfileConfigurator(
+        service_url="http://localhost:8080",
+        devices_endpoint="/devices",
+    )
+
+    assert "remote-device" in configurator.device_dropdown.options
+    assert captured["args"][0] == "http://localhost:8080"
+    assert captured["args"][1] == "/devices"
+
+
 def test_job_result_viewer_displays_summary_and_histogram():
     from neutral_atom_vm.widgets import JobResultViewer
 
@@ -310,6 +341,13 @@ def test_histogram_container_is_scrollable():
     html = format_histogram(_many_bitstrings(), page_size=4)
     assert "overflow-x:auto" in html
     assert "max-width:100%" in html
+
+
+def test_histogram_represents_loss_atoms():
+    from neutral_atom_vm.display import format_histogram
+
+    html = format_histogram([{"bits": [-1, 0, 1]}])
+    assert "L01" in html
 
 
 def test_display_shot_with_result():

@@ -178,6 +178,54 @@ def test_connect_device_supports_lossy_block():
     assert layout.layers == 2
 
 
+def test_connect_device_can_target_remote_service(monkeypatch):
+    from neutral_atom_vm.device import connect_device
+
+    catalog_called = {}
+
+    def fake_catalog(url, endpoint="/devices", *, timeout=None):
+        catalog_called["args"] = (url, endpoint, timeout)
+        return {
+            "remote-device": {
+                "remote-profile": {
+                    "positions": [0.0, 1.0],
+                    "blockade_radius": 1.2,
+                }
+            }
+        }
+
+    submission = {}
+
+    def fake_submit(job_request, service_url, *, timeout=None):
+        submission["job"] = job_request
+        submission["url"] = service_url
+        submission["timeout"] = timeout
+        return {"status": "completed", "measurements": []}
+
+    monkeypatch.setattr("neutral_atom_vm.device.fetch_remote_device_catalog", fake_catalog)
+    monkeypatch.setattr("neutral_atom_vm.device.submit_job_to_service", fake_submit)
+
+    device = connect_device(
+        "remote-device",
+        profile="remote-profile",
+        service_url="http://localhost:8080",
+        devices_endpoint="/devices",
+        service_timeout=5.0,
+    )
+
+    assert catalog_called["args"] == ("http://localhost:8080", "/devices", 5.0)
+    assert device.positions == [0.0, 1.0]
+
+    job = device.submit(
+        [{"op": "AllocArray", "n_qubits": 2}],
+        shots=1,
+    )
+    assert submission["url"] == "http://localhost:8080"
+    assert submission["timeout"] == 5.0
+    assert submission["job"].device_id == "remote-device"
+    assert job.result()["status"] == "completed"
+
+
 def test_device_submit_raises_on_blockade_violation():
     device = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
     program = [

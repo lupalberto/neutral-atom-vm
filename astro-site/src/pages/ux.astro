@@ -157,6 +157,10 @@ def reuse_measured_qubit():
       dispatches to an engine, streams measurements/logs, and surfaces structured error codes for violations
       (invalid gates, resource exhaustion, backend failures).
     </p>
+    <p>
+      A dedicated <code>GET /devices</code> endpoint exposes the same catalog as <code>available_presets()</code>,
+      so notebooks and dashboards can dynamically populate dropdowns without shipping their own preset list.
+    </p>
   </section>
 
   <section>

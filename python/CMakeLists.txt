@@ -71,6 +71,7 @@ target_link_libraries(_neutral_atom_vm PRIVATE vm)
 if(NA_VM_WITH_ONEAPI)
     target_compile_options(_neutral_atom_vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
     target_link_options(_neutral_atom_vm PRIVATE ${ONEAPI_LINK_OPTIONS})
+    target_compile_definitions(_neutral_atom_vm PRIVATE NA_VM_WITH_ONEAPI=1)
 endif()
 set_target_properties(_neutral_atom_vm PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src/neutral_atom_vm

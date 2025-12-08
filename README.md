@@ -43,3 +43,7 @@ cmake --build build
 When the build includes the oneAPI backend, the CLI/SDK expose
 `local-arc` as a device ID that shares the same profiles as
 `local-cpu` but executes on Intel Arc hardware via SYCL.
+
+The bundled HTTP service also answers `GET /devices`, mirroring
+`neutral_atom_vm.available_presets()`, so external dashboards and the
+`ProfileConfigurator` widget can stay in sync with the server.

@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from neutral_atom_vm.device import available_presets
 from neutral_atom_vm.job import job_result, job_status, submit_job_async
 
 
@@ -19,6 +20,7 @@ logger = logging.getLogger("neutral_atom_vm.vm_service")
 
 class VMJobRequestHandler(BaseHTTPRequestHandler):
     job_endpoint = "/job"
+    devices_endpoint = "/devices"
     default_profile: Mapping[str, Any] | None = None
 
     def log_message(self, format: str, *args: object) -> None:  # pragma: no cover - coverage not needed for service stub
@@ -51,6 +53,13 @@ class VMJobRequestHandler(BaseHTTPRequestHandler):
             return None
         return job_id, verb
 
+    def _canonical_devices_base(self) -> str:
+        trimmed = self.devices_endpoint.rstrip("/")
+        return trimmed if trimmed else "/"
+
+    def _devices_base_matches(self, normalized_path: str) -> bool:
+        return normalized_path == self._canonical_devices_base()
+
     def do_GET(self) -> None:  # pragma: no cover - coverage not needed for service stub
         normalized = self._parsed_path()
         job_base = self._canonical_job_base()
@@ -64,6 +73,9 @@ class VMJobRequestHandler(BaseHTTPRequestHandler):
                 self._handle_job_status(job_id)
             else:
                 self._handle_job_result(job_id)
+            return
+        if self._devices_base_matches(normalized):
+            self._handle_devices()
             return
         self.send_error(404, "not found")
 
@@ -136,6 +148,15 @@ class VMJobRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _handle_devices(self) -> None:
+        try:
+            presets = available_presets()
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.exception("Unable to gather presets")
+            self.send_error(500, f"failed to list devices: {exc}")
+            return
+        self._send_json({"devices": presets})
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a Neutral Atom VM HTTP service")
@@ -145,6 +166,11 @@ def main() -> None:
         "--job-endpoint",
         default="/job",
         help="HTTP path that accepts job JSON payloads",
+    )
+    parser.add_argument(
+        "--devices-endpoint",
+        default="/devices",
+        help="HTTP path that exposes available devices/profiles",
     )
     parser.add_argument(
         "--profile",
@@ -176,8 +202,15 @@ def main() -> None:
 
     VMJobRequestHandler.job_endpoint = args.job_endpoint
 
+    VMJobRequestHandler.devices_endpoint = args.devices_endpoint
     server = ThreadingHTTPServer((args.host, args.port), VMJobRequestHandler)
-    logger.info("Serving Neutral Atom VM on http://%s:%s%s", args.host, args.port, args.job_endpoint)
+    logger.info(
+        "Serving Neutral Atom VM on http://%s:%s%s (+ devices at %s)",
+        args.host,
+        args.port,
+        args.job_endpoint,
+        args.devices_endpoint,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

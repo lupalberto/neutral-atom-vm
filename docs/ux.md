@@ -226,6 +226,12 @@ dict-like object with an HTML representation, so simply evaluating `result` in a
 cell renders the same summary/counts block that the CLI prints—no need for
 `print(json.dumps(...))` unless you explicitly want raw JSON.
 
+You can also point `ProfileConfigurator` at a running service so its dropdowns
+track the catalog exposed by that host. Provide `service_url="http://localhost:8080"`
+(and `devices_endpoint="/devices"` if you configured a different path) and the
+widget fetches `GET /devices` before rendering, keeping notebooks aligned with
+the service without duplicating the preset list.
+
 What happens:
 1. The CLI loads `examples/ghz.py`, uses Bloqade/Kirin to lower the kernel to the VM dialect, and builds a program.
 2. It sends a `JobRequest` to a local VM daemon (or an in-process runner) with the requested device/profile.
@@ -252,9 +258,10 @@ Client interaction (gRPC/REST):
      - Gate durations and scheduling/parallelism rules.
      - Native gate set and connectivity graph.
      - Microarchitectural limits (cooldown times, maximum concurrent operations, etc.).
-   - Instruction program (same schema as the Python SDK uses).
-2. Server enqueues the job, dispatches it to the selected backend (ideal, noisy Pauli, full physics), and streams measurement batches / pulse logs.
-3. Clients poll or subscribe to job status and receive rich diagnostics and error codes.
+ - Instruction program (same schema as the Python SDK uses).
+2. `GET /devices` (or the configured devices endpoint) mirrors `neutral_atom_vm.available_presets()` so clients know every supported device/profile combination before submitting jobs.
+3. Server enqueues the job, dispatches it to the selected backend (ideal, noisy Pauli, full physics), and streams measurement batches / pulse logs.
+4. Clients poll or subscribe to job status and receive rich diagnostics and error codes.
 
 This mode supports CI, staging, and production setups where multiple users submit jobs to shared hardware (virtual or real).
 

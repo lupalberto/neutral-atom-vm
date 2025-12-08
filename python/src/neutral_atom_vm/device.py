@@ -6,11 +6,13 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 from copy import deepcopy
 
 from .layouts import GridLayout, grid_layout_for_profile
-from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, has_oneapi_backend, submit_job, JobResult
+from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, has_oneapi_backend, JobResult, submit_job
+from .service_client import RemoteServiceError, fetch_remote_device_catalog, submit_job_to_service
 from .squin_lowering import to_vm_program
 
 ProgramType = Sequence[Dict[str, Any]]
 KernelType = Callable[..., Any]
+SubmitJobFn = Callable[[JobRequest], Mapping[str, Any]]
 
 
 class JobHandle:
@@ -60,6 +62,7 @@ class Device:
     blockade_radius: float = 0.0
     noise: SimpleNoiseConfig | None = None
     grid_layout: GridLayout | None = None
+    submit_job_fn: SubmitJobFn | None = None
 
     def submit(
         self,
@@ -68,7 +71,8 @@ class Device:
         max_threads: Optional[int] = None,
     ) -> JobHandle:
         request = self.build_job_request(program_or_kernel, shots=shots, max_threads=max_threads)
-        job_result = submit_job(request)
+        submit_fn = self.submit_job_fn or submit_job
+        job_result = submit_fn(request)
         if not isinstance(job_result, dict):
             raise TypeError("submit_job returned a non-dict result")
         return JobHandle(
@@ -453,26 +457,50 @@ def build_device_from_config(
     device_id: str,
     *,
     profile: Optional[str],
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | None = None,
+    submit_job_fn: SubmitJobFn | None = None,
+    service_url: str | None = None,
+    devices_endpoint: str = "/devices",
+    service_timeout: float = 10.0,
 ) -> Device:
-    if "positions" not in config:
+    resolved_config = config
+    if service_url:
+        catalog = fetch_remote_device_catalog(
+            service_url,
+            devices_endpoint,
+            timeout=service_timeout,
+        )
+        device_catalog = catalog.get(device_id)
+        if not device_catalog:
+            raise ValueError(f"Unknown device: {device_id!r}")
+        if profile not in device_catalog:
+            raise ValueError(f"Unknown profile {profile!r} for device {device_id!r}")
+        if resolved_config is None:
+            resolved_config = device_catalog[profile]
+        if submit_job_fn is None:
+            submit_job_fn = lambda req: submit_job_to_service(
+                req,
+                service_url,
+                timeout=service_timeout,
+            )
+    if resolved_config is None or "positions" not in resolved_config:
         raise ValueError("Profile config must include 'positions'")
-    coordinates = config.get("coordinates")
+    coordinates = resolved_config.get("coordinates")
     coord_entries = None
     if isinstance(coordinates, Sequence):
         coord_entries = []
         for entry in coordinates:
             if isinstance(entry, Sequence) and not isinstance(entry, (str, bytes)):
                 coord_entries.append(tuple(float(value) for value in entry))
-    positions = list(config["positions"])
+    positions = list(resolved_config["positions"])
     if coord_entries and len(positions) != len(coord_entries):
         positions = list(range(len(coord_entries)))
-    blockade = float(config.get("blockade_radius", 0.0))
+    blockade = float(resolved_config.get("blockade_radius", 0.0))
     noise_cfg = None
-    noise_payload = config.get("noise")
+    noise_payload = resolved_config.get("noise")
     if isinstance(noise_payload, Mapping):
         noise_cfg = SimpleNoiseConfig.from_mapping(noise_payload)
-    layout_payload = config.get("grid_layout")
+    layout_payload = resolved_config.get("grid_layout")
     layout = (
         GridLayout.from_info(layout_payload)
         if isinstance(layout_payload, Mapping)
@@ -488,6 +516,7 @@ def build_device_from_config(
         blockade_radius=blockade,
         noise=noise_cfg,
         grid_layout=layout,
+        submit_job_fn=submit_job_fn,
     )
 
 
@@ -495,6 +524,9 @@ def connect_device(
     device_id: str,
     *,
     profile: Optional[str] = None,
+    service_url: str | None = None,
+    devices_endpoint: str = "/devices",
+    service_timeout: float = 10.0,
 ) -> Device:
     """Return a handle that behaves like a virtual neutral atom device.
 
@@ -503,8 +535,20 @@ def connect_device(
     ``connect_device`` looks up the matching preset rather than requiring raw
     geometry.
     """
+    if service_url:
+        return build_device_from_config(
+            device_id,
+            profile=profile,
+            service_url=service_url,
+            devices_endpoint=devices_endpoint,
+            service_timeout=service_timeout,
+        )
     key = (device_id, profile)
     if key not in _PROFILE_TABLE:
         raise ValueError(f"Unknown device/profile combination: {device_id!r}, {profile!r}")
     cfg = _PROFILE_TABLE[key]
-    return build_device_from_config(device_id, profile=profile, config=cfg)
+    return build_device_from_config(
+        device_id,
+        profile=profile,
+        config=cfg,
+    )

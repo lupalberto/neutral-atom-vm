@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping
 
 import requests
 from requests import RequestException
+from urllib.parse import urlparse
 
 from .job import JobRequest
 
@@ -110,3 +111,52 @@ def _job_item_url(service_url: str, job_id: str, suffix: str) -> str:
 
 
 _POLL_INTERVAL = 0.1
+
+
+def fetch_remote_device_catalog(
+    service_url: str,
+    devices_endpoint: str = "/devices",
+    *,
+    timeout: float | int | None = 30.0,
+) -> Mapping[str, Mapping[str, Any]]:
+    """Return the device/profile catalog exposed by a running VM service."""
+    catalog_url = _catalog_url(service_url, devices_endpoint)
+    try:
+        response = requests.get(catalog_url, timeout=timeout)
+        response.raise_for_status()
+    except RequestException as exc:
+        logger.exception("Failed to fetch devices from %s", catalog_url)
+        raise RemoteServiceError(
+            f"failed to fetch devices from {catalog_url}: {exc}"
+        ) from exc
+
+    payload = _decode_response(response)
+    devices = payload.get("devices")
+    if devices is None and isinstance(payload, Mapping):
+        devices = payload
+    if not isinstance(devices, Mapping):
+        raise RemoteServiceError(
+            "remote service returned an unexpected device catalog payload"
+        )
+    return devices
+
+
+def _catalog_url(service_url: str, devices_endpoint: str) -> str:
+    if devices_endpoint.startswith("http://") or devices_endpoint.startswith("https://"):
+        return devices_endpoint
+    base = _service_base_url(service_url)
+    suffix = devices_endpoint.lstrip("/")
+    if not base and not suffix:
+        return "/"
+    if not base:
+        return f"/{suffix}"
+    if not suffix:
+        return base
+    return f"{base}/{suffix}"
+
+
+def _service_base_url(service_url: str) -> str:
+    parsed = urlparse(service_url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return service_url.rstrip("/")

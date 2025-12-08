@@ -28,6 +28,7 @@ By default the service listens on `0.0.0.0:8080` and exposes a small REST surfac
 
 - `GET /healthz` — returns `{"status": "ok"}`.
 - `POST /job` — enqueues the JSON job payload with the shared VM runner and immediately returns an acknowledgement such as `{"job_id": "job-0", "status": "pending"}`. The job keeps running in the background; use the job-specific endpoints below to follow its progress.
+- `GET /devices` — lists the registers device IDs/profiles exposed by the running service (`{"devices": neutral_atom_vm.available_presets()}`), so clients and widgets can discover what’s available without hard-coding the presets.
 - `GET /job/{job_id}/status` — mirrors `neutral_atom_vm.job.job_status` (`status`, `percent_complete`, `message`, and recent logs) so callers can poll for updates.
 - `GET /job/{job_id}/result` — mirrors `neutral_atom_vm.job.job_result` and returns the completed measurements, logs, and diagnostics once the job finishes (returns `404`/`job_id not found` while the job is still running).
 
@@ -36,6 +37,8 @@ You can override the listen parameters via `CMD` arguments. The default entrypoi
 ```text
 python3 python/scripts/vm_service.py --host 0.0.0.0 --port 8080
 ```
+
+You can also control the HTTP path that exposes devices/profiles via `--devices-endpoint`; it defaults to `/devices` so clients know where to request the catalog.
 
 ### Submitting jobs from the CLI
 
