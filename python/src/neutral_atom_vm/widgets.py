@@ -8,11 +8,8 @@ import re
 from typing import Any, Dict, Mapping, MutableMapping, Sequence
 
 from .device import available_presets
-from .display import (
-    build_result_summary_html,
-    format_grid_previews,
-    format_histogram,
-)
+from .display import build_result_summary_html, format_histogram
+from .layouts import GridLayout
 
 try:  # pragma: no cover - exercised indirectly in widget tests
     import ipywidgets as widgets
@@ -58,32 +55,68 @@ _NOISE_FIELD_SPECS: Sequence[_NoiseFieldSpec] = [
 
 
 def _format_number(value: float) -> str:
-    text = repr(float(value))
-    if "e" in text or "E" in text:
-        return f"{float(value):.12g}"
-    return text
+    formatted = f"{float(value):.12g}"
+    if formatted == "-0":
+        formatted = "0"
+    if "." not in formatted and "e" not in formatted:
+        formatted += ".0"
+    return formatted
 
 
-def _format_positions(values: Sequence[float]) -> str:
-    if not values:
+def _format_positions(values: Sequence[Any]) -> str:
+    entries = _coerce_position_entries(values)
+    if not entries:
         return ""
-    return "\n".join(_format_number(val) for val in values)
+    lines: list[str] = []
+    for entry in entries:
+        if len(entry) == 1:
+            lines.append(_format_number(entry[0]))
+        else:
+            lines.append(", ".join(_format_number(val) for val in entry))
+    return "\n".join(lines)
 
 
-def _parse_positions(text: str) -> list[float]:
+def _coerce_position_entries(values: Sequence[Any]) -> list[tuple[float, ...]]:
+    entries: list[tuple[float, ...]] = []
+    for item in values or []:
+        if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
+            coords = tuple(float(val) for val in item)
+            if coords:
+                entries.append(coords)
+        else:
+            entries.append((float(item),))
+    return entries
+
+
+def _parse_position_entries(text: str) -> list[tuple[float, ...]]:
     stripped = text.strip()
     if not stripped:
         return []
-    tokens = re.split(r"[,\s]+", stripped)
-    positions: list[float] = []
-    for token in tokens:
-        if not token:
-            continue
+
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    entries: list[tuple[float, ...]] = []
+
+    if len(lines) <= 1:
+        tokens = [tok for tok in re.split(r"[,\s]+", stripped) if tok]
+        return [(float(tok),) for tok in tokens]
+
+    chunks: list[str] = []
+    for line in lines:
+        for chunk in line.split(";"):
+            chunk = chunk.strip()
+            if chunk:
+                chunks.append(chunk)
+
+    for chunk in chunks:
+        normalized = chunk.strip("()[]")
+        tokens = [tok for tok in re.split(r"[,\s]+", normalized) if tok]
         try:
-            positions.append(float(token))
+            coords = tuple(float(tok) for tok in tokens)
         except ValueError as exc:  # pragma: no cover - informative error path
-            raise ValueError(f"Invalid position value: {token!r}") from exc
-    return positions
+            raise ValueError(f"Invalid position value: {chunk!r}") from exc
+        if coords:
+            entries.append(coords)
+    return entries
 
 
 def _format_matrix(matrix: Sequence[Sequence[float]] | None) -> str:
@@ -223,6 +256,13 @@ class ProfileConfigurator:
             layout=widgets.Layout(width="280px"),
             style={"description_width": "120px"},
         )
+        self.dimension_selector = widgets.Dropdown(
+            description="Dimensions",
+            options=[1, 2, 3],
+            value=2,
+            layout=widgets.Layout(width="180px"),
+            style={"description_width": "100px"},
+        )
         self.slot_count_input = widgets.BoundedIntText(
             description="Slots",
             min=1,
@@ -231,19 +271,58 @@ class ProfileConfigurator:
             layout=widgets.Layout(width="200px"),
             style={"description_width": "80px"},
         )
-        self.slot_spacing_input = widgets.FloatText(
-            description="Spacing",
-            value=1.0,
-            step=0.1,
-            layout=widgets.Layout(width="200px"),
+        self.row_input = widgets.BoundedIntText(
+            description="Rows",
+            min=1,
+            max=64,
+            value=4,
+            layout=widgets.Layout(width="160px"),
+            style={"description_width": "80px"},
+        )
+        self.col_input = widgets.BoundedIntText(
+            description="Cols",
+            min=1,
+            max=64,
+            value=4,
+            layout=widgets.Layout(width="160px"),
+            style={"description_width": "80px"},
+        )
+        self.layer_input = widgets.BoundedIntText(
+            description="Layers",
+            min=1,
+            max=32,
+            value=1,
+            layout=widgets.Layout(width="160px"),
             style={"description_width": "80px"},
         )
         self.generate_positions_button = widgets.Button(
             description="Populate positions",
-            tooltip="Generate evenly spaced positions using the slot count and spacing.",
+            tooltip="Generate evenly spaced positions using the current layout.",
             layout=widgets.Layout(width="200px"),
         )
+        self.spacing_x_input = widgets.FloatText(
+            description="Spacing X",
+            value=1.0,
+            step=0.1,
+            layout=widgets.Layout(width="200px"),
+            style={"description_width": "100px"},
+        )
+        self.spacing_y_input = widgets.FloatText(
+            description="Spacing Y",
+            value=1.0,
+            step=0.1,
+            layout=widgets.Layout(width="200px"),
+            style={"description_width": "100px"},
+        )
+        self.spacing_z_input = widgets.FloatText(
+            description="Spacing Z",
+            value=1.0,
+            step=0.1,
+            layout=widgets.Layout(width="200px"),
+            style={"description_width": "100px"},
+        )
         self.generate_positions_button.on_click(lambda _: self._generate_positions())
+        self.dimension_selector.observe(self._on_dimension_change, names="value")
         self.blockade_input = widgets.FloatText(
             description="Blockade radius",
             step=0.1,
@@ -258,8 +337,10 @@ class ProfileConfigurator:
         )
         self.positions_help = widgets.HTML(
             value=(
-                "<small>Example: 0.0, 1.0, 2.0 or one value per line. For a 4x4 grid,"
-                " list 16 entries row-by-row & wrap columns (e.g., 0,1,2,3, 0,1,2,3, 0,1,2,3, 0,1,2,3)</small>"
+                "<small>Example: 0.0, 1.0, 2.0 or one value per line. "
+                "For multi-dimensional layouts, list each slot as a comma- or space-separated tuple "
+                "(e.g., `0 0`, `1 0`, `2 0`, `3 0`, `0 1`, ... for the first rows of a 4x4 grid). "
+                "The configurator keeps the legacy `positions` list while emitting richer `coordinates` for the backend.</small>"
             ),
             layout=widgets.Layout(margin="0 0 0 8px"),
         )
@@ -275,16 +356,30 @@ class ProfileConfigurator:
             style={"description_width": "120px"},
         )
 
+        spacing_box = widgets.HBox(
+            [
+                self.spacing_x_input,
+                self.spacing_y_input,
+                self.spacing_z_input,
+            ],
+            layout=widgets.Layout(),
+        )
+        dimension_box = widgets.HBox(
+            [
+                self.dimension_selector,
+                self.slot_count_input,
+                self.row_input,
+                self.col_input,
+                self.layer_input,
+                self.generate_positions_button,
+            ],
+            layout=widgets.Layout(),
+        )
         geometry_box = widgets.VBox(
             [
                 self.blockade_input,
-                widgets.HBox(
-                    [
-                        self.slot_count_input,
-                        self.slot_spacing_input,
-                        self.generate_positions_button,
-                    ]
-                ),
+                dimension_box,
+                spacing_box,
                 self.positions_editor,
                 self.positions_help,
             ]
@@ -298,7 +393,9 @@ class ProfileConfigurator:
             [
                 widgets.HTML("<strong>Custom profile</strong>"),
                 self.custom_profile_name,
-                widgets.HTML("<em>Use slot count + spacing to seed positions, then tweak manually.</em>"),
+                widgets.HTML(
+                    "<em>Use slot count + spacing to seed positions, optionally comment each slot with `x y` coordinates before tweaking manually.</em>"
+                ),
             ],
             layout=widgets.Layout(display="none", padding="8px", border="1px dashed #bbb"),
         )
@@ -316,6 +413,7 @@ class ProfileConfigurator:
             layout=widgets.Layout(width="820px"),
         )
 
+        self._update_dimension_layout()
         self.device_dropdown.observe(self._on_device_change, names="value")
         self.profile_dropdown.observe(self._on_profile_change, names="value")
         self._refresh_profile_options(self.device_dropdown.value)
@@ -450,10 +548,33 @@ class ProfileConfigurator:
         config = self._presets.get(device_id, {}).get(profile)
         if not config:
             return
+        self._apply_grid_layout_info(config.get("grid_layout"))
         self.blockade_input.value = float(config.get("blockade_radius", 0.0))
-        self.positions_editor.value = _format_positions(config.get("positions", []))
+        coords = config.get("coordinates")
+        self.positions_editor.value = _format_positions(coords if coords else config.get("positions", []))
         self.metadata_html.value = _format_metadata(config.get("metadata"))
         self._load_noise(config.get("noise"))
+
+    def _apply_grid_layout_info(self, layout_info: Mapping[str, Any] | None) -> None:
+        if not layout_info:
+            return
+        dim = int(layout_info.get("dim", 1))
+        self.dimension_selector.value = dim
+        rows = max(1, int(layout_info.get("rows", 1)))
+        cols = max(1, int(layout_info.get("cols", 1)))
+        layers = max(1, int(layout_info.get("layers", 1)))
+        spacing = layout_info.get("spacing") or {}
+        self.spacing_x_input.value = float(spacing.get("x", 1.0))
+        self.spacing_y_input.value = float(spacing.get("y", self.spacing_x_input.value if dim >= 2 else 1.0))
+        self.spacing_z_input.value = float(spacing.get("z", self.spacing_y_input.value if dim == 3 else 1.0))
+        if dim == 1:
+            self.slot_count_input.value = max(1, cols)
+        else:
+            self.row_input.value = rows
+            self.col_input.value = cols
+            if dim == 3:
+                self.layer_input.value = layers
+        self._update_dimension_layout()
 
     def _load_noise(self, noise: Mapping[str, Any] | None) -> None:
         for path, widget_field in self.noise_fields.items():
@@ -475,10 +596,23 @@ class ProfileConfigurator:
         custom_profile_name = self.custom_profile_name.value.strip()
         if actual_profile == _CUSTOM_PROFILE_VALUE:
             actual_profile = custom_profile_name or None
+        entries = _parse_position_entries(self.positions_editor.value)
+        coordinates: list[list[float]] | None = None
+        if any(len(entry) > 1 for entry in entries):
+            coordinates = [list(entry) for entry in entries]
+            scalar_positions = list(range(len(entries)))
+        else:
+            scalar_positions = [entry[0] for entry in entries]
+
         config: Dict[str, Any] = {
-            "positions": _parse_positions(self.positions_editor.value),
+            "positions": scalar_positions,
             "blockade_radius": float(self.blockade_input.value),
         }
+        if coordinates:
+            config["coordinates"] = coordinates
+        layout_info = self._grid_layout_info()
+        if layout_info:
+            config["grid_layout"] = layout_info
         noise_payload = self._collect_noise_payload()
         if noise_payload:
             config["noise"] = noise_payload
@@ -502,14 +636,100 @@ class ProfileConfigurator:
 
         return self.container
 
+    def _on_dimension_change(self, change: Dict[str, Any]) -> None:
+        self._update_dimension_layout()
+
+    def _update_dimension_layout(self) -> None:
+        dim = int(self.dimension_selector.value or 1)
+        if dim == 1:
+            self.slot_count_input.layout.display = ""
+            self.row_input.layout.display = "none"
+            self.col_input.layout.display = "none"
+            self.layer_input.layout.display = "none"
+        elif dim == 2:
+            self.slot_count_input.layout.display = "none"
+            self.row_input.layout.display = ""
+            self.col_input.layout.display = ""
+            self.layer_input.layout.display = "none"
+        else:
+            self.slot_count_input.layout.display = "none"
+            self.row_input.layout.display = ""
+            self.col_input.layout.display = ""
+            self.layer_input.layout.display = ""
+        self.spacing_y_input.layout.display = "" if dim >= 2 else "none"
+        self.spacing_z_input.layout.display = "" if dim == 3 else "none"
+
+    def _spacing_values(self) -> tuple[float, float, float]:
+        sx = float(self.spacing_x_input.value or 1.0)
+        if sx <= 0.0:
+            sx = 1.0
+            self.spacing_x_input.value = sx
+        sy = float(self.spacing_y_input.value or sx)
+        if sy <= 0.0:
+            sy = sx
+            self.spacing_y_input.value = sy
+        sz = float(self.spacing_z_input.value or sy)
+        if sz <= 0.0:
+            sz = sy
+            self.spacing_z_input.value = sz
+        return sx, sy, sz
+
+    def _grid_layout_info(self) -> Dict[str, Any]:
+        dim = int(self.dimension_selector.value or 1)
+        sx, sy, sz = self._spacing_values()
+        rows = 1
+        cols = 1
+        layers = 1
+        if dim == 1:
+            cols = max(1, int(self.slot_count_input.value or 0))
+        else:
+            rows = max(1, int(self.row_input.value or 0))
+            cols = max(1, int(self.col_input.value or 0))
+            if dim == 3:
+                layers = max(1, int(self.layer_input.value or 0))
+        return {
+            "dim": dim,
+            "rows": rows,
+            "cols": cols,
+            "layers": layers,
+            "spacing": {"x": sx, "y": sy, "z": sz},
+        }
+
+    def _coords_for_layout(self, layout_info: Dict[str, Any]) -> list[list[float]]:
+        dim = layout_info.get("dim", 1)
+        rows = layout_info.get("rows", 1)
+        cols = layout_info.get("cols", 1)
+        layers = layout_info.get("layers", 1)
+        spacing = layout_info.get("spacing", {})
+        sx = float(spacing.get("x", 1.0))
+        sy = float(spacing.get("y", sx if dim >= 2 else 1.0))
+        sz = float(spacing.get("z", sy if dim == 3 else 1.0))
+        coords: list[list[float]] = []
+        if dim == 1:
+            for idx in range(cols):
+                coords.append([float(idx) * sx])
+        elif dim == 2:
+            for r in range(rows):
+                for c in range(cols):
+                    coords.append([float(c) * sx, float(r) * sy])
+        else:
+            for z in range(layers):
+                for r in range(rows):
+                    for c in range(cols):
+                        coords.append(
+                            [
+                                float(c) * sx,
+                                float(r) * sy,
+                                float(z) * sz,
+                            ]
+                        )
+        return coords
+
     def _generate_positions(self) -> None:
-        slots = max(1, int(self.slot_count_input.value or 0))
-        spacing = float(self.slot_spacing_input.value or 0.0)
-        if spacing <= 0.0:
-            spacing = 1.0
-            self.slot_spacing_input.value = spacing
-        positions = [float(i) * spacing for i in range(slots)]
-        self.positions_editor.value = _format_positions(positions)
+        layout_info = self._grid_layout_info()
+        coords = self._coords_for_layout(layout_info)
+        if coords:
+            self.positions_editor.value = _format_positions(coords)
 
     def _enter_custom_mode(self) -> None:
         self.custom_profile_box.layout.display = "block"
@@ -523,8 +743,11 @@ class ProfileConfigurator:
         if profile_name:
             self.custom_profile_name.value = str(profile_name)
         config = payload.get("config") or {}
+        coords = config.get("coordinates")
         positions = config.get("positions")
-        if positions:
+        if coords:
+            self.positions_editor.value = _format_positions(coords)
+        elif positions:
             self.positions_editor.value = _format_positions(positions)
         blockade = config.get("blockade_radius")
         if blockade is not None:
@@ -546,10 +769,9 @@ class JobResultViewer:
             ) from _WIDGET_IMPORT_ERROR
 
         self.summary_html = widgets.HTML(layout=widgets.Layout(min_height="48px"))
-        self.grid_html = widgets.HTML(layout=widgets.Layout(min_height="48px"))
         self.histogram_html = widgets.HTML(layout=widgets.Layout(min_height="48px"))
         self.container = widgets.VBox(
-            [self.summary_html, self.grid_html, self.histogram_html],
+            [self.summary_html, self.histogram_html],
             layout=widgets.Layout(width="720px"),
         )
 
@@ -560,6 +782,7 @@ class JobResultViewer:
         device: str,
         profile: str | None,
         shots: int,
+        layout: GridLayout | None = None,
     ) -> None:
         status = result.get("status", "unknown")
         elapsed = result.get("elapsed_time")
@@ -575,7 +798,6 @@ class JobResultViewer:
             log_count=logs,
         )
         measurements = result.get("measurements") or []
-        self.grid_html.value = format_grid_previews(measurements, profile)
         self.histogram_html.value = format_histogram(measurements)
 
     def render(self) -> widgets.Widget:

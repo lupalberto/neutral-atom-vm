@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 
 from copy import deepcopy
 
+from .layouts import GridLayout, grid_layout_for_profile
 from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, submit_job, JobResult
 from .squin_lowering import to_vm_program
 
@@ -22,11 +23,15 @@ class JobHandle:
         device_id: str,
         profile: Optional[str],
         shots: int,
+        layout: GridLayout | None = None,
+        coordinates: Sequence[Sequence[float]] | None = None,
     ) -> None:
         self._payload = dict(payload)
         self.device_id = device_id
         self.profile = profile
         self.shots = shots
+        self.layout = layout
+        self.coordinates = coordinates
         self._result: JobResult | None = None
 
     def result(self) -> JobResult:
@@ -38,6 +43,8 @@ class JobHandle:
                 device_id=self.device_id,
                 profile=self.profile,
                 shots=self.shots,
+                layout=self.layout,
+                coordinates=self.coordinates,
             )
         return self._result
 
@@ -49,8 +56,10 @@ class Device:
     id: str
     profile: Optional[str]
     positions: Sequence[float]
+    coordinates: Sequence[Sequence[float]] | None = None
     blockade_radius: float = 0.0
     noise: SimpleNoiseConfig | None = None
+    grid_layout: GridLayout | None = None
 
     def submit(
         self,
@@ -58,25 +67,7 @@ class Device:
         shots: int = 1,
         max_threads: Optional[int] = None,
     ) -> JobHandle:
-        if callable(program_or_kernel):
-            program = to_vm_program(program_or_kernel)
-        else:
-            program = list(program_or_kernel)
-
-        _validate_blockade_constraints(program, self.positions, self.blockade_radius)
-
-        request = JobRequest(
-            program=program,
-            hardware=HardwareConfig(
-                positions=list(self.positions),
-                blockade_radius=self.blockade_radius,
-            ),
-            device_id=self.id,
-            profile=self.profile,
-            shots=shots,
-            max_threads=max_threads,
-            noise=self.noise,
-        )
+        request = self.build_job_request(program_or_kernel, shots=shots, max_threads=max_threads)
         job_result = submit_job(request)
         if not isinstance(job_result, dict):
             raise TypeError("submit_job returned a non-dict result")
@@ -85,13 +76,44 @@ class Device:
             device_id=self.id,
             profile=self.profile,
             shots=shots,
+            layout=self.grid_layout,
+            coordinates=self.coordinates,
         )
+
+    def build_job_request(
+        self,
+        program_or_kernel: Union[ProgramType, KernelType],
+        shots: int = 1,
+        max_threads: Optional[int] = None,
+    ) -> JobRequest:
+        """Create a :class:`JobRequest` describing this device + kernel without executing it."""
+        program = self._normalize_program(program_or_kernel)
+        _validate_blockade_constraints(program, self.positions, self.blockade_radius, self.coordinates)
+        return JobRequest(
+            program=program,
+            hardware=HardwareConfig(
+                positions=list(self.positions),
+                coordinates=self.coordinates,
+                blockade_radius=self.blockade_radius,
+            ),
+            device_id=self.id,
+            profile=self.profile,
+            shots=shots,
+            max_threads=max_threads,
+            noise=self.noise,
+        )
+
+    def _normalize_program(self, program_or_kernel: Union[ProgramType, KernelType]) -> ProgramType:
+        if callable(program_or_kernel):
+            return to_vm_program(program_or_kernel)
+        return list(program_or_kernel)
 
 
 def _validate_blockade_constraints(
     program: Sequence[Dict[str, Any]],
     positions: Sequence[float],
     blockade_radius: float,
+    coordinates: Sequence[Sequence[float]] | None = None,
 ) -> None:
     if not positions or blockade_radius <= 0.0:
         return
@@ -99,6 +121,9 @@ def _validate_blockade_constraints(
     pos_list = list(positions)
     limit = len(pos_list)
     threshold = blockade_radius + 1e-12
+    coord_list = None
+    if coordinates:
+        coord_list = [tuple(float(v) for v in entry) for entry in coordinates]
 
     for instruction in program:
         if instruction.get("op") != "ApplyGate":
@@ -127,10 +152,25 @@ def _validate_blockade_constraints(
             for j in range(i + 1, len(indices)):
                 q0 = indices[i]
                 q1 = indices[j]
-                if abs(pos_list[q0] - pos_list[q1]) > threshold:
+                if _distance_between(pos_list, coord_list, q0, q1) > threshold:
                     raise ValueError(
                         f"Gate {gate_name} on qubits {q0}/{q1} violates blockade radius {blockade_radius:.3f}"
                     )
+
+
+def _distance_between(
+    positions: Sequence[float],
+    coords: Sequence[Sequence[float]] | None,
+    idx0: int,
+    idx1: int,
+) -> float:
+    if coords and idx0 < len(coords) and idx1 < len(coords):
+        vec0 = coords[idx0]
+        vec1 = coords[idx1]
+        dim = min(len(vec0), len(vec1))
+        if dim:
+            return float(sum((float(vec0[d]) - float(vec1[d])) ** 2 for d in range(dim)) ** 0.5)
+    return abs(positions[idx0] - positions[idx1])
 
 
 _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
@@ -176,6 +216,16 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     },
     (
         "quera.na_vm.sim",
+        "lossy_block",
+    ): {
+        "label": "Lossy block array (2×4×2)",
+        "description": "Sixteen-site block spread across a 2×4×2 prism for loss-heavy benchmarking.",
+        "geometry": "2×4×2 block with 1.5 spacing along x, 1.0 along y/z, and blockade radius 1.5.",
+        "noise_behavior": "Same heavy loss profile as lossy_chain: 10% upfront erasure plus per-gate/idle loss.",
+        "persona": "loss-aware algorithms",
+    },
+    (
+        "quera.na_vm.sim",
         "benchmark_chain",
     ): {
         "label": "Benchmark chain (20 qubits)",
@@ -216,12 +266,26 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     ("runtime", None): {
         "positions": [0.0, 1.0],
         "blockade_radius": 1.0,
+        "grid_layout": {
+            "dim": 1,
+            "rows": 1,
+            "cols": 2,
+            "layers": 1,
+            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+        },
         "noise": None,
     },
     # UX-aligned ideal profile for quick tutorial runs.
     ("quera.na_vm.sim", "ideal_small_array"): {
         "positions": [float(i) for i in range(10)],
         "blockade_radius": 1.5,
+        "grid_layout": {
+            "dim": 1,
+            "rows": 1,
+            "cols": 10,
+            "layers": 1,
+            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+        },
         "noise": None,
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
@@ -244,7 +308,32 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             2.0,
             3.0,
         ],
+        "coordinates": [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [2.0, 1.0],
+            [3.0, 1.0],
+            [0.0, 2.0],
+            [1.0, 2.0],
+            [2.0, 2.0],
+            [3.0, 2.0],
+            [0.0, 3.0],
+            [1.0, 3.0],
+            [2.0, 3.0],
+            [3.0, 3.0],
+        ],
         "blockade_radius": 2.0,
+        "grid_layout": {
+            "dim": 2,
+            "rows": 4,
+            "cols": 4,
+            "layers": 1,
+            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+        },
         "noise": {
             "gate": {
                 "single_qubit": {"px": 0.005, "py": 0.005, "pz": 0.005},
@@ -259,6 +348,34 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     ("quera.na_vm.sim", "lossy_chain"): {
         "positions": [float(i) * 1.5 for i in range(6)],
         "blockade_radius": 1.5,
+        "grid_layout": {
+            "dim": 1,
+            "rows": 1,
+            "cols": 6,
+            "layers": 1,
+            "spacing": {"x": 1.5, "y": 1.0, "z": 1.0},
+        },
+        "noise": {
+            "p_loss": 0.1,
+            "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
+        },
+    },
+    ("quera.na_vm.sim", "lossy_block"): {
+        "positions": [float(i) for i in range(16)],
+        "coordinates": [
+            [float(x) * 1.5, float(y), float(z)]
+            for z in range(2)
+            for y in range(2)
+            for x in range(4)
+        ],
+        "blockade_radius": 1.5,
+        "grid_layout": {
+            "dim": 3,
+            "rows": 2,
+            "cols": 4,
+            "layers": 2,
+            "spacing": {"x": 1.5, "y": 1.0, "z": 1.0},
+        },
         "noise": {
             "p_loss": 0.1,
             "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
@@ -268,6 +385,13 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     ("quera.na_vm.sim", "benchmark_chain"): {
         "positions": [float(i) * 1.3 for i in range(20)],
         "blockade_radius": 1.6,
+        "grid_layout": {
+            "dim": 1,
+            "rows": 1,
+            "cols": 20,
+            "layers": 1,
+            "spacing": {"x": 1.3, "y": 1.0, "z": 1.0},
+        },
         "noise": {
             "gate": {
                 "single_qubit": {"px": 0.002, "py": 0.002, "pz": 0.001},
@@ -299,6 +423,13 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     ("quera.na_vm.sim", "readout_stress"): {
         "positions": [float(i) for i in range(8)],
         "blockade_radius": 1.2,
+        "grid_layout": {
+            "dim": 1,
+            "rows": 1,
+            "cols": 8,
+            "layers": 1,
+            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+        },
         "noise": {
             "readout": {"p_flip0_to_1": 0.03, "p_flip1_to_0": 0.03},
             "gate": {
@@ -332,6 +463,10 @@ def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
         }
         if "noise" in config:
             entry["noise"] = deepcopy(config["noise"])
+        if "grid_layout" in config:
+            entry["grid_layout"] = deepcopy(config["grid_layout"])
+        if "coordinates" in config:
+            entry["coordinates"] = deepcopy(config["coordinates"])
         metadata = _PROFILE_METADATA.get(key)
         if metadata:
             entry["metadata"] = dict(metadata)
@@ -347,18 +482,37 @@ def build_device_from_config(
 ) -> Device:
     if "positions" not in config:
         raise ValueError("Profile config must include 'positions'")
+    coordinates = config.get("coordinates")
+    coord_entries = None
+    if isinstance(coordinates, Sequence):
+        coord_entries = []
+        for entry in coordinates:
+            if isinstance(entry, Sequence) and not isinstance(entry, (str, bytes)):
+                coord_entries.append(tuple(float(value) for value in entry))
     positions = list(config["positions"])
+    if coord_entries and len(positions) != len(coord_entries):
+        positions = list(range(len(coord_entries)))
     blockade = float(config.get("blockade_radius", 0.0))
     noise_cfg = None
     noise_payload = config.get("noise")
     if isinstance(noise_payload, Mapping):
         noise_cfg = SimpleNoiseConfig.from_mapping(noise_payload)
+    layout_payload = config.get("grid_layout")
+    layout = (
+        GridLayout.from_info(layout_payload)
+        if isinstance(layout_payload, Mapping)
+        else None
+    )
+    if layout is None:
+        layout = grid_layout_for_profile(profile)
     return Device(
         id=device_id,
         profile=profile,
         positions=positions,
+        coordinates=coord_entries,
         blockade_radius=blockade,
         noise=noise_cfg,
+        grid_layout=layout,
     )
 
 

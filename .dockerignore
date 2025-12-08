@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/__pycache__/
+build/
+cmake-build/
+cmake-build-debug/
+python/build-editable/
+python/__pycache__/
+python/neutral_atom_vm.egg-info/
+python/tests/__pycache__/
+notebooks/
+notebooks/.ipynb_checkpoints/
+docs/docker-service.md
+Dockerfile
+astro-site/

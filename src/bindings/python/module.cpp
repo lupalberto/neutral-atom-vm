@@ -2,6 +2,7 @@
 
 #include "noise.hpp"
 #include "service/job.hpp"
+#include "service/job_service.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -184,10 +185,21 @@ void fill_phase_noise_config(
     }
 }
 
-py::dict submit_job(const py::dict& job_obj) {
+void fill_amplitude_damping_config(
+    const py::dict& src,
+    AmplitudeDampingConfig& dst
+) {
+    if (src.contains("per_gate")) {
+        dst.per_gate = py::cast<double>(src["per_gate"]);
+    }
+    if (src.contains("idle_rate")) {
+        dst.idle_rate = py::cast<double>(src["idle_rate"]);
+    }
+}
+
+service::JobRequest build_job_request(const py::dict& job_obj) {
     service::JobRequest job;
 
-    // High-level identifiers.
     if (job_obj.contains("job_id")) {
         job.job_id = py::cast<std::string>(job_obj["job_id"]);
     } else {
@@ -204,21 +216,22 @@ py::dict submit_job(const py::dict& job_obj) {
         job.profile = py::cast<std::string>(job_obj["profile"]);
     }
 
-    // Program.
     const auto program = py::cast<py::list>(job_obj["program"]);
     job.program = instructions_from_list(program);
 
-    // Hardware configuration.
     if (job_obj.contains("hardware")) {
-        const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
+const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
         if (hardware.contains("positions")) {
             job.hardware.positions = py::cast<std::vector<double>>(hardware["positions"]);
+        }
+        if (hardware.contains("coordinates")) {
+            job.hardware.coordinates =
+                py::cast<std::vector<std::vector<double>>>(hardware["coordinates"]);
         }
         if (hardware.contains("blockade_radius")) {
             job.hardware.blockade_radius = py::cast<double>(hardware["blockade_radius"]);
         }
     } else {
-        // Fallback to legacy top-level fields if present.
         if (job_obj.contains("positions")) {
             job.hardware.positions = py::cast<std::vector<double>>(job_obj["positions"]);
         }
@@ -227,18 +240,16 @@ py::dict submit_job(const py::dict& job_obj) {
         }
     }
 
-    // Shots.
     if (job_obj.contains("shots")) {
         job.shots = py::cast<int>(job_obj["shots"]);
     }
 
-    // Optional metadata: accept a mapping of str->str.
-    if (job_obj.contains("metadata")) {
-        job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
-    }
-
     if (job_obj.contains("max_threads")) {
         job.max_threads = py::cast<std::size_t>(job_obj["max_threads"]);
+    }
+
+    if (job_obj.contains("metadata")) {
+        job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
     }
 
     if (job_obj.contains("noise")) {
@@ -268,6 +279,12 @@ py::dict submit_job(const py::dict& job_obj) {
         if (noise.contains("phase")) {
             fill_phase_noise_config(py::cast<py::dict>(noise["phase"]), cfg.phase);
         }
+        if (noise.contains("amplitude_damping")) {
+            fill_amplitude_damping_config(
+                py::cast<py::dict>(noise["amplitude_damping"]),
+                cfg.amplitude_damping
+            );
+        }
         if (noise.contains("loss_runtime")) {
             fill_loss_runtime_config(
                 py::cast<py::dict>(noise["loss_runtime"]),
@@ -277,9 +294,56 @@ py::dict submit_job(const py::dict& job_obj) {
         job.noise_config = cfg;
     }
 
+    return job;
+}
+
+service::JobService job_service;
+
+py::dict execution_log_to_dict(const ExecutionLog& entry) {
+    py::dict log;
+    log["shot"] = entry.shot;
+    log["time"] = entry.logical_time;
+    log["category"] = entry.category;
+    log["message"] = entry.message;
+    return log;
+}
+
+py::dict submit_job(const py::dict& job_obj) {
+    service::JobRequest job = build_job_request(job_obj);
     service::JobRunner runner;
     auto result = runner.run(job);
     return job_result_to_dict(result);
+}
+
+py::dict submit_job_async(const py::dict& job_obj) {
+    service::JobRequest job = build_job_request(job_obj);
+    const std::string job_id = job_service.submit(job, job.max_threads);
+    py::dict out;
+    out["job_id"] = job_id;
+    return out;
+}
+
+py::dict job_status(const std::string& job_id) {
+    const service::JobStatusSnapshot snapshot = job_service.status(job_id);
+    py::dict out;
+    out["job_id"] = job_id;
+    out["status"] = service::status_to_string(snapshot.status);
+    out["percent_complete"] = snapshot.percent_complete;
+    out["message"] = snapshot.message;
+    py::list logs;
+    for (const auto& entry : snapshot.recent_logs) {
+        logs.append(execution_log_to_dict(entry));
+    }
+    out["recent_logs"] = logs;
+    return out;
+}
+
+py::dict job_result(const std::string& job_id) {
+    const auto result = job_service.poll_result(job_id);
+    if (!result) {
+        throw std::runtime_error("job result not available yet");
+    }
+    return job_result_to_dict(*result);
 }
 
 }  // namespace
@@ -291,5 +355,23 @@ PYBIND11_MODULE(_neutral_atom_vm, m) {
         &submit_job,
         py::arg("job"),
         "Submit a VM job using the builtin JobRunner. The job dict mirrors service::JobRequest."
+    );
+    m.def(
+        "submit_job_async",
+        &submit_job_async,
+        py::arg("job"),
+        "Submit a VM job asynchronously and receive a job_id immediately."
+    );
+    m.def(
+        "job_status",
+        &job_status,
+        py::arg("job_id"),
+        "Query the current status snapshot for an async job."
+    );
+    m.def(
+        "job_result",
+        &job_result,
+        py::arg("job_id"),
+        "Fetch the final result for an async job (raises if not ready)."
     );
 }

@@ -94,6 +94,24 @@ def test_build_device_from_config_injects_noise():
     assert result["measurements"][0]["bits"] == [-1]
 
 
+def test_build_device_from_config_with_coordinates():
+    cfg = {
+        "positions": [0, 1],
+        "coordinates": [[0, 0], [0, 2]],
+        "blockade_radius": 1.0,
+    }
+    device = build_device_from_config("runtime", profile=None, config=cfg)
+
+    program = [
+        {"op": "AllocArray", "n_qubits": 2},
+        {"op": "ApplyGate", "name": "CX", "targets": [0, 1]},
+        {"op": "Measure", "targets": [0, 1]},
+    ]
+
+    with pytest.raises(ValueError, match="blockade radius"):
+        device.submit(program, shots=1)
+
+
 def test_available_presets_lists_built_in_profiles():
     presets = available_presets()
 
@@ -134,6 +152,19 @@ def test_connect_device_supports_new_presets(profile, expected_qubits):
     assert len(device.positions) == expected_qubits
     assert device.noise is not None
     assert device.noise.gate.single_qubit.px >= 0.0
+
+
+def test_connect_device_supports_lossy_block():
+    device = neutral_atom_vm.connect_device("quera.na_vm.sim", profile="lossy_block")
+
+    assert len(device.positions) == 16
+    assert device.noise is not None
+    layout = device.grid_layout
+    assert layout is not None
+    assert layout.dim == 3
+    assert layout.rows == 2
+    assert layout.cols == 4
+    assert layout.layers == 2
 
 
 def test_device_submit_raises_on_blockade_violation():

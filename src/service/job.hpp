@@ -4,6 +4,7 @@
 #include "noise.hpp"
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
+#include "progress_reporter.hpp"
 
 #include <cstddef>
 #include <map>
@@ -49,7 +50,11 @@ std::string status_to_string(JobStatus status);
 
 class JobRunner {
   public:
-    JobResult run(const JobRequest& job);
+    JobResult run(
+        const JobRequest& job,
+        std::size_t max_threads = 0,
+        neutral_atom_vm::ProgressReporter* reporter = nullptr
+    );
 };
 
 }  // namespace service

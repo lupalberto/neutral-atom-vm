@@ -118,6 +118,19 @@ def test_profile_payload_reflects_user_changes():
     assert payload["config"]["noise"]["gate"]["single_qubit"]["px"] == 0.07
 
 
+def test_profile_configurator_emits_coordinates():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = ProfileConfigurator.CUSTOM_PROFILE_LABEL
+    configurator.positions_editor.value = "0 0\n1 0\n1 1"
+
+    payload = configurator.profile_payload
+
+    assert payload["config"]["positions"] == [0, 1, 2]
+    assert payload["config"]["coordinates"] == [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+
+
 def test_profile_configurator_supports_custom_profile():
     from neutral_atom_vm.widgets import ProfileConfigurator
 
@@ -126,8 +139,9 @@ def test_profile_configurator_supports_custom_profile():
     configurator.profile_dropdown.value = ProfileConfigurator.CUSTOM_PROFILE_LABEL
     configurator.custom_profile_name.value = "my_custom"
     configurator.blockade_input.value = 2.5
+    configurator.dimension_selector.value = 1
     configurator.slot_count_input.value = 3
-    configurator.slot_spacing_input.value = 1.2
+    configurator.spacing_x_input.value = 1.2
     configurator._generate_positions()
 
     payload = configurator.profile_payload
@@ -136,6 +150,54 @@ def test_profile_configurator_supports_custom_profile():
     assert payload["config"]["blockade_radius"] == 2.5
     assert payload["config"]["positions"] == [0.0, 1.2, 2.4]
     assert configurator.metadata_html.value.startswith("<em")
+
+
+def test_profile_configurator_generates_2d_grid():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.dimension_selector.value = 2
+    configurator.row_input.value = 2
+    configurator.col_input.value = 3
+    configurator.spacing_x_input.value = 0.5
+    configurator.spacing_y_input.value = 1.0
+    configurator._generate_positions()
+
+    lines = [line.strip() for line in configurator.positions_editor.value.splitlines() if line.strip()]
+    assert lines[:3] == [
+        "0.0, 0.0",
+        "0.5, 0.0",
+        "1.0, 0.0",
+    ]
+    assert lines[3:] == [
+        "0.0, 1.0",
+        "0.5, 1.0",
+        "1.0, 1.0",
+    ]
+
+
+def test_profile_configurator_generates_3d_stack():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.dimension_selector.value = 3
+    configurator.row_input.value = 1
+    configurator.col_input.value = 2
+    configurator.layer_input.value = 2
+    configurator.spacing_x_input.value = 1.0
+    configurator.spacing_y_input.value = 2.0
+    configurator.spacing_z_input.value = 0.5
+    configurator._generate_positions()
+
+    lines = [
+        line.strip()
+        for line in configurator.positions_editor.value.splitlines()
+        if line.strip()
+    ]
+    assert lines[0] == "0.0, 0.0, 0.0"
+    assert lines[1] == "1.0, 0.0, 0.0"
+    assert lines[2] == "0.0, 0.0, 0.5"
+    assert lines[3] == "1.0, 0.0, 0.5"
 
 
 def test_profile_configurator_uses_default_device_and_profile():
@@ -213,21 +275,6 @@ def test_job_result_viewer_handles_missing_measurements():
     assert "no histogram" in histogram
 
 
-def test_job_result_viewer_renders_grid_preview():
-    from neutral_atom_vm.widgets import JobResultViewer
-
-    viewer = JobResultViewer()
-    viewer.load_result(
-        _square_result(),
-        device="device-square",
-        profile="noisy_square_array",
-        shots=2,
-    )
-
-    assert "grid preview" in viewer.grid_html.value.lower()
-    assert viewer.container.children[1] is viewer.grid_html
-
-
 def test_job_result_viewer_renders_histogram():
     from neutral_atom_vm.widgets import JobResultViewer
 
@@ -255,3 +302,295 @@ def test_histogram_paginated_and_sorted():
     assert "data-hist-page-label" in html
 
     assert html.index("1111") < html.index("0011")
+
+
+def test_histogram_container_is_scrollable():
+    from neutral_atom_vm.display import format_histogram
+
+    html = format_histogram(_many_bitstrings(), page_size=4)
+    assert "overflow-x:auto" in html
+    assert "max-width:100%" in html
+
+
+def test_display_shot_with_result():
+    pytest.importorskip("matplotlib")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+
+    payload = {"measurements": [{"bits": [1, 0, 1, 0]}]}
+    layout = GridLayout(dim=2, rows=2, cols=2)
+    result = JobResult(
+        payload,
+        device_id="device-foo",
+        profile="noisy_square_array",
+        shots=1,
+        layout=layout,
+    )
+
+    fig, ax = display_shot(result, shot_index=0, figsize=(2.0, 2.0))
+    assert hasattr(fig, "canvas")
+    assert hasattr(ax, "scatter")
+
+
+def test_display_shot_handles_lost_atoms():
+    pytest.importorskip("matplotlib")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+
+    payload = {"measurements": [{"bits": [-1, 0, 1, -1]}]}
+    layout = GridLayout(dim=2, rows=2, cols=2)
+    result = JobResult(
+        payload,
+        device_id="device-foo",
+        profile="lossy_chain",
+        shots=1,
+        layout=layout,
+    )
+
+    fig, ax = display_shot(result, shot_index=0, figsize=(2.0, 2.0))
+    assert hasattr(fig, "canvas")
+    assert hasattr(ax, "scatter")
+    sizes = ax.collections[0].get_sizes()
+    assert any(size >= 96 for size in sizes)
+    facecolors = ax.collections[0].get_facecolors()
+    assert any(color[3] < 1.0 for color in facecolors), "expected ghost markers to be semi-transparent"
+    legend = ax.get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
+    for expected in ("Measured → 1", "Measured → 0", "Lost atom"):
+        assert expected in labels
+    spacing = layout.spacing
+    x_span = max(spacing[0] * (layout.cols - 1), spacing[0], 1e-6)
+    y_span = max(spacing[1] * (layout.rows - 1), spacing[1], 1e-6)
+    z_span = max(spacing[2] * (layout.layers - 1), spacing[2], 1e-6)
+    x_lim = ax.get_xlim()[1] - ax.get_xlim()[0]
+    y_lim = ax.get_ylim()[1] - ax.get_ylim()[0]
+    z_lim = ax.get_zlim()[1] - ax.get_zlim()[0]
+    assert x_lim >= x_span
+    assert y_lim >= y_span
+
+
+def test_display_shot_interactive_plotly():
+    pytest.importorskip("plotly")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+    import plotly.graph_objects as go
+
+    payload = {"measurements": [{"bits": [-1, 0, 1, -1]}]}
+    layout = GridLayout(dim=2, rows=2, cols=2)
+    result = JobResult(
+        payload,
+        device_id="device-foo",
+        profile="lossy_chain",
+        shots=1,
+        layout=layout,
+    )
+
+    fig = display_shot(result, shot_index=0, figsize=(2.0, 2.0), interactive=True)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) >= 3
+    lost_trace = next((trace for trace in fig.data if trace.name == "Lost atom"), None)
+    assert lost_trace is not None
+    assert lost_trace.opacity < 1.0
+    assert fig.layout.height == 600
+    assert fig.layout.width == 600
+    assert fig.layout.showlegend
+
+
+def test_display_shot_interactive_planar_for_1d():
+    pytest.importorskip("plotly")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+    import plotly.graph_objects as go
+
+    payload = {"measurements": [{"bits": [1, 0, -1]}]}
+    layout = GridLayout(dim=1, rows=1, cols=3)
+    result = JobResult(
+        payload,
+        device_id="device-linear",
+        profile="runtime",
+        shots=1,
+        layout=layout,
+    )
+
+    fig = display_shot(result, shot_index=0, figsize=(2.0, 2.0), interactive=True)
+    assert isinstance(fig, go.Figure)
+    trace_types = {trace.type for trace in fig.data}
+    assert "scatter" in trace_types
+    assert "scatter3d" not in trace_types
+    assert fig.layout.xaxis is not None
+    assert fig.layout.yaxis is not None
+    assert fig.layout.showlegend
+
+
+def test_display_shot_interactive_planar_for_2d():
+    pytest.importorskip("plotly")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+    import plotly.graph_objects as go
+
+    payload = {"measurements": [{"bits": [1, 0, 1, 0]}]}
+    layout = GridLayout(dim=2, rows=2, cols=2)
+    result = JobResult(
+        payload,
+        device_id="device-grid",
+        profile="noisy_square_array",
+        shots=1,
+        layout=layout,
+    )
+
+    fig = display_shot(result, shot_index=0, figsize=(2.0, 2.0), interactive=True)
+    assert isinstance(fig, go.Figure)
+    trace_types = {trace.type for trace in fig.data}
+    assert "scatter" in trace_types
+    assert "scatter3d" not in trace_types
+    assert fig.layout.xaxis is not None
+    assert fig.layout.yaxis is not None
+    assert fig.layout.showlegend
+
+
+def test_display_shot_interactive_handles_multiple_indices():
+    pytest.importorskip("plotly")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+    import plotly.graph_objects as go
+
+    measurements = [
+        {"bits": [1, 0, -1]},
+        {"bits": [0, 1, 0]},
+    ]
+    layout = GridLayout(dim=1, rows=1, cols=3)
+    result = JobResult(
+        {"measurements": measurements},
+        device_id="device-linear",
+        profile="runtime",
+        shots=2,
+        layout=layout,
+    )
+
+    fig = display_shot(
+        result,
+        shot_indices=[0, 1],
+        interactive=True,
+    )
+    assert isinstance(fig, go.Figure)
+    assert fig.layout.showlegend
+    axis_suffixes = ["", "2"]
+    for suffix in axis_suffixes:
+        xaxis_prop = getattr(fig.layout, f"xaxis{suffix}", None)
+        yaxis_prop = getattr(fig.layout, f"yaxis{suffix}", None)
+        assert xaxis_prop is not None
+        assert yaxis_prop is not None
+
+
+def test_display_shot_handles_multiple_indices_non_interactive():
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+
+    measurements = [
+        {"bits": [1, 0, -1]},
+        {"bits": [0, 1, 0]},
+    ]
+    layout = GridLayout(dim=1, rows=1, cols=3)
+    result = JobResult(
+        {"measurements": measurements},
+        device_id="device-linear",
+        profile="runtime",
+        shots=2,
+        layout=layout,
+    )
+
+    figs = display_shot(result, shot_indices=[0, 1])
+    assert isinstance(figs, tuple)
+    fig, axes = figs
+    assert hasattr(fig, "axes")
+    assert len(axes) == 2
+def test_display_shot_interactive_planar_handles_partial_measurement():
+    pytest.importorskip("plotly")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+    from neutral_atom_vm.layouts import GridLayout
+    import plotly.graph_objects as go
+
+    payload = {"measurements": [{"bits": [1, 0]}]}
+    layout = GridLayout(dim=1, rows=1, cols=10)
+    result = JobResult(
+        payload,
+        device_id="device-linear",
+        profile="runtime",
+        shots=1,
+        layout=layout,
+    )
+
+    fig = display_shot(result, shot_index=0, interactive=True)
+    assert isinstance(fig, go.Figure)
+    trace_names = {trace.name for trace in fig.data}
+    assert "Lost atom" not in trace_names
+    point_count = sum(len(trace.x or []) for trace in fig.data)
+    assert point_count == 2
+
+
+def test_configurator_applies_grid_layout():
+    from neutral_atom_vm import available_presets
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    presets = available_presets()
+    configurator = ProfileConfigurator(
+        presets=presets,
+        default_device="quera.na_vm.sim",
+    )
+    label = configurator._label_for_value("lossy_block")
+    configurator.profile_dropdown.value = label
+
+    assert configurator.dimension_selector.value == 3
+    assert configurator.row_input.value == 2
+    assert configurator.col_input.value == 4
+    assert configurator.layer_input.value == 2
+    assert pytest.approx(1.5, rel=1e-6) == configurator.spacing_x_input.value
+    assert pytest.approx(1.0, rel=1e-6) == configurator.spacing_y_input.value
+    assert pytest.approx(1.0, rel=1e-6) == configurator.spacing_z_input.value
+
+
+def test_render_measurement_configuration_is_3d():
+    from neutral_atom_vm.display import render_measurement_configuration
+    from neutral_atom_vm.layouts import GridLayout
+
+    layout = GridLayout(dim=3, rows=2, cols=2, layers=2)
+    measurement = {"bits": [1, 0, 0, 1, 1, 1, 0, 0]}
+    html = render_measurement_configuration(measurement, layout, spacing=(1.0, 1.0, 0.5))
+
+    assert html.startswith("<img")
+
+
+def test_display_shot_exposes_matplotlib():
+    pytest.importorskip("matplotlib")
+
+    from neutral_atom_vm.display import display_shot
+    from neutral_atom_vm.job import JobResult
+
+    payload = {"measurements": [{"bits": [1, 0] * 8}]}
+    result = JobResult(
+        payload,
+        device_id="device-foo",
+        profile="noisy_square_array",
+        shots=1,
+    )
+
+    fig, ax = display_shot(result, shot_index=0, figsize=(2.0, 2.0))
+
+    assert hasattr(fig, "canvas")
+    assert hasattr(ax, "scatter")

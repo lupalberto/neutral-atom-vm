@@ -52,6 +52,24 @@ Flow:
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.
 
+### Timing-limit example
+
+The `benchmark_chain` profile mentioned above sets `timing_limits.measurement_cooldown_ns = 5.0`. The VM enforces that by remembering when each site was last measured and rejecting the next `ApplyGate` on that site until at least 5.0 logical nanoseconds have elapsed. Because the current lowering never emits any `Wait` instructions, a kernel that measures and then immediately reuses the same qubit will trigger that validation error.
+
+```python
+from bloqade import squin
+
+@squin.kernel
+def reuse_measured_qubit():
+    q = squin.qalloc(3)
+    squin.h(q[0])
+    squin.measure(q[0])
+    squin.h(q[0])  # fails the benchmark_chain cooldown without an intervening Wait
+```
+
+Running this via `connect_device("quera.na_vm.sim", profile="benchmark_chain")` will raise `runtime_error: Gate violates measurement cooldown on qubit 0`. The fix is to insert a `Wait` (or otherwise let the lowered program advance `logical_time`) before applying another gate to that site. This demonstrates how the ISA/profile contract surfaces hardware constraints, and why compilers/users must respect timing limits or the VM will reject the program before it reaches the engine.
+By adding `squin.wait(5.0)` (or any duration ≥ 5.0) between the `measure` and the following gate, the lowered program gains a `<Wait duration=5.0>` instruction. That increases `logical_time`, satisfies the cooldown, and allows the next `ApplyGate` to execute. This mirrors real hardware: you must budget time after measurements before reusing the same tweezers.
+
 ---
 
 ## 2. Command-Line Journey (`quera-vm`)
@@ -102,6 +120,7 @@ Python SDK share the same registry, which can be inspected via
 | `quera.na_vm.sim` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
 | `quera.na_vm.sim` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
 | `quera.na_vm.sim` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `quera.na_vm.sim` | `lossy_block`       | 16-site 2×4×2 block (1.5×1.0×1.0 spacing, blockade 1.5)    | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
 | `quera.na_vm.sim` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
 | `quera.na_vm.sim` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
 
@@ -115,6 +134,10 @@ quera-vm run --device quera.na_vm.sim --profile benchmark_chain \
 We also expose `local-cpu` and `local-arc` as alternative device IDs. They share the same geometry/noise table as `quera.na_vm.sim`, but `local-cpu` explicitly picks the CPU statevector backend while `local-arc` routes the same program to the oneAPI/SYCL implementation. The metadata returned by `neutral_atom_vm.available_presets()` carries distinct labels/descriptions ("CPU" vs. "Arc GPU") so you can tell them apart.
 
 When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. If the backend is not enabled, the CLI prints an explanatory error mentioning `NA_VM_WITH_ONEAPI=ON` so you can rebuild with the toggle.
+
+To keep the Arc run fast, the oneAPI backend now keeps the statevector resident on the SYCL device and only copies it back to the host when a measurement, noise hook, or SDK inspection needs the amplitudes. This avoids the old per-gate copy/wait handshake that made `local-arc` slower than `local-cpu` for gate-heavy workloads.
+
+Measurements now accumulate outcome probabilities and collapse the state directly on the GPU, so only the small probability vector and the sampled bits are copied off-device. Gate/idle noise hooks still execute on the CPU, so they are skipped when you choose `local-arc`; if you need noise modelling, keep running on `local-cpu`.
 
 If a request violates a hardware constraint (for example, a CX between tweezers outside the preset blockade), the CLI now prints the reason on stderr and exits with status 1 so you can fix the circuit before spending shots. Successful runs also echo any backend `message` (e.g., rich diagnostics or loss counts) in the summary.
 
@@ -141,7 +164,10 @@ directly in Jupyter/VS Code, combining:
 - Device/profile dropdowns backed by `available_presets()`, including metadata
   callouts so users understand geometry, persona, and noise focus.
 - A geometry tab where blockade radius and the atom positions array can be
-  edited inline (comma or newline separated floats).
+  edited inline (comma or newline separated floats). Multi-dimensional layouts
+  are supported by entering coordinates per line (e.g., `0 0`, `1 0`, ... for a
+  2-D grid), and the configurator exports both the flattened positions and the
+  full coordinate list so downstream tools preserve actual distances.
 - A noise tab that groups the most common top-level parameters (SPAM, Pauli
   channels, phase, damping, runtime loss) plus a textarea for the correlated CZ
   matrix.
@@ -161,10 +187,35 @@ the viewer and the default HTML repr now render compact grid previews ahead of
 the histogram so tutorials can surface spatial patterns and relative weights
 without wading through huge JSON dumps.
 
+The job result also keeps the layout metadata and coordinates used for the
+device, so you can rebuild a Matplotlib visualization using the display helper
+instead of touching raw JSON. Pass the job result to the single helper along
+with the shot index:
+
+```
+from IPython.display import display
+from neutral_atom_vm.display import display_shot
+
+fig, ax = display_shot(
+    result,
+    shot_index=0,
+    figsize=(4, 3),
+)
+display(fig)
+```
+
+When `interactive=True` is passed, `display_shot` returns a Plotly `Figure` rather than a `(fig, ax)` tuple, so use `fig = display_shot(..., interactive=True)` followed by `fig.show()` to activate the interactive controller (Plotly must be installed).
+
+The helper automatically reads `result.layout`/`result.coordinates` (or
+falls back to `grid_layout_for_profile(result.profile)`) and respects the
+per-axis spacing stored in `layout.spacing`. Keeping the same
+rows/cols/layers/spacing before submission keeps the VM layout, the notebook
+visualization, and any saved previews deterministic across reloads.
+
 Need something brand-new? The configurator now includes a “Create new profile”
 option:
 
-- Enter a name, specify how many slots you want plus the spacing between them,
+- Enter a name, choose the dimension (1D/2D/3D), configure rows/columns/layers and the per-axis spacing,
   and hit “Populate positions” to seed the geometry (you can still fine‑tune
   the coordinates manually afterward).
 - Set the blockade radius and tweak the noise controls just like you would for

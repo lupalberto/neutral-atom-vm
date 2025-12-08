@@ -3,7 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+import glob
+import importlib
+import importlib.util
+import os
+import sys
+
 from .display import render_job_result_html
+from .layouts import grid_layout_for_profile
 
 
 Program = Sequence[Dict[str, Any]]
@@ -17,6 +24,57 @@ def _to_float(value: Any, default: float = 0.0) -> float:
 
 def _normalize_mapping(mapping: Mapping[str, Any]) -> Dict[str, Any]:
     return dict(mapping)
+
+
+_native_module = None
+
+
+def _load_native_module():
+    global _native_module
+    if _native_module is not None:
+        return _native_module
+
+    package_dir = os.path.dirname(__file__)
+    pattern = os.path.join(package_dir, "_neutral_atom_vm*.so")
+    candidates = glob.glob(pattern)
+
+    if candidates:
+        module_path = candidates[0]
+        spec = importlib.util.spec_from_file_location(
+            "neutral_atom_vm._neutral_atom_vm", module_path
+        )
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise ImportError(
+                f"Unable to load neutral_atom_vm extension from {module_path!r}"
+            )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["neutral_atom_vm._neutral_atom_vm"] = module
+        spec.loader.exec_module(module)
+        _native_module = module
+        return module
+
+    try:
+        from ._neutral_atom_vm import submit_job as dummy  # noqa: F401 - ensure module can be imported
+    except ImportError as exc:
+        raise ImportError(
+            "The compiled neutral_atom_vm bindings are missing. "
+            "Build the C++ extension via CMake or install the package "
+            "with a wheel that includes '_neutral_atom_vm'."
+        ) from exc
+    module = importlib.import_module("neutral_atom_vm._neutral_atom_vm")
+    _native_module = module
+    return module
+
+
+def _prepare_job_dict(job: JobRequest | Mapping[str, Any]):
+    job_dict = _normalize_job_mapping(job)
+    hardware = job_dict.get("hardware")
+    if isinstance(hardware, HardwareConfig):
+        job_dict["hardware"] = hardware.to_dict()
+        hardware = job_dict["hardware"]
+    if hardware is None:
+        hardware = {}
+    return job_dict, hardware
 
 
 @dataclass(frozen=True)
@@ -268,12 +326,16 @@ class HardwareConfig:
 
     positions: Sequence[float]
     blockade_radius: float = 0.0
+    coordinates: Sequence[Sequence[float]] | None = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "positions": list(self.positions),
             "blockade_radius": float(self.blockade_radius),
         }
+        if self.coordinates is not None:
+            payload["coordinates"] = [list(coord) for coord in self.coordinates]
+        return payload
 
 
 @dataclass
@@ -322,11 +384,15 @@ class JobResult(dict):
         device_id: str,
         profile: str | None,
         shots: int,
+        layout: GridLayout | None = None,
+        coordinates: Sequence[Sequence[float]] | None = None,
     ) -> None:
         super().__init__(payload)
         self.device_id = device_id
         self.profile = profile
         self.shots = shots
+        self.layout = layout
+        self.coordinates = coordinates
 
     def _repr_html_(self) -> str:  # pragma: no cover - exercised in notebooks
         return render_job_result_html(
@@ -334,6 +400,8 @@ class JobResult(dict):
             device=self.device_id,
             profile=self.profile,
             shots=self.shots,
+            layout=self.layout,
+            coordinates=self.coordinates,
         )
 
 
@@ -358,28 +426,11 @@ def submit_job(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any]:
     low-level configuration in the function signature itself.
     """
 
-    job_dict = _normalize_job_mapping(job)
+    job_dict, hardware = _prepare_job_dict(job)
 
-    # Ensure hardware is represented as a plain mapping so that the native
-    # binding can mirror service::JobRequest without knowing about the Python
-    # dataclasses.
-    hardware = job_dict.get("hardware")
-    if isinstance(hardware, HardwareConfig):
-        job_dict["hardware"] = hardware.to_dict()
-        hardware = job_dict["hardware"]
-    if hardware is None:
-        hardware = {}
+    module = _load_native_module()
+    _native_submit_job = module.submit_job
 
-    try:
-        from ._neutral_atom_vm import submit_job as _native_submit_job
-    except ImportError as exc:  # pragma: no cover - exercised in integration tests
-        raise ImportError(
-            "The compiled neutral_atom_vm bindings are missing. "
-            "Build the C++ extension via CMake or install the package "
-            "with a wheel that includes '_neutral_atom_vm'."
-        ) from exc
-    # Prefer the new dict-shaped API if available, but fall back to the legacy
-    # flat signature for existing wheels/extensions.
     positions = list(hardware.get("positions", []))
     blockade_radius = float(hardware.get("blockade_radius", 0.0))
     shots = int(job_dict.get("shots", 1))
@@ -397,3 +448,34 @@ def submit_job(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any]:
     if isinstance(result, MutableMapping) and "job_id" in job_dict:
         result["job_id"] = job_dict["job_id"]
     return dict(result) if isinstance(result, MutableMapping) else result
+
+
+def submit_job_async(job: JobRequest | Mapping[str, Any]) -> Dict[str, Any]:
+    job_dict, _ = _prepare_job_dict(job)
+    module = _load_native_module()
+    if not hasattr(module, "submit_job_async"):
+        raise RemoteServiceError("Asynchronous submission is unavailable in this build")
+    result = module.submit_job_async(job_dict)
+    if not isinstance(result, Mapping):
+        raise RemoteServiceError("Async submission returned an unexpected payload")
+    return dict(result)
+
+
+def job_status(job_id: str) -> Dict[str, Any]:
+    module = _load_native_module()
+    if not hasattr(module, "job_status"):
+        raise RemoteServiceError("Job status queries are unavailable in this build")
+    result = module.job_status(job_id)
+    if not isinstance(result, Mapping):
+        raise RemoteServiceError("Job status response is unexpected")
+    return dict(result)
+
+
+def job_result(job_id: str) -> Dict[str, Any]:
+    module = _load_native_module()
+    if not hasattr(module, "job_result"):
+        raise RemoteServiceError("Job result queries are unavailable in this build")
+    result = module.job_result(job_id)
+    if not isinstance(result, Mapping):
+        raise RemoteServiceError("Job result response is unexpected")
+    return dict(result)

@@ -147,6 +147,7 @@ struct PulseLimits {
 struct HardwareConfig {
     // Legacy v1.0 fields.
     std::vector<double> positions;  // 1D positions for atoms
+    std::vector<std::vector<double>> coordinates;  // Optional multidimensional coordinates.
     double blockade_radius = 0.0;
 
     // v1.1 extensions.

@@ -1,11 +1,14 @@
 #include "service/job.hpp"
 #include "hardware_vm.hpp"
+#include "noise/device_noise_builder.hpp"
 
+#include <cmath>
 #include <chrono>
 #include <iomanip>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace {
 std::string escape_json(const std::string& str) {
@@ -43,6 +46,44 @@ void append_int_array(const std::vector<int>& values, std::ostringstream& out) {
         out << values[i];
     }
     out << ']';
+}
+
+void append_double_matrix(const std::vector<std::vector<double>>& values, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t row = 0; row < values.size(); ++row) {
+        if (row > 0) {
+            out << ',';
+        }
+        out << '[';
+        for (std::size_t col = 0; col < values[row].size(); ++col) {
+            if (col > 0) {
+                out << ',';
+            }
+            out << values[row][col];
+        }
+        out << ']';
+    }
+    out << ']';
+}
+
+void populate_sites_from_coordinates(HardwareConfig& hw) {
+    if (!hw.sites.empty() || hw.coordinates.empty()) {
+        return;
+    }
+    hw.sites.reserve(hw.coordinates.size());
+    for (std::size_t idx = 0; idx < hw.coordinates.size(); ++idx) {
+        const auto& coord = hw.coordinates[idx];
+        SiteDescriptor site;
+        site.id = static_cast<int>(idx);
+        if (!coord.empty()) {
+            site.x = coord[0];
+        }
+        if (coord.size() > 1) {
+            site.y = coord[1];
+        }
+        site.zone_id = 0;
+        hw.sites.push_back(site);
+    }
 }
 
 void append_instruction_json(const Instruction& instr, std::ostringstream& out) {
@@ -181,19 +222,21 @@ void enrich_hardware_with_profile_constraints(
 
         // Populate a simple 4x4 grid of site coordinates matching the
         // conceptual geometry of the noisy_square_array preset.
-        const std::size_t n_sites = hw.positions.size();
-        hw.sites.clear();
-        if (n_sites > 0) {
-            const int side = static_cast<int>(std::sqrt(static_cast<double>(n_sites)) + 0.5);
-            if (side > 0 && static_cast<std::size_t>(side * side) == n_sites) {
-                hw.sites.reserve(n_sites);
-                for (int idx = 0; idx < side * side; ++idx) {
-                    SiteDescriptor site;
-                    site.id = idx;
-                    site.x = static_cast<double>(idx % side);
-                    site.y = static_cast<double>(idx / side);
-                    site.zone_id = 0;
-                    hw.sites.push_back(site);
+        if (hw.coordinates.empty()) {
+            const std::size_t n_sites = hw.positions.size();
+            hw.sites.clear();
+            if (n_sites > 0) {
+                const int side = static_cast<int>(std::sqrt(static_cast<double>(n_sites)) + 0.5);
+                if (side > 0 && static_cast<std::size_t>(side * side) == n_sites) {
+                    hw.sites.reserve(n_sites);
+                    for (int idx = 0; idx < side * side; ++idx) {
+                        SiteDescriptor site;
+                        site.id = idx;
+                        site.x = static_cast<double>(idx % side);
+                        site.y = static_cast<double>(idx / side);
+                        site.zone_id = 0;
+                        hw.sites.push_back(site);
+                    }
                 }
             }
         }
@@ -220,7 +263,12 @@ std::string to_json(const JobRequest& job) {
         }
         out << job.hardware.positions[i];
     }
-    out << "],\"blockade_radius\":" << job.hardware.blockade_radius << "},";
+    out << ']';
+    if (!job.hardware.coordinates.empty()) {
+        out << ",\"coordinates\":";
+        append_double_matrix(job.hardware.coordinates, out);
+    }
+    out << ",\"blockade_radius\":" << job.hardware.blockade_radius << "},";
     out << "\"program\":";
     out << '[';
     for (std::size_t i = 0; i < job.program.size(); ++i) {
@@ -260,7 +308,11 @@ std::string status_to_string(JobStatus status) {
     return "unknown";
 }
 
-JobResult JobRunner::run(const JobRequest& job) {
+JobResult JobRunner::run(
+    const JobRequest& job,
+    std::size_t max_threads,
+    neutral_atom_vm::ProgressReporter* reporter
+) {
     auto start = std::chrono::steady_clock::now();
     JobResult result;
     result.job_id = job.job_id;
@@ -279,15 +331,23 @@ JobResult JobRunner::run(const JobRequest& job) {
         DeviceProfile profile;
         profile.id = job.device_id;
         profile.isa_version = job.isa_version;
-        profile.hardware = job.hardware;
-        enrich_hardware_with_profile_constraints(job, profile.hardware);
+        HardwareConfig hw = job.hardware;
+        populate_sites_from_coordinates(hw);
+        enrich_hardware_with_profile_constraints(job, hw);
+        profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
+            profile.device_noise_engine =
+                neutral_atom_vm::noise::build_device_noise_engine(*job.noise_config);
         }
 
         HardwareVM vm(profile);
-        const auto run_result = vm.run(job.program, shots, {}, job.max_threads);
+        if (reporter) {
+            vm.set_progress_reporter(reporter);
+        }
+        const std::size_t threads = max_threads > 0 ? max_threads : job.max_threads;
+        const auto run_result = vm.run(job.program, shots, {}, threads);
         result.measurements = run_result.measurements;
         result.logs = run_result.logs;
         result.status = JobStatus::Completed;

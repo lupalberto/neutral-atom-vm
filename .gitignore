@@ -16,3 +16,4 @@ python/build-editable/
 *.log
 .venv/
 Testing/
+.ipynb_checkpoints/

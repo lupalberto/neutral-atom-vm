@@ -54,11 +54,11 @@ TEST(StatevectorEngineTests, BellState) {
     program.push_back(Instruction{Op::AllocArray, 2});
     program.push_back(Instruction{
         Op::ApplyGate,
-        Gate{"H", {1}, 0.0},
+        Gate{"H", {0}, 0.0},
     });
     program.push_back(Instruction{
         Op::ApplyGate,
-        Gate{"CX", {1, 0}, 0.0},
+        Gate{"CX", {0, 1}, 0.0},
     });
 
     engine.run(program);
@@ -220,6 +220,23 @@ TEST(StatevectorEngineTests, BlockadeBlocksDistantQubits) {
     HardwareConfig cfg;
     cfg.positions = {0.0, 5.0};
     cfg.blockade_radius = 1.0;
+
+    StatevectorEngine engine(cfg);
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 2});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 1}, 0.0},
+    });
+
+    EXPECT_THROW(engine.run(program), std::runtime_error);
+}
+
+TEST(StatevectorEngineTests, BlockadeHonorsCoordinates) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0, 1.0};
+    cfg.coordinates = {{0.0, 0.0}, {0.0, 2.0}};
+    cfg.blockade_radius = 1.5;
 
     StatevectorEngine engine(cfg);
     std::vector<Instruction> program;

@@ -11,7 +11,8 @@ from collections import Counter
 from typing import Any, Callable, Mapping, Sequence
 
 from .device import connect_device, build_device_from_config
-from .layouts import grid_layout_for_profile
+from .layouts import GridLayout, grid_layout_for_profile
+from .service_client import RemoteServiceError, submit_job_to_service
 
 
 def _load_kernel(target: str) -> Callable[..., Any]:
@@ -68,15 +69,19 @@ def _display_bit(bit: int) -> str:
 
 def _grid_lines_for_bits(
     bits: Sequence[int],
-    rows: int,
-    cols: int,
+    layout: GridLayout,
 ) -> list[str] | None:
-    if len(bits) != rows * cols:
+    if len(bits) != layout.total_slots:
         return None
     lines: list[str] = []
-    for r in range(rows):
-        row_bits = bits[r * cols : (r + 1) * cols]
-        lines.append(" ".join(_display_bit(bit) for bit in row_bits))
+    idx = 0
+    for layer in range(layout.layers):
+        if layout.layers > 1:
+            lines.append(f"Layer {layer + 1}:")
+        for _ in range(layout.rows):
+            row_bits = bits[idx : idx + layout.cols]
+            idx += layout.cols
+            lines.append(" ".join(_display_bit(bit) for bit in row_bits))
     return lines
 
 
@@ -116,18 +121,17 @@ def _summarize_result(
         if not bits:
             continue
         key = "".join(str(int(b)) for b in bits)
-        if grid_layout:
-            rows, cols = grid_layout
-            if len(bits) == rows * cols:
-                grid_examples.setdefault(key, list(int(b) for b in bits))
+        if grid_layout and len(bits) == grid_layout.total_slots:
+            grid_examples.setdefault(key, list(int(b) for b in bits))
 
     if counts:
         print("Counts:")
         for bitstring, count in sorted(counts.items()):
             print(f"  {bitstring}: {count}")
             if grid_layout:
-                rows, cols = grid_layout
-                lines = _grid_lines_for_bits(grid_examples.get(bitstring, []), rows, cols)
+                lines = _grid_lines_for_bits(
+                    grid_examples.get(bitstring, []), grid_layout
+                )
                 if lines:
                     print("    Grid:")
                     for line in lines:
@@ -185,11 +189,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
     thread_limit: int | None = args.threads if args.threads > 0 else None
 
     try:
-        job = device.submit(kernel, shots=args.shots, max_threads=thread_limit)
+        if args.service_url:
+            job_request = device.build_job_request(
+                kernel,
+                shots=args.shots,
+                max_threads=thread_limit,
+            )
+            result = submit_job_to_service(
+                job_request,
+                args.service_url,
+                timeout=args.service_timeout,
+            )
+        else:
+            job = device.submit(kernel, shots=args.shots, max_threads=thread_limit)
+            result = job.result()
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    result = job.result()
+    except RemoteServiceError as exc:
+        print(f"Remote service error: {exc}", file=sys.stderr)
+        return 1
+
     if args.log_file:
         logs = result.get("logs", [])
         try:
@@ -269,6 +289,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "--log-file",
         help="Path to dump detailed VM logs (JSON array) instead of embedding them in stdout.",
+    )
+    run_parser.add_argument(
+        "--service-url",
+        help="Post the job JSON to a remote Neutral Atom VM service instead of running locally.",
+    )
+    run_parser.add_argument(
+        "--service-timeout",
+        type=float,
+        default=30.0,
+        help="Seconds to wait when contacting the remote service (only used with --service-url).",
     )
     run_parser.add_argument(
         "target",

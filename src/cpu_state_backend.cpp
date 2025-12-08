@@ -53,9 +53,6 @@ void CpuStateBackend::apply_two_qubit_unitary(
     if (q0 == q1) {
         throw std::invalid_argument("Two-qubit gate requires distinct targets");
     }
-    if (q0 > q1) {
-        std::swap(q0, q1);
-    }
     if (q0 < 0 || q1 < 0 || q0 >= n_qubits_ || q1 >= n_qubits_) {
         throw std::out_of_range("Invalid qubit index");
     }

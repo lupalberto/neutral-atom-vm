@@ -20,7 +20,7 @@ if(NA_VM_WITH_ONEAPI)
     set(CMAKE_CXX_COMPILER "${DPCPP_COMPILER}" CACHE FILEPATH "SYCL compiler" FORCE)
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    set(ONEAPI_COMPILE_OPTIONS -fsycl)
+    set(ONEAPI_COMPILE_OPTIONS -fsycl -fno-sycl-id-queries-fit-in-int)
     set(ONEAPI_LINK_OPTIONS -fsycl)
 endif()
 
@@ -43,12 +43,15 @@ add_library(vm STATIC
     ../src/noise/single_qubit_pauli_source.cpp
     ../src/noise/two_qubit_pauli_source.cpp
     ../src/noise/correlated_pauli_source.cpp
+    ../src/noise/device_pauli_noise_source.cpp
+    ../src/noise/device_noise_builder.cpp
     ../src/noise/idle_dephasing_source.cpp
     ../src/noise/phase_kick_noise_source.cpp
     ../src/noise/idle_phase_drift_source.cpp
     ../src/noise/loss_tracking_source.cpp
     ../src/hardware_vm.cpp
     ../src/service/job.cpp
+    ../src/service/job_service.cpp
 )
 target_include_directories(vm PUBLIC
     ${CMAKE_SOURCE_DIR}/../src

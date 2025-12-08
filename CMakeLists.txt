@@ -15,30 +15,33 @@ if(NA_VM_WITH_ONEAPI)
     set(CMAKE_CXX_COMPILER "${DPCPP_COMPILER}" CACHE FILEPATH "SYCL compiler" FORCE)
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    set(ONEAPI_COMPILE_OPTIONS -fsycl)
+    set(ONEAPI_COMPILE_OPTIONS -fsycl -fno-sycl-id-queries-fit-in-int)
     set(ONEAPI_LINK_OPTIONS -fsycl)
 endif()
 
 include(FetchContent)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-add_library(vm STATIC
-    src/engine_statevector.cpp
-    src/cpu_state_backend.cpp
-    src/oneapi_state_backend.cpp
-    src/noise.cpp
-    src/noise/amplitude_damping_source.cpp
-    src/noise/pauli_utils.cpp
-    src/noise/measurement_noise_source.cpp
-    src/noise/single_qubit_pauli_source.cpp
-    src/noise/two_qubit_pauli_source.cpp
-    src/noise/correlated_pauli_source.cpp
-    src/noise/idle_dephasing_source.cpp
-    src/noise/phase_kick_noise_source.cpp
+    add_library(vm STATIC
+        src/engine_statevector.cpp
+        src/cpu_state_backend.cpp
+        src/oneapi_state_backend.cpp
+        src/noise.cpp
+        src/noise/amplitude_damping_source.cpp
+        src/noise/pauli_utils.cpp
+        src/noise/measurement_noise_source.cpp
+        src/noise/single_qubit_pauli_source.cpp
+        src/noise/two_qubit_pauli_source.cpp
+        src/noise/correlated_pauli_source.cpp
+        src/noise/device_pauli_noise_source.cpp
+        src/noise/device_noise_builder.cpp
+        src/noise/idle_dephasing_source.cpp
+        src/noise/phase_kick_noise_source.cpp
     src/noise/idle_phase_drift_source.cpp
     src/noise/loss_tracking_source.cpp
     src/hardware_vm.cpp
     src/service/job.cpp
+    src/service/job_service.cpp
 )
 target_include_directories(vm PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -73,11 +76,14 @@ if(NA_VM_BUILD_TESTS)
         test/vm_tests.cpp
         test/service_api_tests.cpp
         test/noise_tests.cpp
+        test/statevector_engine_sync_tests.cpp
+        test/service_job_service_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)
     if(NA_VM_WITH_ONEAPI)
         target_compile_options(vm_tests PRIVATE ${ONEAPI_COMPILE_OPTIONS})
         target_link_options(vm_tests PRIVATE ${ONEAPI_LINK_OPTIONS})
+        target_sources(vm_tests PRIVATE test/oneapi_gpu_tests.cpp)
     endif()
     include(GoogleTest)
     gtest_discover_tests(vm_tests)

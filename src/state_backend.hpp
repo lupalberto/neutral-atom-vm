@@ -30,4 +30,5 @@ class StateBackend {
 
     virtual void sync_host_to_device() {}
     virtual void sync_device_to_host() {}
+    virtual bool is_gpu_backend() const { return false; }
 };

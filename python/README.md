@@ -28,3 +28,11 @@ python -m neutral_atom_vm.workflow_demo
 
 The script prints the lowered program along with the job result dictionary so you can
 inspect the end-to-end flow without Docker.
+
+## Remote service submission
+
+Once the Dockerized service is running (see `neutral-atom-vm/docs/docker-service.md`),
+you can ask `quera-vm` to POST jobs remotely instead of executing them locally. Add
+`--service-url http://localhost:8080/job` (and optionally `--service-timeout`) to the
+`run` command so the CLI streams the serialized `JobRequest` to the HTTP service you
+built above.
