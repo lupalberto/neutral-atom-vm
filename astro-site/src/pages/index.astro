@@ -1,0 +1,157 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+import Callout from "@components/Callout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Overview"
+  description="How this Neutral Atom VM prototype fits between Kirin/Bloqade/Squin and hardware, and what it says about how I work."
+  nav={nav}
+  page="overview"
+>
+  <section>
+    <h1>What is this prototype?</h1>
+    <p>
+      This repository is a <strong>weekend prototype</strong> of a hardware-style virtual machine for neutral-atom
+      devices: a small, stable instruction set; a job/service API; and a catalog of device profiles in front of
+      one or more execution engines (ideal, noisy, or future physics-accurate/hardware).
+    </p>
+    <p>
+      It is not meant to be drop-in production code. Instead, it is a concrete demonstration of how I approach a
+      new domain: reading design material, sketching and iterating on an architecture, building a vertical slice
+      end to end, and documenting decisions so others can follow the thread.
+    </p>
+    <div class="grid" style="margin-top: 2rem;">
+      <div class="card">
+        <h3>Between compilers and hardware</h3>
+        <p>
+          The VM sits between high-level compilers (Kirin, Bloqade, Squin) and neutral-atom devices. It presents
+          a versioned ISA, device/job API, and profiles that compilers can target without knowing which backend
+          (statevector, noise-instrumented statevector, or hardware driver) actually runs the program.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Architected as if for production</h3>
+        <p>
+          Even in a weekend, the code is structured like a real system: clear layers, explicit contracts, device
+          presets, noise engines, CLI/SDK surfaces, and a service story. The goal is to show my architectural
+          mindset, attention to detail, and bias toward maintainable abstractions.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Learning through building</h3>
+        <p>
+          I used this project to ramp up quickly on QuEra’s public materials and the neutral-atom VM concept,
+          then reflected that understanding back into code, docs, and this site.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <Callout
+    title="About this site"
+    body="This Astro site is a guided tour of the prototype. It mirrors the job description: a hardware VM ISA, a job/service layer, device profiles, noise and QEC considerations, user journeys via SDK/CLI, and a roadmap. It is as much a window into how I work as it is an explanation of the VM."
+  />
+
+  <section>
+    <h2>Who might find this useful</h2>
+    <p>
+      This is an exploratory prototype, not a full product. If you are reading it as part of my application, here are
+      a few lenses you might choose:
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>Quantum &amp; QEC scientists</h3>
+        <p>
+          Glance at how device profiles and noise presets could support QEC-style workloads, and how the VM might sit
+          between neutral-atom hardware, effective noise models, and decoder/Stim tooling.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Compiler &amp; tooling engineers</h3>
+        <p>
+          Look at the ISA, versioning, and job schema as an example of how I design a stable compilation target, even
+          in a prototype intended mainly to show my thinking.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Infrastructure &amp; ops</h3>
+        <p>
+          Treat the job/service story, Dockerized service, and CLI/SDK integration as a sketch of how this could grow
+          into a deployable VM service, rather than a finished implementation.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How to get hands-on</h2>
+    <p>
+      There are three quick ways to experience the prototype end to end:
+    </p>
+    <ul>
+      <li>
+        <strong>Run a Bloqade/Squin-style kernel via the Python SDK</strong> – see the example on the
+        <a href="/ux">User Journey</a> page, backed by <code>python/src/neutral_atom_vm/device.py</code> and
+        <code>to_vm_program</code>.
+      </li>
+      <li>
+        <strong>Exercise the full pipeline locally</strong> – use the workflow demo described in
+        <code>python/README.md</code> and linked from the <a href="/implementation">Implementation</a> page to go
+        from kernel to VM program to job result.
+      </li>
+      <li>
+        <strong>Explore device presets and noise profiles</strong> – call <code>available_presets()</code> in Python
+        and cross-reference the presets with the <code>SimpleNoiseConfig</code>-based design on the
+        <a href="/noise">Noise &amp; QEC</a> page.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where each page fits in the outline</h2>
+    <p>
+      The outline in my cover letter (“What to look for in the repository”) maps directly onto this site:
+    </p>
+    <ul>
+      <li>
+        <strong>Overview (this page)</strong> – explains the VM’s role between Kirin/Bloqade/Squin and hardware,
+        and why this prototype exists.
+      </li>
+      <li>
+        <strong><a href="/architecture">Architecture</a></strong> – details the VM ISA, job/service layer, device
+        profiles, and how backends plug in.
+      </li>
+      <li>
+        <strong><a href="/ux">User Journeys</a></strong> – walks through persona-driven flows for algorithm authors,
+        compiler/tooling engineers, and operators using the Python SDK and <code>quera-vm</code> CLI.
+      </li>
+      <li>
+        <strong><a href="/noise">Noise &amp; QEC</a></strong> – describes the noise engines, presets, and how they
+        support QEC and Stim-based analysis.
+      </li>
+      <li>
+        <strong><a href="/implementation">Implementation</a></strong> – links C++ core components
+        (<code>HardwareVM</code>, <code>StatevectorEngine</code>, noise engine, job runner) to the Python bindings
+        and CLI.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What this says about how I work</h2>
+    <p>
+      Across the code and documentation, I aimed to show a consistent pattern: curiosity about the problem space,
+      resourcefulness in learning quickly, a bias toward clear architectures and contracts, and attention to the
+      details that make a system usable by real people.
+    </p>
+  </section>
+</BaseLayout>

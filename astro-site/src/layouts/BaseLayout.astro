@@ -1,0 +1,176 @@
+---
+import AboutSidebar from "@components/AboutSidebar.astro";
+
+const {
+  title = "Neutral Atom VM",
+  description = "",
+  nav = [],
+  page = "overview",
+} = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title ? `${title} · Neutral Atom VM` : "Neutral Atom VM"}</title>
+    {description && <meta name="description" content={description} />}
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --fg: #f8fafc;
+        --accent: #38bdf8;
+        --muted: #94a3b8;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #020617;
+        color: var(--fg);
+      }
+      header {
+        border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(8px);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      nav {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.95rem;
+      }
+      nav a:hover {
+        color: var(--accent);
+      }
+      .logo {
+        font-weight: 600;
+        letter-spacing: 0.05em;
+      }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 4rem;
+      }
+      .content-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(260px, 1.2fr);
+        gap: 2rem;
+        align-items: flex-start;
+      }
+      @media (max-width: 900px) {
+        .content-shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      footer {
+        border-top: 1px solid rgba(148, 163, 184, 0.3);
+        padding: 1.5rem;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      a.button {
+        background: linear-gradient(120deg, #7c3aed, #38bdf8);
+        padding: 0.75rem 1.5rem;
+        color: white;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.2);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.5rem;
+      }
+      .content-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr);
+        gap: 2rem;
+        align-items: flex-start;
+      }
+      .page-content {
+        min-width: 0;
+      }
+      .sidebar-wrapper {
+        position: sticky;
+        top: 1.5rem;
+        align-self: start;
+      }
+      @media (max-width: 960px) {
+        .content-shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .sidebar-wrapper {
+          position: static;
+          top: auto;
+        }
+      }
+      .card {
+        padding: 1.25rem;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 1rem;
+        background: rgba(15, 23, 42, 0.6);
+      }
+      h1, h2, h3, h4 {
+        color: white;
+      }
+      pre {
+        background: #0f172a;
+        border-radius: 0.75rem;
+        padding: 1rem;
+        overflow-x: auto;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+      }
+      code {
+        font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      }
+      p {
+        color: #cbd5f5;
+        line-height: 1.7;
+      }
+      ul {
+        color: #cbd5f5;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a class="logo" href="/">NEUTRAL·ATOM·VM</a>
+        <div class="links">
+          {nav.map((item) => (
+            <a href={item.href}>{item.label}</a>
+          ))}
+        </div>
+        <a class="button" href="https://github.com/QuEraComputing">Project GitHub</a>
+      </nav>
+    </header>
+    <main>
+      <div class="content-shell">
+        <div class="page-content">
+          <slot />
+        </div>
+        <div class="sidebar-wrapper">
+          <AboutSidebar page={page} />
+        </div>
+      </div>
+    </main>
+    <footer>
+      Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+    </footer>
+  </body>
+</html>

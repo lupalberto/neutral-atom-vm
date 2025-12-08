@@ -1,0 +1,154 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Noise & QEC"
+  description="Noise modeling strategy, device presets, and how this supports QEC and Stim-based analysis."
+  nav={nav}
+  page="noise"
+>
+  <section>
+    <h1>Noise Modeling &amp; Stim Integration</h1>
+    <p>
+      Neutral-atom hardware is dominated by atom loss, laser instability, finite Rydberg lifetimes,
+      motional dephasing, crosstalk, trap inhomogeneities, control electronics jitter, and imperfect
+      blockade (see <strong>docs/noise.md</strong>). The VM does not expose noise instructions; instead,
+      engines ingest calibrated parameters and inject stochastic faults below the ISA.
+    </p>
+  </section>
+
+  <section>
+    <h2>Effective noise pipeline</h2>
+    <ol>
+      <li><strong>Physical characterization:</strong> device teams measure Pauli, loss, and phase parameters.</li>
+      <li><strong>Effective config:</strong> values enter <code>SimpleNoiseConfig</code> (gate Pauli tables, readout flips,
+          runtime loss, amplitude damping, phase kicks) defined in <code>src/noise.hpp</code>.</li>
+      <li><strong>Runtime injection:</strong> <code>SimpleNoiseEngine</code> composes dedicated sources (loss tracking,
+          measurement noise, amplitude damping, Pauli channels, correlated CZ faults, idle phase drift) as implemented in
+          <code>src/noise.cpp</code>.</li>
+      <li><strong>Logs:</strong> noise engines emit log entries (category <code>Noise</code>) that appear alongside gate logs,
+          so you can see when and where faults were applied.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Key structures</h2>
+<pre><code>struct SimpleNoiseConfig &#123;
+  double p_quantum_flip;
+  double p_loss;
+  MeasurementNoiseConfig readout;
+  GateNoiseConfig gate;
+  TwoQubitCorrelatedPauliConfig correlated_gate;
+  double idle_rate;
+  PhaseNoiseConfig phase;
+  AmplitudeDampingConfig amplitude_damping;
+  LossRuntimeConfig loss_runtime;
+&#125;
+</code></pre>
+    <p>
+      Validation logic limits probabilities to physical ranges and ensures correlated CZ tables sum to ≤ 1.
+      Runtime loss (per gate plus idle rate) lets the VM mark measurement bits as erasures (value −1) long before readout,
+      which is particularly relevant for erasure-aware QEC codes.
+    </p>
+  </section>
+
+  <section>
+    <h2>Stim vs Neutral Atom VM</h2>
+    <p>
+      Per <strong>docs/stim-integration.md</strong>, Stim is the dedicated stabilizer/Pauli simulator. A shared noise IR fuels
+      two complementary compilation paths:
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h4>Hardware path → VM</h4>
+        <p>
+          Noise IR configures <code>SimpleNoiseConfig</code>. Programs stay noise-blind; engines inject noise below the ISA,
+          preserving the device abstraction for SDKs and services while still modeling realistic faults.
+        </p>
+      </div>
+      <div class="card">
+        <h4>QEC path → Stim</h4>
+        <p>
+          Noise IR lowers to Stim circuits with explicit <code>pauli_channel</code> primitives. Stim becomes the reference
+          implementation for Pauli/loss semantics used in decoder and QEC studies, sharing parameters with the VM but not
+          reusing its engines.
+        </p>
+      </div>
+    </div>
+    <p>
+      Keeping roles separate avoids conflating Pauli analytics with hardware emulation, while aligning via the shared noise dialect.
+    </p>
+  </section>
+
+  <section>
+    <h2>Program-annotated noise</h2>
+    <p>
+      Bloqade and related DSLs may emit explicit noise annotations (for example, <code>single_qubit_pauli_channel</code>).
+      Engines can either combine them with device configs or switch to a program-aware strategy. Detection happens during
+      lowering so we do not double-count noise or violate the effective IR.
+    </p>
+  </section>
+
+  <section>
+    <h2>Examples: preset-driven noise</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Profile</th>
+          <th>Geometry</th>
+          <th>Noise Emphasis</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>ideal_small_array</code></td>
+          <td>10-site chain</td>
+          <td>Noise disabled; deterministic baseline.</td>
+        </tr>
+        <tr>
+          <td><code>noisy_square_array</code></td>
+          <td>4×4 grid</td>
+          <td>1% depolarizing gates, idle phase drift 0.02 rad, runtime idle rate 200 s⁻¹.</td>
+        </tr>
+        <tr>
+          <td><code>lossy_chain</code></td>
+          <td>6-site chain</td>
+          <td>10% upfront loss + runtime loss (5 s⁻¹) to stress erasure-aware code.</td>
+        </tr>
+        <tr>
+          <td><code>lossy_block</code></td>
+          <td>2×4×2 block</td>
+          <td>Same heavy loss profile as <code>lossy_chain</code> but arranged in a 16-site block to exercise erasure-aware workflows.</td>
+        </tr>
+        <tr>
+          <td><code>benchmark_chain</code></td>
+          <td>20-site chain</td>
+          <td>Moderate depolarizing, correlated CZ matrix, idle dephasing 0.012.</td>
+        </tr>
+        <tr>
+          <td><code>readout_stress</code></td>
+          <td>8-site chain</td>
+          <td>3% symmetric readout flips, mild runtime loss.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      All presets live in <code>python/src/neutral_atom_vm/device.py</code> and become <code>SimpleNoiseConfig</code>
+      instances (or <em>null</em> for ideal runs) before reaching <code>JobRunner</code>.
+    </p>
+    <p>
+      For QEC-oriented work, these presets provide a quick way to explore different regimes (loss-dominated, SPAM-dominated,
+      correlated two-qubit errors) without rewriting circuits or compilers. The same parameters can be fed into Stim-based
+      studies for decoder design.
+    </p>
+  </section>
+</BaseLayout>

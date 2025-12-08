@@ -1,0 +1,154 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Architecture"
+  description="How the VM ISA, job/service layer, device profiles, and backends fit together."
+  nav={nav}
+  page="architecture"
+>
+  <section>
+    <h1>Architecture &amp; Layering</h1>
+    <p>
+      The Neutral Atom VM is deliberately multi-level. <strong>docs/vm-architecture.md</strong> separates DSLs and
+      compilers, the hardware virtual machine contract, and execution engines so that each layer can evolve
+      independently.
+    </p>
+    <p>
+      This page explains that contract: what the VM guarantees to Kirin/Bloqade/Squin on top, and what it expects
+      from engines and devices underneath.
+    </p>
+  </section>
+
+  <section>
+    <h2>Stack at a glance</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>DSL &amp; compilation stack</h3>
+        <p>
+          Bloqade, Squin, and Kirin passes synthesize, schedule, and insert neutral-atom–specific structure, then
+          lower into a VM dialect: hardware-oriented instructions plus layout and profile metadata.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Hardware VM</h3>
+        <p>
+          Defines the instruction set (<code>AllocArray</code>, <code>ApplyGate</code>, <code>MoveAtom</code>,
+          <code>Wait</code>, <code>Pulse</code>, <code>Measure</code>), the job/service schema, and device profiles.
+          It is thin but stable: the goal is to keep this contract steady while hardware and engines improve.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Execution engines</h3>
+        <p>
+          Statevector, noise-augmented (Pauli) statevector, future Rydberg physics engines, and real hardware drivers
+          all implement the same VM semantics. In this prototype, “Pauli” simply means the statevector engine plus
+          the <code>SimpleNoiseEngine</code> hooks, but it could be replaced by a dedicated Pauli simulator later.
+          They are interchangeable behind the VM façade as long as they honor the ISA and device profile constraints.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>ISA: the core contract</h2>
+    <p>
+      The header <code>src/vm/isa.hpp</code> is the single source of truth for the VM ISA. A simplified view:
+    </p>
+<pre><code>enum class Op &#123; AllocArray, ApplyGate, Measure, MoveAtom, Wait, Pulse &#125;;
+
+struct Instruction &#123;
+  Op op;
+  Gate gate;
+  std::vector&lt;unsigned&gt; targets;
+  double duration;
+&#125;;
+
+struct HardwareConfig &#123;
+  std::vector&lt;double&gt; positions;
+  double blockade_radius;
+  std::vector&lt;SiteDescriptor&gt; sites;
+  std::vector&lt;NativeGate&gt; native_gates;
+  TimingLimits timing_limits;
+  PulseLimits pulse_limits;
+&#125;;
+</code></pre>
+    <p>
+      ISA versioning (<code>ISAVersion</code>, <code>kSupportedISAVersions</code>) lets the runtime reject jobs that
+      target unsupported dialects before any gate executes, which is critical once multiple compiler versions and
+      devices are in play.
+    </p>
+  </section>
+
+  <section>
+    <h2>Job and service layer</h2>
+    <p>
+      The VM is presented to clients as a device-like job API, implemented in <code>src/service/job.hpp/.cpp</code> and
+      surfaced in Python via <code>python/src/neutral_atom_vm</code>.
+    </p>
+    <ul>
+      <li><strong>JobRequest</strong> – job id, device id, profile, ISA version, hardware config, program, and shots.</li>
+      <li><strong>JobResult</strong> – status, elapsed time, measurements, logs, and an optional message.</li>
+      <li><strong>JobRunner</strong> – validates the request, selects a backend, and executes the program for each shot.</li>
+    </ul>
+    <p>
+      In the Python SDK, these concepts appear as <code>JobRequest</code> dataclasses and the <code>submit_job</code> /
+      <code>connect_device</code> helpers; on the C++ side they are plain structs with a JSON serialization.
+    </p>
+  </section>
+
+  <section>
+    <h2>Device profiles</h2>
+    <p>
+      Device profiles capture geometry, native gates, and timing/noise settings for different “virtual devices”.
+      They live primarily in <code>python/src/neutral_atom_vm/device.py</code> and are translated into
+      <code>HardwareConfig</code> plus noise settings for the C++ core.
+    </p>
+    <div class="card" style="margin-top:1rem;">
+      <h4>Examples of profiles</h4>
+      <ul>
+        <li><code>quera.na_vm.sim / ideal_small_array</code> – 10-site chain, ideal (noise-free) baseline.</li>
+        <li><code>noisy_square_array</code> – 4×4 grid with depolarizing and idle-phase noise.</li>
+        <li><code>lossy_chain</code> &amp; <code>lossy_block</code> – heavy-loss presets to stress erasure-aware code.</li>
+        <li><code>benchmark_chain</code> – 20-site chain with correlated CZ noise and timing constraints.</li>
+        <li><code>readout_stress</code> – 8-site chain with SPAM-focused readout noise.</li>
+      </ul>
+      <p>
+        Each profile annotates intended use cases (e.g., “benchmarking”, “QEC/erasure”, “tutorials”) and is accessible
+        via <code>neutral_atom_vm.available_presets()</code>.
+      </p>
+    </div>
+    <p>
+      Together, the ISA and profiles form a <strong>hardware contract</strong>: compilers must respect gate sets,
+      connectivity, and timing limits, and the VM validates programs against them before they reach an engine.
+    </p>
+  </section>
+
+  <section>
+    <h2>Backends and roadmap</h2>
+    <p>
+      The current prototype uses a statevector backend implemented in <code>src/engine_statevector.hpp/.cpp</code>,
+      with optional GPU acceleration via oneAPI when built with <code>NA_VM_WITH_ONEAPI=ON</code>. The architectural
+      hooks are designed to make additional engines straightforward.
+    </p>
+    <ul>
+      <li><strong>Today:</strong> CPU statevector engine with pluggable noise (<code>SimpleNoiseEngine</code>).</li>
+      <li><strong>Optional:</strong> oneAPI-backed statevector (“local-arc” device id) for GPU experiments.</li>
+      <li><strong>Future:</strong> Pauli-style engines for large QEC codes, pulse-level neutral-atom physics engines, and hardware drivers.</li>
+    </ul>
+    <p>
+      The <strong>ROADMAP.md</strong> file in the repository sketches how this evolves into a standalone VM service:
+      API spec and ISA formalization, a networked job manager, tighter SDK/CLI integrations, and, eventually,
+      richer device profiles and engines. The prototype here is a thin but realistic slice of that trajectory.
+    </p>
+  </section>
+</BaseLayout>

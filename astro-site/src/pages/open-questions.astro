@@ -1,0 +1,123 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Open Questions"
+  description="Candid notes on limitations, unresolved design points, and where this prototype stops."
+  nav={nav}
+  page="open-questions"
+>
+  <section>
+    <h1>Open Questions &amp; Known Limitations</h1>
+    <p>
+      This page captures some of the questions that came up while building the prototype and reviewing its
+      architecture. It is intentionally candid: several of these items are gaps, not features, and point to
+      the work that would be needed to turn this into a production-quality hardware VM.
+    </p>
+  </section>
+
+  <section>
+    <h2>Scheduling &amp; logical time</h2>
+    <p>
+      The ISA and device profiles include timing-related fields (gate durations, cooldowns, parallelism limits),
+      and the engine tracks <code>logical_time</code> plus per-qubit <code>last_measurement_time</code>. However:
+    </p>
+    <ul>
+      <li>The Squin lowering produces a linear instruction stream with no scheduler or notion of parallelism.</li>
+      <li>Today, <code>logical_time</code> only advances via explicit <code>Wait</code> instructions, not by gate/measurement durations.</li>
+      <li>
+        Timing constraints (like the <code>benchmark_chain</code> measurement cooldown) surface as runtime errors when the
+        program reuses a qubit “too soon,” instead of being prevented by a scheduling pass that constructs a valid schedule.
+      </li>
+    </ul>
+    <p>
+      The intent is sound (ISA/device profiles declare constraints, and the VM validates them), but the implementation
+      is incomplete without:
+    </p>
+    <ul>
+      <li>automatic time advance for gates/measurements, and</li>
+      <li>a scheduling/compiler layer that reasons about cooldowns and parallelism up front.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>“Pauli backend” vs. noise-augmented statevector</h2>
+    <p>
+      Docs and site text refer to a “Pauli backend” alongside the statevector and hardware backends. In the current
+      codebase, this really means:
+    </p>
+    <ul>
+      <li>a statevector engine (<code>StatevectorEngine</code> + backends), plus</li>
+      <li>noise engines configured via <code>SimpleNoiseConfig</code> and device presets.</li>
+    </ul>
+    <p>
+      There is no separate stabilizer/Stim backend yet; the “Pauli” behavior is implemented as Pauli-style noise on
+      top of the statevector backend. The architectural direction (captured in the backend/noise separation ticket)
+      is to:
+    </p>
+    <ul>
+      <li>treat backend kind (statevector, stabilizer/Stim, hardware) and noise IR as orthogonal, and</li>
+      <li>define a shared noise representation that both VM engines and Stim can consume.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Noise as IR vs. implementation detail</h2>
+    <p>
+      Device-level noise today is configured through presets and JSON that map to <code>SimpleNoiseConfig</code> and feed
+      <code>NoiseEngine</code> implementations. We refer to a shared noise IR in the design docs, but:
+    </p>
+    <ul>
+      <li>program-annotated noise (e.g., DSL-emitted <code>pauli_channel</code>) is not yet wired through the VM, and</li>
+      <li>there is no concrete Stim backend in this repository that consumes the same IR.</li>
+    </ul>
+    <p>
+      The long-term requirement is for a backend-agnostic noise description that can drive both the hardware-style VM
+      and stabilizer/Stim pipelines. This prototype stops at device-level configuration; program-level noise IR is still
+      future work.
+    </p>
+  </section>
+
+  <section>
+    <h2>User-facing noise control vs. abstraction</h2>
+    <p>
+      Right now, users and DSLs can control noise only via device/profile selection or full JSON configs; they cannot
+      express program-specific noise scenarios at the VM ISA level. Open design questions include:
+    </p>
+    <ul>
+      <li>How much per-program noise control should the VM expose directly?</li>
+      <li>Should program-level noise be modeled as explicit instructions/annotations in an extended dialect?</li>
+      <li>Where is the right boundary between “hardware-like abstraction” and “experiment control” for QEC work?</li>
+    </ul>
+    <p>
+      The direction sketched in the docs is to treat program-driven noise as part of a well-defined contract (an
+      extended dialect), implemented consistently by VM engines and Stim, rather than as ad hoc backend hooks.
+    </p>
+  </section>
+
+  <section>
+    <h2>How to read this as a reviewer</h2>
+    <p>
+      This prototype is intentionally honest about where it stops. The ISA, device profiles, and noise engines show how
+      I think about hardware-aware contracts; the open questions here mark the next architectural steps:
+    </p>
+    <ul>
+      <li>adding a proper scheduler and full logical-time semantics,</li>
+      <li>separating backend kind from noise configuration, and</li>
+      <li>introducing a shared noise IR across VM and Stim, including program-level control where it is useful.</li>
+    </ul>
+    <p>
+      I chose to surface these gaps rather than hide them because they say as much about how I approach systems design
+      and technical honesty as the completed parts of the codebase do.
+    </p>
+  </section>
+</BaseLayout>

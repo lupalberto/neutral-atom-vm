@@ -1,0 +1,62 @@
+---
+const { page } = Astro.props;
+
+const pageLabel =
+  page === "architecture"
+    ? "Architecture"
+    : page === "ux"
+    ? "User Journeys"
+    : page === "noise"
+    ? "Noise & QEC"
+    : page === "implementation"
+    ? "Implementation"
+    : page === "open-questions"
+    ? "Open Questions"
+    : "Overview";
+---
+<aside class="about-sidebar">
+  <h3>About this project</h3>
+  <p>
+    This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+  </p>
+  <p>
+    The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+  </p>
+  <p>
+    On this page (<strong>{pageLabel}</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+  </p>
+</aside>
+<style>
+  .about-sidebar {
+    border-radius: 1rem;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.95));
+    padding: 1.25rem 1.5rem;
+    color: #e2e8f0;
+    font-size: 0.95rem;
+    box-shadow: 0 25px 60px rgba(8, 15, 23, 0.85);
+  }
+  .about-sidebar h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.05rem;
+  }
+  .about-sidebar p {
+    margin: 0.4rem 0;
+    line-height: 1.6;
+  }
+  @media (max-width: 900px) {
+    .about-sidebar {
+      margin-top: 2rem;
+    }
+  }
+</style>

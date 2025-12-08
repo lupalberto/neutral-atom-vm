@@ -1,0 +1,129 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Implementation"
+  description="Source-level tour: C++ core, Python SDK/CLI, and how they connect."
+  nav={nav}
+  page="implementation"
+>
+  <section>
+    <h1>How the prototype works</h1>
+    <p>
+      This page links the ideas in the other sections back to concrete source files. The goal is to trace the execution path
+      from a Python kernel all the way down to statevector amplitudes, noise hooks, and logs, and to show how the system was
+      structured as if it were a production component.
+    </p>
+  </section>
+
+  <section>
+    <h2>Job lifecycle</h2>
+    <ol>
+      <li><strong>Client builds a request</strong> – <code>python/src/neutral_atom_vm/job.py</code> defines <code>JobRequest</code> dataclasses and serializes them into dictionaries that match C++ structs.</li>
+      <li><strong>Native bridge</strong> – <code>src/bindings/python/module.cpp</code> (pybind11) receives the dict, constructs <code>service::JobRequest</code>, and calls <code>JobRunner::run</code>.</li>
+      <li><strong>JobRunner</strong> – validates the ISA version, selects a backend, attaches noise, and instantiates <code>HardwareVM</code> (<code>src/service/job.cpp</code>).</li>
+      <li><strong>HardwareVM</strong> – wraps device profile and backend selection; executes the program for N shots, returning measurements and logs (<code>src/hardware_vm.hpp</code>).</li>
+      <li><strong>Engine/core</strong> – <code>StatevectorEngine</code> interprets instructions, enforces blockade, logs operations, and hands noise hooks the relevant qubits (<code>src/engine_statevector.hpp/.cpp</code>).</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Instruction execution highlights</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>alloc_array</h3>
+        <p>Initializes the backend with <code>n</code> qubits and resets hardware state—the entry point for geometry awareness.</p>
+      </div>
+      <div class="card">
+        <h3>apply_gate</h3>
+        <p>Maps gates by name (<code>X</code>, <code>H</code>, <code>CX</code>, <code>CZ</code>) to backend functions, then triggers single- or two-qubit noise hooks.</p>
+      </div>
+      <div class="card">
+        <h3>wait</h3>
+        <p>Advances <code>logical_time</code> in <code>StatevectorState</code> and lets idle noise accumulate based on <code>duration</code>.</p>
+      </div>
+      <div class="card">
+        <h3>measure</h3>
+        <p>Samples amplitudes, writes <code>MeasurementRecord</code>s (<code>src/vm/measurement_record.types.hpp</code>), and runs measurement/readout noise.</p>
+      </div>
+      <div class="card">
+        <h3>move_atom</h3>
+        <p>Updates atom positions and enforces blockade radius via <code>enforce_blockade</code>; invalid moves raise exceptions.</p>
+      </div>
+      <div class="card">
+        <h3>pulse</h3>
+        <p>Appends classical pulse metadata to <code>state_.pulse_log</code>, ready for future pulse-level engines.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sample JobRequest JSON</h2>
+<pre><code>&#123;
+  "job_id": "ghz-demo",
+  "device_id": "quera.na_vm.sim",
+  "profile": "ideal_small_array",
+  "shots": 1000,
+  "isa_version": &#123;"major": 1, "minor": 1&#125;,
+  "hardware": &#123;
+    "positions": [0,1,2],
+    "blockade_radius": 1.5
+  &#125;,
+  "program": [
+    &#123;"op": "AllocArray", "n_qubits": 3&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "H",  "targets": [0], "param": 0&#125;&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "CX", "targets": [0,1], "param": 0&#125;&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "CX", "targets": [0,2], "param": 0&#125;&#125;,
+    &#123;"op": "Measure",   "targets": [0,1,2]&#125;
+  ]
+}
+</code></pre>
+    <p>
+      Generated via <code>service::to_json</code>. The runtime enriches the hardware payload with <code>NativeGate</code> entries
+      and additional timing/pulse limits depending on the selected profile before execution.
+    </p>
+  </section>
+
+  <section>
+    <h2>End-to-end workflow demos</h2>
+    <p>
+      For a quick, code-level tour of the pipeline (kernel → VM program → job submission → measurements), use the
+      bundled workflow script described in <code>python/README.md</code>:
+    </p>
+<pre><code class="language-bash">cd neutral-atom-vm
+python -m neutral_atom_vm.workflow_demo
+</code></pre>
+    <p>
+      This exercises the same surface you would use from a Bloqade/Squin kernel but runs entirely locally, printing
+      both the lowered VM program and the resulting job dictionary so you can compare them to the JSON schema above.
+    </p>
+    <p>
+      The Jupyter notebooks in <code>notebooks/</code> (“Bell Pair”, “Demo”) provide additional, interactive examples that
+      drive the same C++ core through the Python SDK and visualize results.
+    </p>
+  </section>
+
+  <section>
+    <h2>Extensibility hooks</h2>
+    <ul>
+      <li><strong>NoiseEngine::clone</strong> lets each shot get an independent RNG yet share configuration.</li>
+      <li><strong>HardwareVM::RunResult</strong> already returns execution logs, paving the way for streaming telemetry.</li>
+      <li><strong>DeviceProfile.backend</strong> allows GPU/ASIC engines without touching compilers or SDKs.</li>
+      <li><strong>ISAVersion</strong> gating ensures new instructions can land without breaking old pipelines.</li>
+      <li><strong>PULSE log</strong> scaffolding keeps classical pulse metadata ready for physics-accurate engines.</li>
+    </ul>
+    <p>
+      Even as a weekend project, these hooks were designed with future QEC engines, richer device models, and remote
+      services in mind, reflecting a bias toward architecture and long-term maintainability.
+    </p>
+  </section>
+</BaseLayout>

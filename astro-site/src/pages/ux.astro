@@ -1,0 +1,172 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="User Journeys"
+  description="Persona-driven stories: how algorithm authors, compiler engineers, and operators experience the VM."
+  nav={nav}
+  page="ux"
+>
+  <section>
+    <h1>From kernel to measurements</h1>
+    <p>
+      <strong>docs/ux.md</strong> describes how different users should experience the Neutral Atom VM. This page
+      turns those flows into concrete stories backed by the current Python SDK, CLI, and C++ implementation.
+    </p>
+  </section>
+
+  <section>
+    <h2>Personas at a glance</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Algorithm authors</h3>
+        <p>
+          Write Bloqade/Squin kernels and expect device-like ergonomics: <code>connect_device</code>,
+          <code>submit</code>, and <code>job.result()</code>, with realistic geometry and noise but no C++.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Compiler &amp; tooling engineers</h3>
+        <p>
+          Target the VM dialect from Kirin or other passes and need a stable ISA plus clear diagnostics when
+          schedules or hardware constraints are violated.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Infrastructure &amp; ops</h3>
+        <p>
+          Deploy the VM as a service, manage devices and profiles, and monitor jobs, logs, and errors across
+          multiple backends.
+        </p>
+      </div>
+    </div>
+  </section>
+
+    <section>
+      <h2>Algorithm author journey (Python SDK)</h2>
+<pre><code class="language-python">from bloqade import squin
+from neutral_atom_vm import connect_device
+
+@squin.kernel
+def ghz():
+    q = squin.qalloc(3)
+    squin.h(q[0])
+    squin.cx(q[0], q[1])
+    squin.cx(q[0], q[2])
+    squin.measure(q)
+
+dev = connect_device("quera.na_vm.sim", profile="ideal_small_array")
+result = dev.submit(ghz, shots=1000).result()
+print(result["measurements"])
+</code></pre>
+    <p>
+      The <code>connect_device</code> helper lives in <code>python/src/neutral_atom_vm/device.py</code>. It lowers
+      kernels via <code>to_vm_program</code>, validates blockade constraints, and builds a structured
+      <code>JobRequest</code> with hardware coordinates and optional <code>SimpleNoiseConfig</code>. Profiles are
+      discoverable through <code>available_presets()</code> so users pick logical devices instead of raw geometry arrays.
+    </p>
+    <p>
+      From an algorithm author’s perspective, the VM “just looks like hardware”: you select a device/profile, submit
+      a kernel, and get measurements and logs back. Everything else (ISA versioning, noise configuration, layout
+      details) stays behind the SDK.
+    </p>
+    <div class="card" style="margin-top: 1rem;">
+      <h4>Timing-limit example</h4>
+      <p>
+        The <code>benchmark_chain</code> profile enforces a 5 ns measurement cooldown. If a kernel measures a qubit
+        and immediately reuses it without a <code>Wait</code>, the VM rejects the next gate with
+        “Gate violates measurement cooldown on qubit 0”. This shows how the ISA/profile contract prevents
+        hardware-unsafe programs before they reach the engine.
+      </p>
+      <pre><code class="language-python">from bloqade import squin
+
+@squin.kernel
+def reuse_measured_qubit():
+    q = squin.qalloc(3)
+    squin.h(q[0])
+    squin.measure(q[0])
+    squin.h(q[0])  # fails benchmark_chain cooldown without an intervening Wait
+</code></pre>
+      <p>
+        Running the kernel with <code>connect_device("quera.na_vm.sim", profile="benchmark_chain")</code> raises
+        the timing constraint error unless the compiler inserts a <code>Wait</code> to advance <code>logical_time</code>.
+      </p>
+      <p>
+        You can fix the kernel by adding `squin.wait(5.0)` (or any duration ≥ 5.0) between the `measure`
+        and the following `h`. The lowered program then contains `&lt;Wait duration=5.0&gt;` which bumps the logical clock,
+        satisfies the cooldown, and lets the next gate execute.
+      </p>
+      <p>
+        To reproduce the validation, use the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>:
+      </p>
+    <pre><code>quera-vm run \
+  --device quera.na_vm.sim \
+  --profile benchmark_chain \
+  --shots 1 \
+  python/examples/benchmark_cooldown_violation.py</code></pre>
+      <p>
+        The CLI still submits the same job request as the SDK, and it will print out the same
+        “Gate violates measurement cooldown” error before executing any shots.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Developer journey (CLI)</h2>
+    <p>
+      The <code>quera-vm</code> CLI (entry point in <code>python/pyproject.toml</code>, implementation in
+      <code>python/src/neutral_atom_vm/cli.py</code>) mirrors the SDK flow while exposing extra controls (threads,
+      profile JSON overrides, log streaming, remote services). Example invocation:
+    </p>
+<pre><code>quera-vm run \
+  --device quera.na_vm.sim \
+  --profile benchmark_chain \
+  --shots 1000 \
+  --output json \
+  examples/ghz.py
+</code></pre>
+    <p>
+      When built with oneAPI support (<code>-DNA_VM_WITH_ONEAPI=ON</code>), <code>--device local-arc</code> routes the
+      same profile to GPU hardware. CLI logs include categories like <code>Noise</code> and
+      <code>TimingConstraint</code>, so timing violations and noise events are visible without digging into backends.
+    </p>
+    <p>
+      For local experiments, you can also pass <code>--profile-config</code> to load a JSON profile and override the
+      built-in presets. This lets developers iterate on geometry and noise while keeping the rest of the stack fixed.
+    </p>
+  </section>
+
+  <section>
+    <h2>Operator journey (service / ops)</h2>
+    <p>
+      The same job schema and device/profile model extend naturally to a service. The <code>docs/docker-service.md</code>
+      document and the <code>RemoteServiceError</code> plumbing in <code>python/src/neutral_atom_vm/service_client.py</code>
+      show how <code>quera-vm</code> can talk to a Dockerized VM service over HTTP.
+    </p>
+    <p>
+      Jobs carry device IDs, profile metadata, ISA versions, hardware limits, and programs. The service enqueues work,
+      dispatches to an engine, streams measurements/logs, and surfaces structured error codes for violations
+      (invalid gates, resource exhaustion, backend failures).
+    </p>
+  </section>
+
+  <section>
+    <h2>Discoverability &amp; transparency</h2>
+    <ul>
+      <li><strong>Device catalog:</strong> <code>available_presets()</code> exposes geometry/noise metadata and persona labels.</li>
+      <li><strong>Logs:</strong> Execution logs capture gate, measurement, noise, and timing categories per shot.</li>
+      <li><strong>Diagnostics:</strong> Blockade and geometry checks happen both in the SDK and inside <code>StatevectorEngine</code>.</li>
+      <li><strong>Error surfacing:</strong> Unsupported ISA versions and invalid qubit indices raise explicit errors propagated through <code>JobResult.message</code>.</li>
+      <li><strong>End-to-end demo:</strong> the workflow script in <code>python/README.md</code> gives a CLI-free local tour of the full path from kernel to measurements.</li>
+    </ul>
+  </section>
+</BaseLayout>
