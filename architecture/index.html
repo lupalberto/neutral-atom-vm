@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Architecture · Neutral Atom VM</title><meta name="description" content="How the VM ISA, job/service layer, device profiles, and backends fit together."><style>.about-sidebar[data-astro-cid-ksra57ok]{border-radius:1rem;border:1px solid rgba(56,189,248,.35);background:linear-gradient(135deg,#0f172af2,#020617f2);padding:1.25rem 1.5rem;color:#e2e8f0;font-size:.95rem;box-shadow:0 25px 60px #080f17d9}.about-sidebar[data-astro-cid-ksra57ok] h3[data-astro-cid-ksra57ok]{margin-top:0;margin-bottom:.5rem;font-size:1.05rem}.about-sidebar[data-astro-cid-ksra57ok] p[data-astro-cid-ksra57ok]{margin:.4rem 0;line-height:1.6}@media(max-width:900px){.about-sidebar[data-astro-cid-ksra57ok]{margin-top:2rem}}:root{color-scheme:light dark;--bg: #0f172a;--fg: #f8fafc;--accent: #38bdf8;--muted: #94a3b8;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}body{margin:0;background:#020617;color:var(--fg)}header[data-astro-cid-37fxchfa]{border-bottom:1px solid rgba(148,163,184,.3);background:#0f172aeb;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}nav[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;flex-wrap:wrap;gap:1rem}.logo[data-astro-cid-37fxchfa]{font-weight:600;letter-spacing:.05em}.links[data-astro-cid-37fxchfa]{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]{color:var(--muted);text-decoration:none;font-size:.95rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]:hover{color:var(--accent)}main[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1.2fr);gap:2rem;align-items:flex-start}@media(max-width:900px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}}footer[data-astro-cid-37fxchfa]{border-top:1px solid rgba(148,163,184,.3);padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}.cta[data-astro-cid-37fxchfa]{font-size:.9rem;color:var(--muted);text-decoration:none;padding:.35rem .75rem;border-radius:999px;border:1px solid rgba(148,163,184,.5)}.cta[data-astro-cid-37fxchfa]:hover{color:var(--accent);border-color:var(--accent)}.grid[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:2rem;align-items:flex-start}.page-content[data-astro-cid-37fxchfa]{min-width:0}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:sticky;top:1.5rem;align-self:start}@media(max-width:960px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:static;top:auto}}.card[data-astro-cid-37fxchfa]{padding:1.25rem;border:1px solid rgba(148,163,184,.35);border-radius:1rem;background:#0f172a99}h1[data-astro-cid-37fxchfa],h2[data-astro-cid-37fxchfa],h3[data-astro-cid-37fxchfa],h4[data-astro-cid-37fxchfa]{color:#fff}pre[data-astro-cid-37fxchfa]{background:#0f172a;border-radius:.75rem;padding:1rem;overflow-x:auto;border:1px solid rgba(148,163,184,.3)}code[data-astro-cid-37fxchfa]{font-family:JetBrains Mono,Fira Code,Consolas,monospace}p[data-astro-cid-37fxchfa]{color:#cbd5f5;line-height:1.7}ul[data-astro-cid-37fxchfa]{color:#cbd5f5}
+</style></head> <body data-astro-cid-37fxchfa> <header data-astro-cid-37fxchfa> <nav data-astro-cid-37fxchfa> <a class="logo" href="/" data-astro-cid-37fxchfa>NEUTRAL·ATOM·VM</a> <div class="links" data-astro-cid-37fxchfa> <a href="/" data-astro-cid-37fxchfa>Overview</a><a href="/architecture" data-astro-cid-37fxchfa>Architecture</a><a href="/ux" data-astro-cid-37fxchfa>User Journey</a><a href="/noise" data-astro-cid-37fxchfa>Noise &amp; QEC</a><a href="/implementation" data-astro-cid-37fxchfa>Implementation</a><a href="/open-questions" data-astro-cid-37fxchfa>Open Questions</a> </div> <a class="cta" href="https://github.com/lupalberto/neutral-atom-vm" data-astro-cid-37fxchfa>GitHub</a> </nav> </header> <main data-astro-cid-37fxchfa> <div class="content-shell" data-astro-cid-37fxchfa> <div class="page-content" data-astro-cid-37fxchfa>  <section> <h1>Architecture &amp; Layering</h1> <p>
+The Neutral Atom VM is deliberately multi-level. <strong>docs/vm-architecture.md</strong> separates DSLs and
+      compilers, the hardware virtual machine contract, and execution engines so that each layer can evolve
+      independently.
+</p> <p>
+This page explains that contract: what the VM guarantees to Kirin/Bloqade/Squin on top, and what it expects
+      from engines and devices underneath.
+</p> </section> <section> <h2>Stack at a glance</h2> <div class="grid"> <div class="card"> <h3>DSL &amp; compilation stack</h3> <p>
+Bloqade, Squin, and Kirin passes synthesize, schedule, and insert neutral-atom–specific structure, then
+          lower into a VM dialect: hardware-oriented instructions plus layout and profile metadata.
+</p> </div> <div class="card"> <h3>Hardware VM</h3> <p>
+Defines the instruction set (<code>AllocArray</code>, <code>ApplyGate</code>, <code>MoveAtom</code>,
+<code>Wait</code>, <code>Pulse</code>, <code>Measure</code>), the job/service schema, and device profiles.
+          It is thin but stable: the goal is to keep this contract steady while hardware and engines improve.
+</p> </div> <div class="card"> <h3>Execution engines</h3> <p>
+Statevector, noise-augmented (Pauli) statevector, future Rydberg physics engines, and real hardware drivers
+          all implement the same VM semantics. In this prototype, “Pauli” simply means the statevector engine plus
+          the <code>SimpleNoiseEngine</code> hooks, but it could be replaced by a dedicated Pauli simulator later.
+          They are interchangeable behind the VM façade as long as they honor the ISA and device profile constraints.
+</p> </div> </div> </section> <section> <h2>ISA: the core contract</h2> <p>
+The header <code>src/vm/isa.hpp</code> is the single source of truth for the VM ISA. A simplified view:
+</p> <pre><code>enum class Op &#123; AllocArray, ApplyGate, Measure, MoveAtom, Wait, Pulse &#125;;
+
+struct Instruction &#123;
+  Op op;
+  Gate gate;
+  std::vector&lt;unsigned&gt; targets;
+  double duration;
+&#125;;
+
+struct HardwareConfig &#123;
+  std::vector&lt;double&gt; positions;
+  double blockade_radius;
+  std::vector&lt;SiteDescriptor&gt; sites;
+  std::vector&lt;NativeGate&gt; native_gates;
+  TimingLimits timing_limits;
+  PulseLimits pulse_limits;
+&#125;;
+</code></pre> <p>
+ISA versioning (<code>ISAVersion</code>, <code>kSupportedISAVersions</code>) lets the runtime reject jobs that
+      target unsupported dialects before any gate executes, which is critical once multiple compiler versions and
+      devices are in play.
+</p> </section> <section> <h2>Job and service layer</h2> <p>
+The VM is presented to clients as a device-like job API, implemented in <code>src/service/job.hpp/.cpp</code> and
+      surfaced in Python via <code>python/src/neutral_atom_vm</code>.
+</p> <ul> <li><strong>JobRequest</strong> – job id, device id, profile, ISA version, hardware config, program, and shots.</li> <li><strong>JobResult</strong> – status, elapsed time, measurements, logs, and an optional message.</li> <li><strong>JobRunner</strong> – validates the request, selects a backend, and executes the program for each shot.</li> </ul> <p>
+In the Python SDK, these concepts appear as <code>JobRequest</code> dataclasses and the <code>submit_job</code> /
+<code>connect_device</code> helpers; on the C++ side they are plain structs with a JSON serialization.
+</p> </section> <section> <h2>Device profiles</h2> <p>
+Device profiles capture geometry, native gates, and timing/noise settings for different “virtual devices”.
+      They live primarily in <code>python/src/neutral_atom_vm/device.py</code> and are translated into
+<code>HardwareConfig</code> plus noise settings for the C++ core.
+</p> <div class="card" style="margin-top:1rem;"> <h4>Examples of profiles</h4> <ul> <li><code>local-cpu / ideal_small_array</code> – 10-site chain, ideal (noise-free) baseline.</li> <li><code>noisy_square_array</code> – 4×4 grid with depolarizing and idle-phase noise.</li> <li><code>lossy_chain</code> &amp; <code>lossy_block</code> – heavy-loss presets to stress erasure-aware code.</li> <li><code>benchmark_chain</code> – 20-site chain with correlated CZ noise and timing constraints.</li> <li><code>readout_stress</code> – 8-site chain with SPAM-focused readout noise.</li> </ul> <p>
+Each profile annotates intended use cases (e.g., “benchmarking”, “QEC/erasure”, “tutorials”) and is accessible
+        via <code>neutral_atom_vm.available_presets()</code>.
+</p> </div> <p>
+Together, the ISA and profiles form a <strong>hardware contract</strong>: compilers must respect gate sets,
+      connectivity, and timing limits, and the VM validates programs against them before they reach an engine.
+</p> </section> <section> <h2>Backends and roadmap</h2> <p>
+The current prototype uses a statevector backend implemented in <code>src/engine_statevector.hpp/.cpp</code>,
+      with optional GPU acceleration via oneAPI when built with <code>NA_VM_WITH_ONEAPI=ON</code>. The architectural
+      hooks are designed to make additional engines straightforward.
+</p> <ul> <li><strong>Today:</strong> CPU statevector engine with pluggable noise (<code>SimpleNoiseEngine</code>).</li> <li><strong>Optional:</strong> oneAPI-backed statevector (“local-arc” device id) for GPU experiments.</li> <li><strong>Future:</strong> Pauli-style engines for large QEC codes, pulse-level neutral-atom physics engines, and hardware drivers.</li> </ul> <p>
+The <strong>ROADMAP.md</strong> file in the repository sketches how this evolves into a standalone VM service:
+      API spec and ISA formalization, a networked job manager, tighter SDK/CLI integrations, and, eventually,
+      richer device profiles and engines. The prototype here is a thin but realistic slice of that trajectory.
+</p> </section>  </div> <div class="sidebar-wrapper" data-astro-cid-37fxchfa> <aside class="about-sidebar" data-astro-cid-ksra57ok> <h3 data-astro-cid-ksra57ok>About this project</h3> <p data-astro-cid-ksra57ok>
+This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+</p> <p data-astro-cid-ksra57ok>
+The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+</p> <p data-astro-cid-ksra57ok>
+On this page (<strong data-astro-cid-ksra57ok>Architecture</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+</p> </aside>  </div> </div> </main> <footer data-astro-cid-37fxchfa>
+Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+</footer> </body></html>

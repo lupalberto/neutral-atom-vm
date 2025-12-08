@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Noise &amp; QEC · Neutral Atom VM</title><meta name="description" content="Noise modeling strategy, device presets, and how this supports QEC and Stim-based analysis."><style>.about-sidebar[data-astro-cid-ksra57ok]{border-radius:1rem;border:1px solid rgba(56,189,248,.35);background:linear-gradient(135deg,#0f172af2,#020617f2);padding:1.25rem 1.5rem;color:#e2e8f0;font-size:.95rem;box-shadow:0 25px 60px #080f17d9}.about-sidebar[data-astro-cid-ksra57ok] h3[data-astro-cid-ksra57ok]{margin-top:0;margin-bottom:.5rem;font-size:1.05rem}.about-sidebar[data-astro-cid-ksra57ok] p[data-astro-cid-ksra57ok]{margin:.4rem 0;line-height:1.6}@media(max-width:900px){.about-sidebar[data-astro-cid-ksra57ok]{margin-top:2rem}}:root{color-scheme:light dark;--bg: #0f172a;--fg: #f8fafc;--accent: #38bdf8;--muted: #94a3b8;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}body{margin:0;background:#020617;color:var(--fg)}header[data-astro-cid-37fxchfa]{border-bottom:1px solid rgba(148,163,184,.3);background:#0f172aeb;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}nav[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;flex-wrap:wrap;gap:1rem}.logo[data-astro-cid-37fxchfa]{font-weight:600;letter-spacing:.05em}.links[data-astro-cid-37fxchfa]{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]{color:var(--muted);text-decoration:none;font-size:.95rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]:hover{color:var(--accent)}main[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1.2fr);gap:2rem;align-items:flex-start}@media(max-width:900px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}}footer[data-astro-cid-37fxchfa]{border-top:1px solid rgba(148,163,184,.3);padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}.cta[data-astro-cid-37fxchfa]{font-size:.9rem;color:var(--muted);text-decoration:none;padding:.35rem .75rem;border-radius:999px;border:1px solid rgba(148,163,184,.5)}.cta[data-astro-cid-37fxchfa]:hover{color:var(--accent);border-color:var(--accent)}.grid[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:2rem;align-items:flex-start}.page-content[data-astro-cid-37fxchfa]{min-width:0}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:sticky;top:1.5rem;align-self:start}@media(max-width:960px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:static;top:auto}}.card[data-astro-cid-37fxchfa]{padding:1.25rem;border:1px solid rgba(148,163,184,.35);border-radius:1rem;background:#0f172a99}h1[data-astro-cid-37fxchfa],h2[data-astro-cid-37fxchfa],h3[data-astro-cid-37fxchfa],h4[data-astro-cid-37fxchfa]{color:#fff}pre[data-astro-cid-37fxchfa]{background:#0f172a;border-radius:.75rem;padding:1rem;overflow-x:auto;border:1px solid rgba(148,163,184,.3)}code[data-astro-cid-37fxchfa]{font-family:JetBrains Mono,Fira Code,Consolas,monospace}p[data-astro-cid-37fxchfa]{color:#cbd5f5;line-height:1.7}ul[data-astro-cid-37fxchfa]{color:#cbd5f5}
+</style></head> <body data-astro-cid-37fxchfa> <header data-astro-cid-37fxchfa> <nav data-astro-cid-37fxchfa> <a class="logo" href="/" data-astro-cid-37fxchfa>NEUTRAL·ATOM·VM</a> <div class="links" data-astro-cid-37fxchfa> <a href="/" data-astro-cid-37fxchfa>Overview</a><a href="/architecture" data-astro-cid-37fxchfa>Architecture</a><a href="/ux" data-astro-cid-37fxchfa>User Journey</a><a href="/noise" data-astro-cid-37fxchfa>Noise &amp; QEC</a><a href="/implementation" data-astro-cid-37fxchfa>Implementation</a><a href="/open-questions" data-astro-cid-37fxchfa>Open Questions</a> </div> <a class="cta" href="https://github.com/lupalberto/neutral-atom-vm" data-astro-cid-37fxchfa>GitHub</a> </nav> </header> <main data-astro-cid-37fxchfa> <div class="content-shell" data-astro-cid-37fxchfa> <div class="page-content" data-astro-cid-37fxchfa>  <section> <h1>Noise Modeling &amp; Stim Integration</h1> <p>
+Neutral-atom hardware is dominated by atom loss, laser instability, finite Rydberg lifetimes,
+      motional dephasing, crosstalk, trap inhomogeneities, control electronics jitter, and imperfect
+      blockade (see <strong>docs/noise.md</strong>). The VM does not expose noise instructions; instead,
+      engines ingest calibrated parameters and inject stochastic faults below the ISA.
+</p> </section> <section> <h2>Effective noise pipeline</h2> <ol> <li><strong>Physical characterization:</strong> device teams measure Pauli, loss, and phase parameters.</li> <li><strong>Effective config:</strong> values enter <code>SimpleNoiseConfig</code> (gate Pauli tables, readout flips,
+          runtime loss, amplitude damping, phase kicks) defined in <code>src/noise.hpp</code>.</li> <li><strong>Runtime injection:</strong> <code>SimpleNoiseEngine</code> composes dedicated sources (loss tracking,
+          measurement noise, amplitude damping, Pauli channels, correlated CZ faults, idle phase drift) as implemented in
+<code>src/noise.cpp</code>.</li> <li><strong>Logs:</strong> noise engines emit log entries (category <code>Noise</code>) that appear alongside gate logs,
+          so you can see when and where faults were applied.</li> </ol> </section> <section> <h2>Key structures</h2> <pre><code>struct SimpleNoiseConfig &#123;
+  double p_quantum_flip;
+  double p_loss;
+  MeasurementNoiseConfig readout;
+  GateNoiseConfig gate;
+  TwoQubitCorrelatedPauliConfig correlated_gate;
+  double idle_rate;
+  PhaseNoiseConfig phase;
+  AmplitudeDampingConfig amplitude_damping;
+  LossRuntimeConfig loss_runtime;
+&#125;
+</code></pre> <p>
+Validation logic limits probabilities to physical ranges and ensures correlated CZ tables sum to ≤ 1.
+      Runtime loss (per gate plus idle rate) lets the VM mark measurement bits as erasures (value −1) long before readout,
+      which is particularly relevant for erasure-aware QEC codes.
+</p> </section> <section> <h2>Stim vs Neutral Atom VM</h2> <p>
+Per <strong>docs/stim-integration.md</strong>, Stim is the dedicated stabilizer/Pauli simulator. A shared noise IR fuels
+      two complementary compilation paths:
+</p> <div class="grid"> <div class="card"> <h4>Hardware path → VM</h4> <p>
+Noise IR configures <code>SimpleNoiseConfig</code>. Programs stay noise-blind; engines inject noise below the ISA,
+          preserving the device abstraction for SDKs and services while still modeling realistic faults.
+</p> </div> <div class="card"> <h4>QEC path → Stim</h4> <p>
+Noise IR lowers to Stim circuits with explicit <code>pauli_channel</code> primitives. Stim becomes the reference
+          implementation for Pauli/loss semantics used in decoder and QEC studies, sharing parameters with the VM but not
+          reusing its engines.
+</p> </div> </div> <p>
+Keeping roles separate avoids conflating Pauli analytics with hardware emulation, while aligning via the shared noise dialect.
+</p> </section> <section> <h2>Program-annotated noise</h2> <p>
+Bloqade and related DSLs may emit explicit noise annotations (for example, <code>single_qubit_pauli_channel</code>).
+      Engines can either combine them with device configs or switch to a program-aware strategy. Detection happens during
+      lowering so we do not double-count noise or violate the effective IR.
+</p> </section> <section> <h2>Examples: preset-driven noise</h2> <table> <thead> <tr> <th>Profile</th> <th>Geometry</th> <th>Noise Emphasis</th> </tr> </thead> <tbody> <tr> <td><code>ideal_small_array</code></td> <td>10-site chain</td> <td>Noise disabled; deterministic baseline.</td> </tr> <tr> <td><code>noisy_square_array</code></td> <td>4×4 grid</td> <td>1% depolarizing gates, idle phase drift 0.02 rad, runtime idle rate 200 s⁻¹.</td> </tr> <tr> <td><code>lossy_chain</code></td> <td>6-site chain</td> <td>10% upfront loss + runtime loss (5 s⁻¹) to stress erasure-aware code.</td> </tr> <tr> <td><code>lossy_block</code></td> <td>2×4×2 block</td> <td>Same heavy loss profile as <code>lossy_chain</code> but arranged in a 16-site block to exercise erasure-aware workflows.</td> </tr> <tr> <td><code>benchmark_chain</code></td> <td>20-site chain</td> <td>Moderate depolarizing, correlated CZ matrix, idle dephasing 0.012.</td> </tr> <tr> <td><code>readout_stress</code></td> <td>8-site chain</td> <td>3% symmetric readout flips, mild runtime loss.</td> </tr> </tbody> </table> <p>
+All presets live in <code>python/src/neutral_atom_vm/device.py</code> and become <code>SimpleNoiseConfig</code>
+instances (or <em>null</em> for ideal runs) before reaching <code>JobRunner</code>.
+</p> <p>
+For QEC-oriented work, these presets provide a quick way to explore different regimes (loss-dominated, SPAM-dominated,
+      correlated two-qubit errors) without rewriting circuits or compilers. The same parameters can be fed into Stim-based
+      studies for decoder design.
+</p> </section>  </div> <div class="sidebar-wrapper" data-astro-cid-37fxchfa> <aside class="about-sidebar" data-astro-cid-ksra57ok> <h3 data-astro-cid-ksra57ok>About this project</h3> <p data-astro-cid-ksra57ok>
+This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+</p> <p data-astro-cid-ksra57ok>
+The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+</p> <p data-astro-cid-ksra57ok>
+On this page (<strong data-astro-cid-ksra57ok>Noise &amp; QEC</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+</p> </aside>  </div> </div> </main> <footer data-astro-cid-37fxchfa>
+Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+</footer> </body></html>

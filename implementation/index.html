@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Implementation · Neutral Atom VM</title><meta name="description" content="Source-level tour: C++ core, Python SDK/CLI, and how they connect."><style>.about-sidebar[data-astro-cid-ksra57ok]{border-radius:1rem;border:1px solid rgba(56,189,248,.35);background:linear-gradient(135deg,#0f172af2,#020617f2);padding:1.25rem 1.5rem;color:#e2e8f0;font-size:.95rem;box-shadow:0 25px 60px #080f17d9}.about-sidebar[data-astro-cid-ksra57ok] h3[data-astro-cid-ksra57ok]{margin-top:0;margin-bottom:.5rem;font-size:1.05rem}.about-sidebar[data-astro-cid-ksra57ok] p[data-astro-cid-ksra57ok]{margin:.4rem 0;line-height:1.6}@media(max-width:900px){.about-sidebar[data-astro-cid-ksra57ok]{margin-top:2rem}}:root{color-scheme:light dark;--bg: #0f172a;--fg: #f8fafc;--accent: #38bdf8;--muted: #94a3b8;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}body{margin:0;background:#020617;color:var(--fg)}header[data-astro-cid-37fxchfa]{border-bottom:1px solid rgba(148,163,184,.3);background:#0f172aeb;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}nav[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;flex-wrap:wrap;gap:1rem}.logo[data-astro-cid-37fxchfa]{font-weight:600;letter-spacing:.05em}.links[data-astro-cid-37fxchfa]{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]{color:var(--muted);text-decoration:none;font-size:.95rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]:hover{color:var(--accent)}main[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1.2fr);gap:2rem;align-items:flex-start}@media(max-width:900px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}}footer[data-astro-cid-37fxchfa]{border-top:1px solid rgba(148,163,184,.3);padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}.cta[data-astro-cid-37fxchfa]{font-size:.9rem;color:var(--muted);text-decoration:none;padding:.35rem .75rem;border-radius:999px;border:1px solid rgba(148,163,184,.5)}.cta[data-astro-cid-37fxchfa]:hover{color:var(--accent);border-color:var(--accent)}.grid[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:2rem;align-items:flex-start}.page-content[data-astro-cid-37fxchfa]{min-width:0}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:sticky;top:1.5rem;align-self:start}@media(max-width:960px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:static;top:auto}}.card[data-astro-cid-37fxchfa]{padding:1.25rem;border:1px solid rgba(148,163,184,.35);border-radius:1rem;background:#0f172a99}h1[data-astro-cid-37fxchfa],h2[data-astro-cid-37fxchfa],h3[data-astro-cid-37fxchfa],h4[data-astro-cid-37fxchfa]{color:#fff}pre[data-astro-cid-37fxchfa]{background:#0f172a;border-radius:.75rem;padding:1rem;overflow-x:auto;border:1px solid rgba(148,163,184,.3)}code[data-astro-cid-37fxchfa]{font-family:JetBrains Mono,Fira Code,Consolas,monospace}p[data-astro-cid-37fxchfa]{color:#cbd5f5;line-height:1.7}ul[data-astro-cid-37fxchfa]{color:#cbd5f5}
+</style></head> <body data-astro-cid-37fxchfa> <header data-astro-cid-37fxchfa> <nav data-astro-cid-37fxchfa> <a class="logo" href="/" data-astro-cid-37fxchfa>NEUTRAL·ATOM·VM</a> <div class="links" data-astro-cid-37fxchfa> <a href="/" data-astro-cid-37fxchfa>Overview</a><a href="/architecture" data-astro-cid-37fxchfa>Architecture</a><a href="/ux" data-astro-cid-37fxchfa>User Journey</a><a href="/noise" data-astro-cid-37fxchfa>Noise &amp; QEC</a><a href="/implementation" data-astro-cid-37fxchfa>Implementation</a><a href="/open-questions" data-astro-cid-37fxchfa>Open Questions</a> </div> <a class="cta" href="https://github.com/lupalberto/neutral-atom-vm" data-astro-cid-37fxchfa>GitHub</a> </nav> </header> <main data-astro-cid-37fxchfa> <div class="content-shell" data-astro-cid-37fxchfa> <div class="page-content" data-astro-cid-37fxchfa>  <section> <h1>How the prototype works</h1> <p>
+This page links the ideas in the other sections back to concrete source files. The goal is to trace the execution path
+      from a Python kernel all the way down to statevector amplitudes, noise hooks, and logs, and to show how the system was
+      structured as if it were a production component.
+</p> </section> <section> <h2>Job lifecycle</h2> <ol> <li><strong>Client builds a request</strong> – <code>python/src/neutral_atom_vm/job.py</code> defines <code>JobRequest</code> dataclasses and serializes them into dictionaries that match C++ structs.</li> <li><strong>Native bridge</strong> – <code>src/bindings/python/module.cpp</code> (pybind11) receives the dict, constructs <code>service::JobRequest</code>, and calls <code>JobRunner::run</code>.</li> <li><strong>JobRunner</strong> – validates the ISA version, selects a backend, attaches noise, and instantiates <code>HardwareVM</code> (<code>src/service/job.cpp</code>).</li> <li><strong>HardwareVM</strong> – wraps device profile and backend selection; executes the program for N shots, returning measurements and logs (<code>src/hardware_vm.hpp</code>).</li> <li><strong>Engine/core</strong> – <code>StatevectorEngine</code> interprets instructions, enforces blockade, logs operations, and hands noise hooks the relevant qubits (<code>src/engine_statevector.hpp/.cpp</code>).</li> </ol> </section> <section> <h2>Instruction execution highlights</h2> <div class="grid"> <div class="card"> <h3>alloc_array</h3> <p>Initializes the backend with <code>n</code> qubits and resets hardware state—the entry point for geometry awareness.</p> </div> <div class="card"> <h3>apply_gate</h3> <p>Maps gates by name (<code>X</code>, <code>H</code>, <code>CX</code>, <code>CZ</code>) to backend functions, then triggers single- or two-qubit noise hooks.</p> </div> <div class="card"> <h3>wait</h3> <p>Advances <code>logical_time</code> in <code>StatevectorState</code> and lets idle noise accumulate based on <code>duration</code>.</p> </div> <div class="card"> <h3>measure</h3> <p>Samples amplitudes, writes <code>MeasurementRecord</code>s (<code>src/vm/measurement_record.types.hpp</code>), and runs measurement/readout noise.</p> </div> <div class="card"> <h3>move_atom</h3> <p>Updates atom positions and enforces blockade radius via <code>enforce_blockade</code>; invalid moves raise exceptions.</p> </div> <div class="card"> <h3>pulse</h3> <p>Appends classical pulse metadata to <code>state_.pulse_log</code>, ready for future pulse-level engines.</p> </div> </div> </section> <section> <h2>Sample JobRequest JSON</h2> <pre><code>&#123;
+  "job_id": "ghz-demo",
+  "device_id": "local-cpu",
+  "profile": "ideal_small_array",
+  "shots": 1000,
+  "isa_version": &#123;"major": 1, "minor": 1&#125;,
+  "hardware": &#123;
+    "positions": [0,1,2],
+    "blockade_radius": 1.5
+  &#125;,
+  "program": [
+    &#123;"op": "AllocArray", "n_qubits": 3&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "H",  "targets": [0], "param": 0&#125;&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "CX", "targets": [0,1], "param": 0&#125;&#125;,
+    &#123;"op": "ApplyGate", "gate": &#123;"name": "CX", "targets": [0,2], "param": 0&#125;&#125;,
+    &#123;"op": "Measure",   "targets": [0,1,2]&#125;
+  ]
+}
+</code></pre> <p>
+Generated via <code>service::to_json</code>. The runtime enriches the hardware payload with <code>NativeGate</code> entries
+      and additional timing/pulse limits depending on the selected profile before execution.
+</p> </section> <section> <h2>End-to-end workflow demos</h2> <p>
+For a quick, code-level tour of the pipeline (kernel → VM program → job submission → measurements), use the
+      bundled workflow script described in <code>python/README.md</code>:
+</p> <pre><code class="language-bash">cd neutral-atom-vm
+python -m neutral_atom_vm.workflow_demo
+</code></pre> <p>
+This exercises the same surface you would use from a Bloqade/Squin kernel but runs entirely locally, printing
+      both the lowered VM program and the resulting job dictionary so you can compare them to the JSON schema above.
+</p> <p>
+The Jupyter notebooks in <code>notebooks/</code> (“Bell Pair”, “Demo”) provide additional, interactive examples that
+      drive the same C++ core through the Python SDK and visualize results.
+</p> </section> <section> <h2>Extensibility hooks</h2> <ul> <li><strong>NoiseEngine::clone</strong> lets each shot get an independent RNG yet share configuration.</li> <li><strong>HardwareVM::RunResult</strong> already returns execution logs, paving the way for streaming telemetry.</li> <li><strong>DeviceProfile.backend</strong> allows GPU/ASIC engines without touching compilers or SDKs.</li> <li><strong>ISAVersion</strong> gating ensures new instructions can land without breaking old pipelines.</li> <li><strong>PULSE log</strong> scaffolding keeps classical pulse metadata ready for physics-accurate engines.</li> </ul> <p>
+Even as a weekend project, these hooks were designed with future QEC engines, richer device models, and remote
+      services in mind, reflecting a bias toward architecture and long-term maintainability.
+</p> </section>  </div> <div class="sidebar-wrapper" data-astro-cid-37fxchfa> <aside class="about-sidebar" data-astro-cid-ksra57ok> <h3 data-astro-cid-ksra57ok>About this project</h3> <p data-astro-cid-ksra57ok>
+This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+</p> <p data-astro-cid-ksra57ok>
+The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+</p> <p data-astro-cid-ksra57ok>
+On this page (<strong data-astro-cid-ksra57ok>Implementation</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+</p> </aside>  </div> </div> </main> <footer data-astro-cid-37fxchfa>
+Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+</footer> </body></html>

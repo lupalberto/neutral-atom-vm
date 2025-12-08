@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Overview · Neutral Atom VM</title><meta name="description" content="How this Neutral Atom VM prototype fits between Kirin/Bloqade/Squin and hardware, and what it says about how I work."><style>.about-sidebar[data-astro-cid-ksra57ok]{border-radius:1rem;border:1px solid rgba(56,189,248,.35);background:linear-gradient(135deg,#0f172af2,#020617f2);padding:1.25rem 1.5rem;color:#e2e8f0;font-size:.95rem;box-shadow:0 25px 60px #080f17d9}.about-sidebar[data-astro-cid-ksra57ok] h3[data-astro-cid-ksra57ok]{margin-top:0;margin-bottom:.5rem;font-size:1.05rem}.about-sidebar[data-astro-cid-ksra57ok] p[data-astro-cid-ksra57ok]{margin:.4rem 0;line-height:1.6}@media(max-width:900px){.about-sidebar[data-astro-cid-ksra57ok]{margin-top:2rem}}:root{color-scheme:light dark;--bg: #0f172a;--fg: #f8fafc;--accent: #38bdf8;--muted: #94a3b8;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}body{margin:0;background:#020617;color:var(--fg)}header[data-astro-cid-37fxchfa]{border-bottom:1px solid rgba(148,163,184,.3);background:#0f172aeb;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}nav[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;flex-wrap:wrap;gap:1rem}.logo[data-astro-cid-37fxchfa]{font-weight:600;letter-spacing:.05em}.links[data-astro-cid-37fxchfa]{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]{color:var(--muted);text-decoration:none;font-size:.95rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]:hover{color:var(--accent)}main[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1.2fr);gap:2rem;align-items:flex-start}@media(max-width:900px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}}footer[data-astro-cid-37fxchfa]{border-top:1px solid rgba(148,163,184,.3);padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}.cta[data-astro-cid-37fxchfa]{font-size:.9rem;color:var(--muted);text-decoration:none;padding:.35rem .75rem;border-radius:999px;border:1px solid rgba(148,163,184,.5)}.cta[data-astro-cid-37fxchfa]:hover{color:var(--accent);border-color:var(--accent)}.grid[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:2rem;align-items:flex-start}.page-content[data-astro-cid-37fxchfa]{min-width:0}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:sticky;top:1.5rem;align-self:start}@media(max-width:960px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:static;top:auto}}.card[data-astro-cid-37fxchfa]{padding:1.25rem;border:1px solid rgba(148,163,184,.35);border-radius:1rem;background:#0f172a99}h1[data-astro-cid-37fxchfa],h2[data-astro-cid-37fxchfa],h3[data-astro-cid-37fxchfa],h4[data-astro-cid-37fxchfa]{color:#fff}pre[data-astro-cid-37fxchfa]{background:#0f172a;border-radius:.75rem;padding:1rem;overflow-x:auto;border:1px solid rgba(148,163,184,.3)}code[data-astro-cid-37fxchfa]{font-family:JetBrains Mono,Fira Code,Consolas,monospace}p[data-astro-cid-37fxchfa]{color:#cbd5f5;line-height:1.7}ul[data-astro-cid-37fxchfa]{color:#cbd5f5}
+.callout[data-astro-cid-mrmim4ef]{border-radius:1rem;border:1px solid rgba(56,189,248,.5);background:#082f49cc;padding:1rem 1.25rem;margin:1.5rem 0}.callout[data-astro-cid-mrmim4ef] h3[data-astro-cid-mrmim4ef]{margin:0 0 .5rem;font-size:1.1rem}.callout[data-astro-cid-mrmim4ef] p[data-astro-cid-mrmim4ef]{margin:0}
+</style></head> <body data-astro-cid-37fxchfa> <header data-astro-cid-37fxchfa> <nav data-astro-cid-37fxchfa> <a class="logo" href="/" data-astro-cid-37fxchfa>NEUTRAL·ATOM·VM</a> <div class="links" data-astro-cid-37fxchfa> <a href="/" data-astro-cid-37fxchfa>Overview</a><a href="/architecture" data-astro-cid-37fxchfa>Architecture</a><a href="/ux" data-astro-cid-37fxchfa>User Journey</a><a href="/noise" data-astro-cid-37fxchfa>Noise &amp; QEC</a><a href="/implementation" data-astro-cid-37fxchfa>Implementation</a><a href="/open-questions" data-astro-cid-37fxchfa>Open Questions</a> </div> <a class="cta" href="https://github.com/lupalberto/neutral-atom-vm" data-astro-cid-37fxchfa>GitHub</a> </nav> </header> <main data-astro-cid-37fxchfa> <div class="content-shell" data-astro-cid-37fxchfa> <div class="page-content" data-astro-cid-37fxchfa>  <section> <h1>What is this prototype?</h1> <p>
+This repository is a <strong>weekend prototype</strong> of a hardware-style virtual machine for neutral-atom
+      devices: a small, stable instruction set; a job/service API; and a catalog of device profiles in front of
+      one or more execution engines (ideal, noisy, or future physics-accurate/hardware).
+</p> <p>
+It is not meant to be drop-in production code. Instead, it is a concrete demonstration of how I approach a
+      new domain: reading design material, sketching and iterating on an architecture, building a vertical slice
+      end to end, and documenting decisions so others can follow the thread.
+</p> <div class="grid" style="margin-top: 2rem;"> <div class="card"> <h3>Between compilers and hardware</h3> <p>
+The VM sits between high-level compilers (Kirin, Bloqade, Squin) and neutral-atom devices. It presents
+          a versioned ISA, device/job API, and profiles that compilers can target without knowing which backend
+          (statevector, noise-instrumented statevector, or hardware driver) actually runs the program.
+</p> </div> <div class="card"> <h3>Architected as if for production</h3> <p>
+Even in a weekend, the code is structured like a real system: clear layers, explicit contracts, device
+          presets, noise engines, CLI/SDK surfaces, and a service story. The goal is to show my architectural
+          mindset, attention to detail, and bias toward maintainable abstractions.
+</p> </div> <div class="card"> <h3>Learning through building</h3> <p>
+I used this project to ramp up quickly on QuEra’s public materials and the neutral-atom VM concept,
+          then reflected that understanding back into code, docs, and this site.
+</p> </div> </div> </section> <section class="callout" data-astro-cid-mrmim4ef> <h3 data-astro-cid-mrmim4ef>About this site</h3> <p data-astro-cid-mrmim4ef>This Astro site is a guided tour of the prototype. It mirrors the job description: a hardware VM ISA, a job/service layer, device profiles, noise and QEC considerations, user journeys via SDK/CLI, and a roadmap. It is as much a window into how I work as it is an explanation of the VM.</p> </section>  <section> <h2>Who might find this useful</h2> <p>
+This is an exploratory prototype, not a full product. If you are reading it as part of my application, here are
+      a few lenses you might choose:
+</p> <div class="grid"> <div class="card"> <h3>Quantum &amp; QEC scientists</h3> <p>
+Glance at how device profiles and noise presets could support QEC-style workloads, and how the VM might sit
+          between neutral-atom hardware, effective noise models, and decoder/Stim tooling.
+</p> </div> <div class="card"> <h3>Compiler &amp; tooling engineers</h3> <p>
+Look at the ISA, versioning, and job schema as an example of how I design a stable compilation target, even
+          in a prototype intended mainly to show my thinking.
+</p> </div> <div class="card"> <h3>Infrastructure &amp; ops</h3> <p>
+Treat the job/service story, Dockerized service, and CLI/SDK integration as a sketch of how this could grow
+          into a deployable VM service, rather than a finished implementation.
+</p> </div> </div> </section> <section> <h2>How to get hands-on</h2> <p>
+There are three quick ways to experience the prototype end to end:
+</p> <ul> <li> <strong>Run a Bloqade/Squin-style kernel via the Python SDK</strong> – see the example on the
+<a href="/ux">User Journey</a> page, backed by <code>python/src/neutral_atom_vm/device.py</code> and
+<code>to_vm_program</code>.
+</li> <li> <strong>Exercise the full pipeline locally</strong> – use the workflow demo described in
+<code>python/README.md</code> and linked from the <a href="/implementation">Implementation</a> page to go
+        from kernel to VM program to job result.
+</li> <li> <strong>Explore device presets and noise profiles</strong> – call <code>available_presets()</code> in Python
+        and cross-reference the presets with the <code>SimpleNoiseConfig</code>-based design on the
+<a href="/noise">Noise &amp; QEC</a> page.
+</li> </ul> </section> <section> <h2>Where each page fits in the outline</h2> <p>
+The outline in my cover letter (“What to look for in the repository”) maps directly onto this site:
+</p> <ul> <li> <strong>Overview (this page)</strong> – explains the VM’s role between Kirin/Bloqade/Squin and hardware,
+        and why this prototype exists.
+</li> <li> <strong><a href="/architecture">Architecture</a></strong> – details the VM ISA, job/service layer, device
+        profiles, and how backends plug in.
+</li> <li> <strong><a href="/ux">User Journeys</a></strong> – walks through persona-driven flows for algorithm authors,
+        compiler/tooling engineers, and operators using the Python SDK and <code>quera-vm</code> CLI.
+</li> <li> <strong><a href="/noise">Noise &amp; QEC</a></strong> – describes the noise engines, presets, and how they
+        support QEC and Stim-based analysis.
+</li> <li> <strong><a href="/implementation">Implementation</a></strong> – links C++ core components
+        (<code>HardwareVM</code>, <code>StatevectorEngine</code>, noise engine, job runner) to the Python bindings
+        and CLI.
+</li> </ul> </section> <section> <h2>What this says about how I work</h2> <p>
+Across the code and documentation, I aimed to show a consistent pattern: curiosity about the problem space,
+      resourcefulness in learning quickly, a bias toward clear architectures and contracts, and attention to the
+      details that make a system usable by real people.
+</p> </section>  </div> <div class="sidebar-wrapper" data-astro-cid-37fxchfa> <aside class="about-sidebar" data-astro-cid-ksra57ok> <h3 data-astro-cid-ksra57ok>About this project</h3> <p data-astro-cid-ksra57ok>
+This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+</p> <p data-astro-cid-ksra57ok>
+The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+</p> <p data-astro-cid-ksra57ok>
+On this page (<strong data-astro-cid-ksra57ok>Overview</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+</p> </aside>  </div> </div> </main> <footer data-astro-cid-37fxchfa>
+Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+</footer> </body></html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-37fxchfa> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Open Questions · Neutral Atom VM</title><meta name="description" content="Candid notes on limitations, unresolved design points, and where this prototype stops."><style>.about-sidebar[data-astro-cid-ksra57ok]{border-radius:1rem;border:1px solid rgba(56,189,248,.35);background:linear-gradient(135deg,#0f172af2,#020617f2);padding:1.25rem 1.5rem;color:#e2e8f0;font-size:.95rem;box-shadow:0 25px 60px #080f17d9}.about-sidebar[data-astro-cid-ksra57ok] h3[data-astro-cid-ksra57ok]{margin-top:0;margin-bottom:.5rem;font-size:1.05rem}.about-sidebar[data-astro-cid-ksra57ok] p[data-astro-cid-ksra57ok]{margin:.4rem 0;line-height:1.6}@media(max-width:900px){.about-sidebar[data-astro-cid-ksra57ok]{margin-top:2rem}}:root{color-scheme:light dark;--bg: #0f172a;--fg: #f8fafc;--accent: #38bdf8;--muted: #94a3b8;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif}body{margin:0;background:#020617;color:var(--fg)}header[data-astro-cid-37fxchfa]{border-bottom:1px solid rgba(148,163,184,.3);background:#0f172aeb;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}nav[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;flex-wrap:wrap;gap:1rem}.logo[data-astro-cid-37fxchfa]{font-weight:600;letter-spacing:.05em}.links[data-astro-cid-37fxchfa]{display:flex;flex-wrap:wrap;gap:.75rem 1.25rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]{color:var(--muted);text-decoration:none;font-size:.95rem}.links[data-astro-cid-37fxchfa] a[data-astro-cid-37fxchfa]:hover{color:var(--accent)}main[data-astro-cid-37fxchfa]{max-width:1200px;margin:0 auto;padding:2rem 1.5rem 4rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1.2fr);gap:2rem;align-items:flex-start}@media(max-width:900px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}}footer[data-astro-cid-37fxchfa]{border-top:1px solid rgba(148,163,184,.3);padding:1.5rem;text-align:center;color:var(--muted);font-size:.9rem}.cta[data-astro-cid-37fxchfa]{font-size:.9rem;color:var(--muted);text-decoration:none;padding:.35rem .75rem;border-radius:999px;border:1px solid rgba(148,163,184,.5)}.cta[data-astro-cid-37fxchfa]:hover{color:var(--accent);border-color:var(--accent)}.grid[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.5rem}.content-shell[data-astro-cid-37fxchfa]{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:2rem;align-items:flex-start}.page-content[data-astro-cid-37fxchfa]{min-width:0}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:sticky;top:1.5rem;align-self:start}@media(max-width:960px){.content-shell[data-astro-cid-37fxchfa]{grid-template-columns:minmax(0,1fr)}.sidebar-wrapper[data-astro-cid-37fxchfa]{position:static;top:auto}}.card[data-astro-cid-37fxchfa]{padding:1.25rem;border:1px solid rgba(148,163,184,.35);border-radius:1rem;background:#0f172a99}h1[data-astro-cid-37fxchfa],h2[data-astro-cid-37fxchfa],h3[data-astro-cid-37fxchfa],h4[data-astro-cid-37fxchfa]{color:#fff}pre[data-astro-cid-37fxchfa]{background:#0f172a;border-radius:.75rem;padding:1rem;overflow-x:auto;border:1px solid rgba(148,163,184,.3)}code[data-astro-cid-37fxchfa]{font-family:JetBrains Mono,Fira Code,Consolas,monospace}p[data-astro-cid-37fxchfa]{color:#cbd5f5;line-height:1.7}ul[data-astro-cid-37fxchfa]{color:#cbd5f5}
+</style></head> <body data-astro-cid-37fxchfa> <header data-astro-cid-37fxchfa> <nav data-astro-cid-37fxchfa> <a class="logo" href="/" data-astro-cid-37fxchfa>NEUTRAL·ATOM·VM</a> <div class="links" data-astro-cid-37fxchfa> <a href="/" data-astro-cid-37fxchfa>Overview</a><a href="/architecture" data-astro-cid-37fxchfa>Architecture</a><a href="/ux" data-astro-cid-37fxchfa>User Journey</a><a href="/noise" data-astro-cid-37fxchfa>Noise &amp; QEC</a><a href="/implementation" data-astro-cid-37fxchfa>Implementation</a><a href="/open-questions" data-astro-cid-37fxchfa>Open Questions</a> </div> <a class="cta" href="https://github.com/lupalberto/neutral-atom-vm" data-astro-cid-37fxchfa>GitHub</a> </nav> </header> <main data-astro-cid-37fxchfa> <div class="content-shell" data-astro-cid-37fxchfa> <div class="page-content" data-astro-cid-37fxchfa>  <section> <h1>Open Questions &amp; Known Limitations</h1> <p>
+This page captures some of the questions that came up while building the prototype and reviewing its
+      architecture. It is intentionally candid: several of these items are gaps, not features, and point to
+      the work that would be needed to turn this into a production-quality hardware VM.
+</p> </section> <section> <h2>Scheduling &amp; logical time</h2> <p>
+The ISA and device profiles include timing-related fields (gate durations, cooldowns, parallelism limits),
+      and the engine tracks <code>logical_time</code> plus per-qubit <code>last_measurement_time</code>. However:
+</p> <ul> <li>The Squin lowering produces a linear instruction stream with no scheduler or notion of parallelism.</li> <li>Today, <code>logical_time</code> only advances via explicit <code>Wait</code> instructions, not by gate/measurement durations.</li> <li>
+Timing constraints (like the <code>benchmark_chain</code> measurement cooldown) surface as runtime errors when the
+        program reuses a qubit “too soon,” instead of being prevented by a scheduling pass that constructs a valid schedule.
+</li> </ul> <p>
+The intent is sound (ISA/device profiles declare constraints, and the VM validates them), but the implementation
+      is incomplete without:
+</p> <ul> <li>automatic time advance for gates/measurements, and</li> <li>a scheduling/compiler layer that reasons about cooldowns and parallelism up front.</li> </ul> </section> <section> <h2>“Pauli backend” vs. noise-augmented statevector</h2> <p>
+Docs and site text refer to a “Pauli backend” alongside the statevector and hardware backends. In the current
+      codebase, this really means:
+</p> <ul> <li>a statevector engine (<code>StatevectorEngine</code> + backends), plus</li> <li>noise engines configured via <code>SimpleNoiseConfig</code> and device presets.</li> </ul> <p>
+There is no separate stabilizer/Stim backend yet; the “Pauli” behavior is implemented as Pauli-style noise on
+      top of the statevector backend. The architectural direction (captured in the backend/noise separation ticket)
+      is to:
+</p> <ul> <li>treat backend kind (statevector, stabilizer/Stim, hardware) and noise IR as orthogonal, and</li> <li>define a shared noise representation that both VM engines and Stim can consume.</li> </ul> </section> <section> <h2>Noise as IR vs. implementation detail</h2> <p>
+Device-level noise today is configured through presets and JSON that map to <code>SimpleNoiseConfig</code> and feed
+<code>NoiseEngine</code> implementations. We refer to a shared noise IR in the design docs, but:
+</p> <ul> <li>program-annotated noise (e.g., DSL-emitted <code>pauli_channel</code>) is not yet wired through the VM, and</li> <li>there is no concrete Stim backend in this repository that consumes the same IR.</li> </ul> <p>
+The long-term requirement is for a backend-agnostic noise description that can drive both the hardware-style VM
+      and stabilizer/Stim pipelines. This prototype stops at device-level configuration; program-level noise IR is still
+      future work.
+</p> </section> <section> <h2>User-facing noise control vs. abstraction</h2> <p>
+Right now, users and DSLs can control noise only via device/profile selection or full JSON configs; they cannot
+      express program-specific noise scenarios at the VM ISA level. Open design questions include:
+</p> <ul> <li>How much per-program noise control should the VM expose directly?</li> <li>Should program-level noise be modeled as explicit instructions/annotations in an extended dialect?</li> <li>Where is the right boundary between “hardware-like abstraction” and “experiment control” for QEC work?</li> </ul> <p>
+The direction sketched in the docs is to treat program-driven noise as part of a well-defined contract (an
+      extended dialect), implemented consistently by VM engines and Stim, rather than as ad hoc backend hooks.
+</p> </section> <section> <h2>How to read this as a reviewer</h2> <p>
+This prototype is intentionally honest about where it stops. The ISA, device profiles, and noise engines show how
+      I think about hardware-aware contracts; the open questions here mark the next architectural steps:
+</p> <ul> <li>adding a proper scheduler and full logical-time semantics,</li> <li>separating backend kind from noise configuration, and</li> <li>introducing a shared noise IR across VM and Stim, including program-level control where it is useful.</li> </ul> <p>
+I chose to surface these gaps rather than hide them because they say as much about how I approach systems design
+      and technical honesty as the completed parts of the codebase do.
+</p> </section>  </div> <div class="sidebar-wrapper" data-astro-cid-37fxchfa> <aside class="about-sidebar" data-astro-cid-ksra57ok> <h3 data-astro-cid-ksra57ok>About this project</h3> <p data-astro-cid-ksra57ok>
+This Neutral Atom VM prototype was built over a focused weekend
+    to explore QuEra’s public material, learn the neutral-atom VM
+    problem space, and mirror the responsibilities in the Scientific
+    Software Engineer role.
+</p> <p data-astro-cid-ksra57ok>
+The goal is not to ship production-ready code, but to show how I
+    work: ramping up quickly on a new domain, sketching and refining
+    an architecture, building a vertical slice end to end, and
+    documenting decisions so others can follow the reasoning.
+</p> <p data-astro-cid-ksra57ok>
+On this page (<strong data-astro-cid-ksra57ok>Open Questions</strong>), you are seeing one facet of
+    that process: how I think about layers and contracts, developer
+    ergonomics, noise/QEC modeling, and the details that make a system
+    feel like real hardware to its users.
+</p> </aside>  </div> </div> </main> <footer data-astro-cid-37fxchfa>
+Built from the Neutral Atom VM prototype docs, source files, and UX notes.
+</footer> </body></html>
