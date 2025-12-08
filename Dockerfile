@@ -18,15 +18,24 @@ RUN apt-get update && \
         python3-venv && \
     rm -rf /var/lib/apt/lists/*
 
-# repo2docker will create and use a notebook user; just install into /srv.
-WORKDIR /srv/repo
+RUN groupadd -g 1001 quera && \
+    useradd -m -u 1001 -g 1001 -s /bin/bash quera
 
-# Copy the repo contents into the image.
-COPY . /srv/repo
+WORKDIR /workspace
+COPY . /workspace
+RUN chown -R quera:quera /workspace
 
-# Install the Neutral Atom VM Python package (builds the C++ extension).
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir ./python
+RUN python3 -m venv /opt/venv
+RUN chown -R quera:quera /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
+USER quera
+ENV HOME=/home/quera
+ENV PATH=$HOME/.local/bin:$PATH
+
+WORKDIR /workspace
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir ./python
 
 # Do not set CMD/ENTRYPOINT: repo2docker/Binder will launch Jupyter itself.
 
