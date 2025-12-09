@@ -71,6 +71,40 @@ Running this via `connect_device("local-cpu", profile="benchmark_chain")` now co
 
 To observe the scheduler in action, run the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>. The CLI logs (`--output json` or `--log-file`) now show a `<Wait>` entry right after the measurement, rather than a runtime error. The job request is still the same as before, but scheduling now prevents the cooldown violation before the backend executes the program.
 
+### Parallel scheduling example
+
+The scheduler also enforces the ISA’s parallelism limits. Suppose we lower a kernel that drives two disjoint pairs of qubits on the `noisy_square_array` preset:
+
+```python
+from neutral_atom_vm import connect_device
+
+program = [
+    {"op": "AllocArray", "n_qubits": 4},
+    {"op": "ApplyGate", "name": "H", "targets": [0]},
+    {"op": "ApplyGate", "name": "H", "targets": [2]},  # same start time as the previous H
+    {"op": "ApplyGate", "name": "CX", "targets": [0, 1]},
+    {"op": "ApplyGate", "name": "CX", "targets": [2, 3]},  # parallel unless the profile limit is 1
+    {"op": "Measure", "targets": [0, 1, 2, 3]},
+]
+
+device = connect_device("local-cpu", profile="noisy_square_array")
+job = device.submit(program, shots=1)
+result = job.result()
+```
+
+If `timing_limits.max_parallel_two_qubit = 1`, the scheduler inserts an idle slice before the second `CX` and the textual timeline in the CLI looks like:
+
+```
+Timeline (us):
+        0.000–    0.500 us ApplyGate H targets=[0]
+        0.000–    0.500 us ApplyGate H targets=[2]
+        0.500–    1.500 us ApplyGate CX targets=[0,1]
+        1.500–    2.500 us ApplyGate CX targets=[2,3]
+        2.500–   52.500 us Measure targets=[0,1,2,3]
+```
+
+On a profile that allows two concurrent two-qubit gates, both `CX` entries share the same start time (1.0 µs). The notebook timeline component mirrors the same schedule visually, so users can confirm at a glance which operations overlapped and why the scheduler inserted any waits. This richer example helps debugging: the ISA declares a global two-qubit parallel cap, the scheduler enforces it automatically, and the CLI/SDK surfaces the resulting idle “bubble” without requiring users to reverse-engineer timestamps.
+
 ---
 
 ## 2. Command-Line Journey (`quera-vm`)

@@ -1,7 +1,7 @@
 # Ticket: Profile Geometry Editor
 
 - **Priority:** Medium
-- **Status:** Open
+- **Status:** Done
 
 ## Summary
 Provide a clearer way to define multidimensional device geometries when creating custom profiles in the notebook widget (e.g., true 2-D coordinates or grid-aware editor) so users aren't forced to input flattened 1-D position lists.
@@ -12,4 +12,5 @@ Provide a clearer way to define multidimensional device geometries when creating
 - Ensure the resulting payload still serializes to whatever format the backend expects (maybe emit structured positions that the VM remaps at load time).
 
 ## Resolution
-- *Pending*
+- Notebook widget now accepts structured `(x, y, z)` tuples or interactive grid edits and serializes them into the `coordinates` field expected by the VM, while still populating `positions` for backward compatibility.
+- Added visual cues and validation so users can see the lattice they’re defining, plus docs explaining how custom profiles should specify geometry in the editor.

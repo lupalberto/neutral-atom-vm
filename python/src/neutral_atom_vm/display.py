@@ -791,15 +791,43 @@ def render_timeline_chart(
         span = max(span, start + duration)
     if span <= 0.0:
         span = 1.0
-    segments: list[str] = []
+    struct_entries: list[tuple[float, float, str, str]] = []
     for entry in structured:
         start = float(entry.get("start_time", 0.0))
         duration = max(0.0, float(entry.get("duration", 0.0)))
-        start_pct = max(0.0, min(100.0, (start / span) * 100.0))
-        duration_pct = (duration / span) * 100.0
-        width_pct = max(0.25, min(100.0 - start_pct, duration_pct if duration_pct > 0 else 0.25))
         op_name = str(entry.get("op", "?"))
         detail = str(entry.get("detail", "") or "")
+        struct_entries.append((start, duration, op_name, detail))
+    struct_entries.sort(key=lambda item: (item[0], item[1]))
+    lane_end_times: list[float] = []
+    lane_assignments: list[int] = []
+    overlaps = [False] * len(struct_entries)
+    active: list[tuple[float, int]] = []
+    for idx, (start, duration, _, _) in enumerate(struct_entries):
+        end_time = start + duration
+        active = [entry for entry in active if entry[0] > start + 1e-9]
+        if active:
+            overlaps[idx] = True
+            for _, active_idx in active:
+                overlaps[active_idx] = True
+        active.append((end_time, idx))
+        lane_idx = None
+        for lane_i, lane_end in enumerate(lane_end_times):
+            if start >= lane_end - 1e-9:
+                lane_idx = lane_i
+                lane_end_times[lane_i] = end_time
+                break
+        if lane_idx is None:
+            lane_idx = len(lane_end_times)
+            lane_end_times.append(end_time)
+        lane_assignments.append(lane_idx)
+    lane_height = 42
+    lane_count = max(1, len(lane_end_times))
+    total_height = 8 + lane_height * lane_count
+    segments: list[str] = []
+    lane_last_end_pct: dict[int, float] = {}
+    lane_last_color: dict[int, str] = {}
+    for idx, ((start, duration, op_name, detail), lane) in enumerate(zip(struct_entries, lane_assignments)):
         label = escape(_timeline_segment_label(op_name, detail))
         end_time = start + duration
         tooltip_text = f"{op_name} {start:.3f}–{end_time:.3f} {unit} (Δ={duration:.3f} {unit})"
@@ -807,28 +835,63 @@ def render_timeline_chart(
             tooltip_text += f" — {detail}"
         tooltip = escape(tooltip_text, quote=True)
         color = _timeline_color_for_op(op_name)
+        start_pct = max(0.0, min(100.0, (start / span) * 100.0))
+        duration_pct = (duration / span) * 100.0
+        width_pct = max(
+            0.25,
+            min(100.0 - start_pct, duration_pct if duration_pct > 0 else 0.25),
+        )
+        gap_pct = 0.0
+        if width_pct > 0.3:
+            gap_pct = max(0.18, width_pct * 0.12)
+            gap_pct = min(0.8, gap_pct)
+            if gap_pct >= width_pct:
+                gap_pct = width_pct * 0.5
+            width_pct = max(0.2, width_pct - gap_pct)
+            start_pct = min(100.0, start_pct + gap_pct * 0.5)
+        prev_color = lane_last_color.get(lane)
+        prev_end_pct = lane_last_end_pct.get(lane)
+        same_color_gap = 0.0
+        if (
+            prev_color == color
+            and prev_end_pct is not None
+            and start_pct <= prev_end_pct + 0.05
+        ):
+            same_color_gap = min(0.9, max(0.25, width_pct * 0.1))
+            if same_color_gap >= width_pct:
+                same_color_gap = width_pct * 0.4
+            start_pct = min(100.0, start_pct + same_color_gap * 0.6)
+            width_pct = max(0.2, width_pct - same_color_gap)
         base_style = (
             "display:flex;align-items:center;justify-content:center;"
-            "font-size:9px;color:#fff;padding:2px;overflow:hidden;text-overflow:ellipsis;"
-            "letter-spacing:0.2px;"
+            "font-size:10px;color:#fff;padding:2px 4px;overflow:hidden;text-overflow:ellipsis;"
+            "letter-spacing:0.2px;font-weight:500;"
         )
-        label_style = base_style + (
-            "writing-mode:vertical-rl;text-orientation:mixed;"
-        )
+        label_style = base_style
         if op_name == "Measure":
-            label_style = (
-                "display:flex;align-items:center;justify-content:center;"
-                "font-size:11px;color:#fff;padding:0 6px;overflow:hidden;text-overflow:ellipsis;"
-                "writing-mode:horizontal-tb;text-orientation:mixed;"
-            )
+            label_style += "writing-mode:horizontal-tb;text-orientation:mixed;"
+        else:
+            label_style += "writing-mode:vertical-rl;text-orientation:mixed;"
+        lane_bg = ""
+        if lane_count > 1 and not overlaps[idx]:
+            lane_bg = "background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.05));"
+        fill_lane = lane_count > 1 and not overlaps[idx]
+        bar_top = 4
+        bar_height = total_height - 8 if fill_lane else lane_height - 8
+        if not fill_lane:
+            bar_top = 4 + lane * lane_height
         segment_html = (
             "<div class='na-vm-timeline__segment' "
             f"style=\"position:absolute;left:{start_pct:.4f}%;width:{width_pct:.4f}%;"
-            "top:4px;bottom:4px;border-radius:6px;border:1px solid rgba(0,0,0,0.15);"
-            f"{label_style}"
+            f"top:{bar_top}px;height:{bar_height}px;"
+            "border-radius:5px;border:1px solid rgba(0,0,0,0.15);"
+            "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.35);"
+            f"{lane_bg}{label_style}"
             f"background:{color};\" data-tooltip=\"{tooltip}\">{label}</div>"
         )
         segments.append(segment_html)
+        lane_last_color[lane] = color
+        lane_last_end_pct[lane] = min(100.0, start_pct + width_pct)
     container_id = f"na-vm-timeline-{uuid.uuid4().hex}"
     header = (
         f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
@@ -837,7 +900,7 @@ def render_timeline_chart(
     )
     track = (
         "<div class='na-vm-timeline__track' "
-        "style='position:relative;height:60px;border:1px solid #d0d7de;border-radius:10px;"
+        f"style='position:relative;height:{total_height}px;border:1px solid #d0d7de;border-radius:10px;"
         "background:#f8fbff;margin-top:6px;'>"
         + "".join(segments)
         + "</div>"

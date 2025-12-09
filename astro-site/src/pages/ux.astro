@@ -114,6 +114,34 @@ def reuse_measured_qubit():
         array now includes the scheduler-inserted `<Wait>` entry right after the measurement. You can capture that stream
         via `--output json` or `--log-file` to audit how the scheduler aligned the program with the hardware cooldown.
       </p>
+      <p>
+        You can also see how parallel limits shape a schedule. The snippet below drives two disjoint qubit pairs on
+        <code>noisy_square_array</code>. When <code>max_parallel_two_qubit</code> is 1, the second <code>CX</code> starts after
+        the first finishes; if the limit is raised to 2, the gates share the same timestamp.
+      </p>
+<pre><code class="language-python">program = [
+    {"op": "AllocArray", "n_qubits": 4},
+    {"op": "ApplyGate", "name": "H", "targets": [0]},
+    {"op": "ApplyGate", "name": "H", "targets": [2]},
+    {"op": "ApplyGate", "name": "CX", "targets": [0, 1]},
+    {"op": "ApplyGate", "name": "CX", "targets": [2, 3]},
+    {"op": "Measure", "targets": [0, 1, 2, 3]},
+]</code></pre>
+      <p>
+        The CLI timeline shows the scheduler’s choices:
+      </p>
+<pre><code>Timeline (us):
+        0.000–    0.500 H[0]
+        0.000–    0.500 H[2]
+        0.500–    1.500 CX[0,1]
+        1.500–    2.500 CX[2,3]  # shifted because the two-qubit cap is 1
+        2.500–   52.500 Measure[0,1,2,3]
+</code></pre>
+      <p>
+        When the profile permits two concurrent two-qubit gates, the last two rows collapse to the same start time. The
+        notebook timeline widget mirrors the same layout with colored bars, so users can visually confirm which operations
+        overlapped and why the scheduler inserted any idle slices.
+      </p>
     </div>
   </section>
 

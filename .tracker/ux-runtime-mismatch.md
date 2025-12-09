@@ -1,7 +1,7 @@
 # Ticket: UX vs Runtime Mismatch
 
 - **Priority:** High
-- **Status:** Completed
+- **Status:** Done
 
 ## Summary
 The previously described UX gap—where the Python stack claimed device/profile-based APIs and backend selection but the runtime exposed only the bare `StatevectorEngine`—is now resolved:

@@ -1,7 +1,7 @@
 # Ticket: Scheduling & Logical Time Semantics
 
 - **Priority:** High
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Introduce a proper scheduling layer and complete logical-time semantics for the Neutral Atom VM so that ISA-level timing and resource constraints (e.g., measurement cooldown, max parallel two-qubit gates) are enforced by construction, not only as runtime errors. The current prototype exposes timing limits in the ISA and engine but lacks a scheduler and does not advance `logical_time` using gate/measurement durations, which makes examples like `benchmark_chain`'s cooldown look like user-facing quirks instead of a coherent hardware contract.

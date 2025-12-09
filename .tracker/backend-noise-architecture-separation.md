@@ -1,7 +1,7 @@
 # Ticket: Backend & Noise Architecture Separation
 
 - **Priority:** High
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Tighten the Neutral Atom VM prototype to mirror the canonical quantum stack architecture: a clean separation between the VM contract, backend kinds (statevector, stabilizer/Pauli, hardware), and orthogonal noise models (shared noise IR consumed by both VM engines and Stim). The goal is to turn the current “statevector + SimpleNoiseEngine” prototype into a structure where backends and noise are distinct, swappable concerns.
@@ -62,3 +62,7 @@ Tighten the Neutral Atom VM prototype to mirror the canonical quantum stack arch
   - Add focused tests that run the same job under different `(backend_kind, noise_config)` combinations and assert the plumbing (correct selection, no crashes, expected error paths), even if distributions differ between backends.
   - Preserve existing interfaces for profiles, SDK, and CLI by mapping old names to new `(backend_kind, noise_preset)` defaults under the hood so current examples and notebooks keep working while the architecture is tightened.
 
+## Resolution
+- Introduced a first-class `BackendKind` enum across C++ and Python, updated `JobRequest` to carry backend/noise selections explicitly, and taught device presets plus CLI flags to surface those options.
+- Refactored the runtime into an `IBackend` interface implemented by the statevector and Pauli-statevector backends, while `NoiseEngine` creation is now orthogonal and injected via `NoiseConfig`.
+- Documentation (architecture pages, Astro site) now reflects the layered model and clarifies how Stim/stabilizer backends will plug into the same factory, with regression tests covering backend/noise selection plumbing.

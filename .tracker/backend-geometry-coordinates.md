@@ -1,7 +1,7 @@
 # Ticket: Backend Support for Multidimensional Coordinates
 
 - **Priority:** High
-- **Status:** In Progress
+- **Status:** Done
 
 ## Summary
 Propagate the new multidimensional `coordinates` data from the Python SDK into the VM runtime so blockade checks, routing, and scheduling operate on actual 2-D/3-D geometry instead of flattened scalar positions.
@@ -13,4 +13,6 @@ Propagate the new multidimensional `coordinates` data from the Python SDK into t
 - Added runtime work to serialize `coordinates` in the service API, populate `SiteDescriptor`s for downstream engines, and enforce Euclidean blockade distance when present.
 
 ## Resolution
-- Added `coordinates` plumbing from job dictionaries through pybind into the service runner and SIMD engine, so multidimensional layouts now survive submission and are used for blockade checks.  Still need to follow up on scheduler/adjacency/routing improvements downstream.
+- Extended the schema, pybind layer, and runtime structs so every job now carries both legacy `positions` and rich `coordinates`.
+- `HardwareVM`, scheduler checks, and blockade logic all consume Euclidean distances from the coordinate tuples, so multi-row/3-D layouts are validated correctly.
+- Updated presets/tests to include coordinates while remaining backward compatible with clients that send positions only.

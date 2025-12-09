@@ -1,7 +1,7 @@
 # Ticket: Noise Modeling for Neutral Atom VM
 
 - **Priority:** High
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Introduce configurable noise models for the Neutral Atom VM so simulations can capture decoherence, gate imperfections, SPAM errors, and atom loss.
@@ -16,3 +16,8 @@ Introduce configurable noise models for the Neutral Atom VM so simulations can c
 - Added configurable phase-noise sources (gate kicks + idle drift) to `SimpleNoiseConfig`, letting device profiles model laser phase noise via stochastic Z rotations.
 - Added correlated two-qubit Pauli channels plus runtime loss tracking (gate/idle + measurement) backed by per-shot-cloneable noise engines, so entangling gates can draw from 15-parameter tables and atom loss persists consistently across a program.
 - Retired the ad-hoc `--noise` CLI flag; profiles (or custom JSON configs via `--profile-config`) now own hardware + noise settings end-to-end so the VM stays noise-blind.
+
+## Resolution
+- Noise IR now exposes configurable Pauli + amplitude/phase damping knobs per operation, backed by modular noise-engine components that attach to gates, waits, and measurements.
+- The job/service layer plus Python/CLI presets accept structured `noise_config` blobs, letting clients mix and override presets without mutating device IDs.
+- Measurement records include SPAM/atom-loss annotations, regression tests cover representative noise presets, and docs describe how to tune/attach them.
