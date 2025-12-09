@@ -14,6 +14,7 @@ from .job import (
     SimpleNoiseConfig,
     TimingLimits,
     has_oneapi_backend,
+    has_stabilizer_backend,
     JobResult,
     submit_job,
 )
@@ -72,6 +73,39 @@ def _native_gate_catalog(connectivity: str) -> list[Dict[str, Any]]:
             "connectivity": connectivity,
         },
     ]
+
+
+def _sanitize_noise_for_stabilizer(payload: Mapping[str, Any] | None) -> Dict[str, Any] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    sanitized: Dict[str, Any] = {}
+    for key in ("p_loss", "p_quantum_flip"):
+        if key in payload:
+            sanitized[key] = payload[key]
+    readout = payload.get("readout")
+    if isinstance(readout, Mapping):
+        sanitized["readout"] = deepcopy(readout)
+    gate_payload = payload.get("gate")
+    if isinstance(gate_payload, Mapping):
+        gate_clean: Dict[str, Any] = {}
+        for field in ("single_qubit", "two_qubit_control", "two_qubit_target"):
+            entry = gate_payload.get(field)
+            if isinstance(entry, Mapping):
+                gate_clean[field] = deepcopy(entry)
+        if gate_clean:
+            sanitized["gate"] = gate_clean
+    return sanitized or None
+
+
+def _stabilizer_config_from(config: Mapping[str, Any]) -> Dict[str, Any]:
+    sanitized = deepcopy(config)
+    noise_payload = sanitized.get("noise")
+    clean_noise = _sanitize_noise_for_stabilizer(noise_payload if isinstance(noise_payload, Mapping) else None)
+    if clean_noise:
+        sanitized["noise"] = clean_noise
+    else:
+        sanitized.pop("noise", None)
+    return sanitized
 
 
 def _parse_timing_limits(payload: Mapping[str, Any]) -> TimingLimits:
@@ -293,6 +327,16 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     },
     (
         "local-cpu",
+        "ideal_square_grid",
+    ): {
+        "label": "Ideal square grid",
+        "description": "Four-by-four noiseless grid for experimenting with spatially-aware controls.",
+        "geometry": "2D 4×4 layout with unit spacing and blockade radius 1.5.",
+        "noise_behavior": "Noise-free (idealized) execution for tutorials and layout testing.",
+        "persona": "geometry exploration",
+    },
+    (
+        "local-cpu",
         "noisy_square_array",
     ): {
         "label": "Noisy square array",
@@ -344,6 +388,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
 }
 
 has_oneapi = has_oneapi_backend()
+has_stabilizer = has_stabilizer_backend()
 for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
     if device_id != "local-cpu":
         continue
@@ -371,6 +416,26 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "noise": None,
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborChain"),
+    },
+    # 2D noiseless grid for layout exploration.
+    ("local-cpu", "ideal_square_grid"): {
+        "positions": [float(i) for i in range(16)],
+        "coordinates": [
+            [float(x), float(y)]
+            for y in range(4)
+            for x in range(4)
+        ],
+        "blockade_radius": 1.5,
+        "grid_layout": {
+            "dim": 2,
+            "rows": 4,
+            "cols": 4,
+            "layers": 1,
+            "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+        },
+        "noise": None,
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborGrid"),
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
     ("local-cpu", "noisy_square_array"): {
@@ -544,6 +609,23 @@ if has_oneapi:
             continue
         _PROFILE_TABLE[("local-arc", profile)] = deepcopy(config)
 
+if has_stabilizer:
+    for (device_id, profile), config in list(_PROFILE_TABLE.items()):
+        if device_id != "local-cpu":
+            continue
+        sanitized = _stabilizer_config_from(config)
+        _PROFILE_TABLE[("stabilizer", profile)] = sanitized
+        metadata = dict(_PROFILE_METADATA.get((device_id, profile), {}))
+        label = metadata.get("label", profile)
+        metadata["label"] = f"{label} (Stim)" if "Stim" not in label else label
+        description = metadata.get("description", "")
+        if "Stim stabilizer backend" not in description:
+            extra = "Runs on the Stim stabilizer backend."
+            description = f"{description} {extra}".strip() if description else extra
+        metadata["description"] = description
+        metadata["persona"] = metadata.get("persona", "stabilizer")
+        _PROFILE_METADATA[("stabilizer", profile)] = metadata
+
 
 def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
     """Return a structured view of the built-in device/profile presets."""
@@ -604,6 +686,10 @@ def build_device_from_config(
             )
     if resolved_config is None or "positions" not in resolved_config:
         raise ValueError("Profile config must include 'positions'")
+    if device_id == "stabilizer":
+        if not has_stabilizer:
+            raise ValueError("Stabilizer backend is unavailable in this build")
+        resolved_config = _stabilizer_config_from(resolved_config)
     coordinates = resolved_config.get("coordinates")
     coord_entries = None
     if isinstance(coordinates, Sequence):

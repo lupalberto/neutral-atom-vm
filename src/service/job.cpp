@@ -253,6 +253,9 @@ BackendKind backend_for_device(const std::string& device_id) {
     if (device_id == "local-arc") {
         return BackendKind::kOneApi;
     }
+    if (device_id == "stabilizer") {
+        return BackendKind::kStabilizer;
+    }
     return BackendKind::kCpu;
 }
 
@@ -264,7 +267,8 @@ void enrich_hardware_with_profile_constraints(
 ) {
     const bool is_sim_device =
         job.device_id == "local-cpu" ||
-        job.device_id == "local-arc";
+        job.device_id == "local-arc" ||
+        job.device_id == "stabilizer";
     if (!is_sim_device) {
         return;
     }
@@ -449,6 +453,7 @@ JobResult JobRunner::run(
         profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {
+            profile.noise_config = job.noise_config;
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
             profile.device_noise_engine =
                 neutral_atom_vm::noise::build_device_noise_engine(*job.noise_config);

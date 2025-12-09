@@ -161,8 +161,11 @@ def reuse_measured_qubit():
 </code></pre>
     <p>
       When built with oneAPI support (<code>-DNA_VM_WITH_ONEAPI=ON</code>), <code>--device local-arc</code> routes the
-      same profile to GPU hardware. CLI logs include categories like <code>Noise</code> and
-      <code>TimingConstraint</code>, so timing violations and noise events are visible without digging into backends.
+      same profile to GPU hardware. When Stim support is enabled (<code>-DNA_VM_WITH_STIM=ON</code>, now the default) you
+      can also pass <code>--device stabilizer</code> (or <code>connect_device("stabilizer", ...)</code>) to run the same
+      presets on the Stim-backed stabilizer engine for Clifford/Pauli workloads. CLI logs include categories like
+      <code>Noise</code> and <code>TimingConstraint</code>, so timing violations and noise events are visible without
+      digging into backends.
     </p>
     <p>
       Each job now returns a structured `timeline` array (alongside the `logs` and `measurements`) that lists the

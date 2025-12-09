@@ -124,4 +124,74 @@ TEST(HardwareVMTests, LossStateResetsEachShot) {
     EXPECT_EQ(measurements[1].bits, std::vector<int>({-1}));
 }
 
+#ifdef NA_VM_WITH_STIM
+TEST(HardwareVMTests, StabilizerBackendGeneratesBellPair) {
+    DeviceProfile profile;
+    profile.id = "stim-bell";
+    profile.hardware.positions = {0.0, 1.0};
+    profile.hardware.blockade_radius = 1.0;
+    profile.backend = BackendKind::kStabilizer;
+
+    HardwareVM vm(profile);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 2});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"H", {0}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 1}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0, 1},
+    });
+
+    const auto result = vm.run(program, 5);
+    ASSERT_EQ(result.measurements.size(), 5u);
+    for (const auto& record : result.measurements) {
+        ASSERT_EQ(record.bits.size(), 2u);
+        const int b0 = record.bits[0];
+        const int b1 = record.bits[1];
+        EXPECT_TRUE((b0 == 0 && b1 == 0) || (b0 == 1 && b1 == 1));
+    }
+}
+
+TEST(HardwareVMTests, StabilizerBackendHandlesMultipleQallocs) {
+    DeviceProfile profile;
+    profile.id = "stim-multi-qalloc";
+    profile.hardware.positions = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
+    profile.hardware.blockade_radius = 1.0;
+    profile.backend = BackendKind::kStabilizer;
+
+    HardwareVM vm(profile);
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 4});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"X", {3}, 0.0},
+    });
+    program.push_back(Instruction{Op::AllocArray, 2});
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 4}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {1, 4}, 0.0},
+    });
+    program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{4, 5},
+    });
+
+    const auto result = vm.run(program, 1);
+    ASSERT_EQ(result.measurements.size(), 1u);
+    ASSERT_EQ(result.measurements[0].bits.size(), 2u);
+}
+#endif
+
 }  // namespace

@@ -47,7 +47,7 @@ Flow:
    result = job.result()
    print(result.measurements)
    ```
-   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we also expose `device_id="local-cpu"` (and `local-arc`) to reach the same local C++ runtime with the legacy defaults.
+   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we expose device aliases such as `local-cpu` (CPU statevector), `local-arc` (GPU/oneAPI), and, when Stim support is built in, `stabilizer`, which routes the same presets through the Stim-backed stabilizer engine. Choosing `connect_device("stabilizer", profile="ideal_small_array")` (or `quera-vm run --device stabilizer ...`) automatically sanitizes the preset’s noise down to the Pauli/readout/loss terms Stim understands while keeping geometry/timing identical to the CPU persona.
 5. Under the hood: the Python SDK builds a `JobRequest`, attaches hardware/noise profiles, and submits to `JobRunner`, which picks the appropriate backend (ideal, noisy Pauli, etc.) and returns `JobResult`.
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.
@@ -169,7 +169,7 @@ quera-vm run --device local-cpu --profile benchmark_chain \
 
 The `local-arc` device ID mirrors `local-cpu`’s profiles but selects the Intel Arc GPU backend when the oneAPI runtime is enabled. The metadata returned by `neutral_atom_vm.available_presets()` includes labels/descriptions that help you differentiate the CPU vs. Arc personas.
 
-When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. If the backend is not enabled, the CLI prints an explanatory error mentioning `NA_VM_WITH_ONEAPI=ON` so you can rebuild with the toggle.
+When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. Similarly, builds that include Stim (`-DNA_VM_WITH_STIM=ON`, enabled by default) can target `--device stabilizer` / `connect_device("stabilizer", ...)` to run Clifford/Pauli workloads on the new stabilizer backend. If a requested backend is unavailable, the CLI prints an explanatory message mentioning which `cmake` toggle to enable.
 
 To keep the Arc run fast, the oneAPI backend now keeps the statevector resident on the SYCL device and only copies it back to the host when a measurement, noise hook, or SDK inspection needs the amplitudes. This avoids the old per-gate copy/wait handshake that made `local-arc` slower than `local-cpu` for gate-heavy workloads.
 

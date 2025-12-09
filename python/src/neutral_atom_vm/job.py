@@ -75,6 +75,14 @@ def has_oneapi_backend() -> bool:
     return bool(func())
 
 
+def has_stabilizer_backend() -> bool:
+    module = _load_native_module()
+    func = getattr(module, "has_stabilizer_backend", None)
+    if func is None:
+        return False
+    return bool(func())
+
+
 def _prepare_job_dict(job: JobRequest | Mapping[str, Any]):
     job_dict = _normalize_job_mapping(job)
     hardware = job_dict.get("hardware")

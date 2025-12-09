@@ -49,17 +49,9 @@ const nav = [
   <section>
     <h2>“Pauli backend” vs. noise-augmented statevector</h2>
     <p>
-      Docs and site text refer to a “Pauli backend” alongside the statevector and hardware backends. In the current
-      codebase, this really means:
-    </p>
-    <ul>
-      <li>a statevector engine (<code>StatevectorEngine</code> + backends), plus</li>
-      <li>noise engines configured via <code>SimpleNoiseConfig</code> and device presets.</li>
-    </ul>
-    <p>
-      There is no separate stabilizer/Stim backend yet; the “Pauli” behavior is implemented as Pauli-style noise on
-      top of the statevector backend. The architectural direction (captured in the backend/noise separation ticket)
-      is to:
+      Docs and site text refer to a “Pauli backend” alongside the statevector and hardware backends. We now expose a
+      concrete stabilizer backend (the <code>stabilizer</code> device alias) that routes the standard presets through
+      Stim when the build enables <code>NA_VM_WITH_STIM</code>, but the broader architectural question remains:
     </p>
     <ul>
       <li>treat backend kind (statevector, stabilizer/Stim, hardware) and noise IR as orthogonal, and</li>

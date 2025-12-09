@@ -4,6 +4,7 @@ project(neutral_atom_vm_bindings LANGUAGES CXX)
 cmake_policy(SET CMP0148 NEW)
 
 option(NA_VM_WITH_ONEAPI "Enable oneAPI/SYCL backend for the Python bindings" OFF)
+option(NA_VM_WITH_STIM "Enable Stim-backed stabilizer backend for the Python bindings" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +23,21 @@ if(NA_VM_WITH_ONEAPI)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(ONEAPI_COMPILE_OPTIONS -fsycl -fno-sycl-id-queries-fit-in-int)
     set(ONEAPI_LINK_OPTIONS -fsycl)
+endif()
+
+if(NA_VM_WITH_STIM)
+    if(DEFINED ENV{CONDA_PREFIX})
+        list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+    endif()
+    find_path(STIM_INCLUDE_DIR stim.h
+        HINTS $ENV{CONDA_PREFIX}/include
+    )
+    find_library(STIM_LIBRARY stim
+        HINTS $ENV{CONDA_PREFIX}/lib
+    )
+    if(NOT STIM_INCLUDE_DIR OR NOT STIM_LIBRARY)
+        message(FATAL_ERROR "NA_VM_WITH_STIM requires stim headers and library (set CONDA_PREFIX or STIM paths)")
+    endif()
 endif()
 
 execute_process(
@@ -50,6 +66,7 @@ add_library(vm STATIC
     ../src/noise/idle_phase_drift_source.cpp
     ../src/noise/loss_tracking_source.cpp
     ../src/hardware_vm.cpp
+    ../src/stabilizer_backend.cpp
     ../src/service/job.cpp
     ../src/service/scheduler.cpp
     ../src/service/job_service.cpp
@@ -64,6 +81,11 @@ if(NA_VM_WITH_ONEAPI)
     target_compile_options(vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
     target_link_options(vm PRIVATE ${ONEAPI_LINK_OPTIONS})
 endif()
+if(NA_VM_WITH_STIM)
+    target_compile_definitions(vm PRIVATE NA_VM_WITH_STIM=1)
+    target_include_directories(vm PRIVATE ${STIM_INCLUDE_DIR})
+    target_link_libraries(vm PUBLIC ${STIM_LIBRARY})
+endif()
 
 pybind11_add_module(_neutral_atom_vm
     ../src/bindings/python/module.cpp
@@ -73,6 +95,10 @@ if(NA_VM_WITH_ONEAPI)
     target_compile_options(_neutral_atom_vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
     target_link_options(_neutral_atom_vm PRIVATE ${ONEAPI_LINK_OPTIONS})
     target_compile_definitions(_neutral_atom_vm PRIVATE NA_VM_WITH_ONEAPI=1)
+endif()
+if(NA_VM_WITH_STIM)
+    target_compile_definitions(_neutral_atom_vm PRIVATE NA_VM_WITH_STIM=1)
+    target_include_directories(_neutral_atom_vm PRIVATE ${STIM_INCLUDE_DIR})
 endif()
 set_target_properties(_neutral_atom_vm PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src/neutral_atom_vm

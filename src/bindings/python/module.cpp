@@ -492,6 +492,14 @@ bool has_oneapi_backend() {
 #endif
 }
 
+bool has_stabilizer_backend() {
+#ifdef NA_VM_WITH_STIM
+    return true;
+#else
+    return false;
+#endif
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_neutral_atom_vm, m) {
@@ -524,5 +532,10 @@ PYBIND11_MODULE(_neutral_atom_vm, m) {
         "has_oneapi_backend",
         &has_oneapi_backend,
         "Return true when the bindings were built with the oneAPI backend."
+    );
+    m.def(
+        "has_stabilizer_backend",
+        &has_stabilizer_backend,
+        "Return true when the stabilizer (Stim) backend is available."
     );
 }

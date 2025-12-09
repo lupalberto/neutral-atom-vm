@@ -73,6 +73,16 @@ HardwareVM::RunResult HardwareVM::run(
         }
     }
 
+    if (profile_.backend == BackendKind::kStabilizer) {
+#ifdef NA_VM_WITH_STIM
+        return run_stabilizer(program, num_shots, seeds);
+#else
+        throw std::runtime_error(
+            "stabilizer backend unavailable; rebuild with NA_VM_WITH_STIM=ON"
+        );
+#endif
+    }
+
     if (profile_.backend == BackendKind::kOneApi) {
 #ifdef NA_VM_WITH_ONEAPI
         return run_oneapi_batched(program, num_shots, seeds);

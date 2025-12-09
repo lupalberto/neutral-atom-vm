@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(NA_VM_BUILD_TESTS "Build tests" ON)
 option(NA_VM_WITH_ONEAPI "Enable oneAPI/SYCL backend" OFF)
+option(NA_VM_WITH_STIM "Enable Stim-backed stabilizer backend" ON)
 
 if(NA_VM_WITH_ONEAPI)
     find_program(DPCPP_COMPILER dpcpp)
@@ -17,6 +18,21 @@ if(NA_VM_WITH_ONEAPI)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(ONEAPI_COMPILE_OPTIONS -fsycl -fno-sycl-id-queries-fit-in-int)
     set(ONEAPI_LINK_OPTIONS -fsycl)
+endif()
+
+if(NA_VM_WITH_STIM)
+    if(DEFINED ENV{CONDA_PREFIX})
+        list(APPEND CMAKE_PREFIX_PATH $ENV{CONDA_PREFIX})
+    endif()
+    find_path(STIM_INCLUDE_DIR stim.h
+        HINTS $ENV{CONDA_PREFIX}/include
+    )
+    find_library(STIM_LIBRARY stim
+        HINTS $ENV{CONDA_PREFIX}/lib
+    )
+    if(NOT STIM_INCLUDE_DIR OR NOT STIM_LIBRARY)
+        message(FATAL_ERROR "NA_VM_WITH_STIM requires stim headers and library (set CONDA_PREFIX or STIM paths)")
+    endif()
 endif()
 
 include(FetchContent)
@@ -40,6 +56,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
     src/noise/idle_phase_drift_source.cpp
     src/noise/loss_tracking_source.cpp
     src/hardware_vm.cpp
+    src/stabilizer_backend.cpp
     src/service/job.cpp
     src/service/scheduler.cpp
     src/service/job_service.cpp
@@ -54,6 +71,11 @@ if(NA_VM_WITH_ONEAPI)
     target_compile_options(vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
     target_link_options(vm PRIVATE ${ONEAPI_LINK_OPTIONS})
 endif()
+if(NA_VM_WITH_STIM)
+    target_compile_definitions(vm PRIVATE NA_VM_WITH_STIM=1)
+    target_include_directories(vm PRIVATE ${STIM_INCLUDE_DIR})
+    target_link_libraries(vm PUBLIC ${STIM_LIBRARY})
+endif()
 
 add_executable(vm_demo
     src/main.cpp
@@ -62,6 +84,9 @@ target_link_libraries(vm_demo PRIVATE vm)
 if(NA_VM_WITH_ONEAPI)
     target_compile_options(vm_demo PRIVATE ${ONEAPI_COMPILE_OPTIONS})
     target_link_options(vm_demo PRIVATE ${ONEAPI_LINK_OPTIONS})
+endif()
+if(NA_VM_WITH_STIM)
+    target_include_directories(vm_demo PRIVATE ${STIM_INCLUDE_DIR})
 endif()
 
 if(NA_VM_BUILD_TESTS)
@@ -82,6 +107,9 @@ if(NA_VM_BUILD_TESTS)
         test/scheduler_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)
+    if(NA_VM_WITH_STIM)
+        target_include_directories(vm_tests PRIVATE ${STIM_INCLUDE_DIR})
+    endif()
     if(NA_VM_WITH_ONEAPI)
         target_compile_options(vm_tests PRIVATE ${ONEAPI_COMPILE_OPTIONS})
         target_link_options(vm_tests PRIVATE ${ONEAPI_LINK_OPTIONS})
@@ -93,6 +121,9 @@ if(NA_VM_BUILD_TESTS)
         test/hardware_vm_tests.cpp
     )
     target_link_libraries(hardware_vm_tests PRIVATE vm gtest_main)
+    if(NA_VM_WITH_STIM)
+        target_include_directories(hardware_vm_tests PRIVATE ${STIM_INCLUDE_DIR})
+    endif()
     if(NA_VM_WITH_ONEAPI)
         target_compile_options(hardware_vm_tests PRIVATE ${ONEAPI_COMPILE_OPTIONS})
         target_link_options(hardware_vm_tests PRIVATE ${ONEAPI_LINK_OPTIONS})

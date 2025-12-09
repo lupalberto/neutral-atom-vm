@@ -10,7 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any, Callable, Mapping, Sequence
 
 from .device import connect_device, build_device_from_config
@@ -125,37 +125,50 @@ def _summarize_result(
         lines.append(f"Timeline ({timeline_units or log_units or 'ns'}):")
         lines.extend(timeline_summary)
 
-    counts: Counter[str] = Counter()
-    for rec in measurements:
-        bits = rec.get("bits", [])
-        if not bits:
-            continue
-        key = "".join(str(int(b)) for b in bits)
-        counts[key] += 1
-
+    group_counts: dict[tuple[int, ...], Counter[str]] = defaultdict(Counter)
+    grid_examples_per_group: dict[tuple[int, ...], dict[str, list[int]]] = defaultdict(
+        dict
+    )
     grid_layout = grid_layout_for_profile(profile)
-    grid_examples: dict[str, list[int]] = {}
 
     for rec in measurements:
         bits = rec.get("bits", [])
         if not bits:
             continue
-        key = "".join(str(int(b)) for b in bits)
-        if grid_layout and len(bits) == grid_layout.total_slots:
-            grid_examples.setdefault(key, list(int(b) for b in bits))
+        targets = rec.get("targets") or []
+        if not targets:
+            continue
+        try:
+            targets_tuple = tuple(int(t) for t in targets)
+        except (TypeError, ValueError):
+            continue
+        bitstring = "".join(str(int(b)) for b in bits)
+        group_counts[targets_tuple][bitstring] += 1
+        if (
+            grid_layout
+            and len(bits) == grid_layout.total_slots
+            and bitstring not in grid_examples_per_group[targets_tuple]
+        ):
+            grid_examples_per_group[targets_tuple][bitstring] = [
+                int(b) for b in bits
+            ]
 
-    if counts:
-        lines.append("Counts:")
-        for bitstring, count in sorted(counts.items()):
-            lines.append(f"  {bitstring}: {count}")
-            if grid_layout:
-                grid_lines = _grid_lines_for_bits(
-                    grid_examples.get(bitstring, []), grid_layout
-                )
-                if grid_lines:
-                    lines.append("    Grid:")
-                    for line in grid_lines:
-                        lines.append(f"      {line}")
+    if group_counts:
+        for targets in sorted(group_counts, key=lambda tup: (len(tup), tup)):
+            counter = group_counts[targets]
+            total = sum(counter.values())
+            lines.append(
+                f"Measurements for targets {list(targets)} ({total} samples):"
+            )
+            for bitstring, count in sorted(counter.items()):
+                lines.append(f"  {bitstring}: {count}")
+                grid_bits = grid_examples_per_group.get(targets, {}).get(bitstring)
+                if grid_bits and grid_layout:
+                    grid_lines = _grid_lines_for_bits(grid_bits, grid_layout)
+                    if grid_lines:
+                        lines.append("    Grid:")
+                        for line in grid_lines:
+                            lines.append(f"      {line}")
     else:
         lines.append("Counts: (no measurements)")
 
@@ -424,7 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "--device",
         default="local-cpu",
-        help="Device identifier (e.g. local-cpu, local-arc when oneAPI is enabled)",
+        help="Device identifier (e.g. local-cpu, local-arc, stabilizer)",
     )
     run_parser.add_argument(
         "--profile",

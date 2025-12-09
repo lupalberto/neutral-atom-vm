@@ -4,7 +4,7 @@ import neutral_atom_vm.device as device_mod
 import pytest
 from neutral_atom_vm import to_vm_program
 from neutral_atom_vm.device import build_device_from_config, available_presets
-from neutral_atom_vm.job import has_oneapi_backend
+from neutral_atom_vm.job import has_oneapi_backend, has_stabilizer_backend
 
 def test_device_submit_program_runtime():
     device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
@@ -124,6 +124,10 @@ def test_available_presets_lists_built_in_profiles():
         assert "local-arc" in presets
     else:
         assert "local-arc" not in presets
+    if HAS_STABILIZER:
+        assert "stabilizer" in presets
+    else:
+        assert "stabilizer" not in presets
 
     cpu_profiles = presets["local-cpu"]
     for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
@@ -158,6 +162,7 @@ HAS_ONEAPI = has_oneapi_backend()
 DEVICE_ALIAS_IDS = ["local-cpu"]
 if HAS_ONEAPI:
     DEVICE_ALIAS_IDS.append("local-arc")
+HAS_STABILIZER = has_stabilizer_backend()
 
 @pytest.mark.parametrize("device_id", DEVICE_ALIAS_IDS)
 def test_connect_device_aliases_preserve_profiles(device_id):
@@ -297,3 +302,21 @@ def test_job_result_renders_summary_html():
     assert "Device" in html
     assert "Shots" in html
     assert "Histogram" in html
+
+
+def test_connect_device_supports_stabilizer_device():
+    if not HAS_STABILIZER:
+        with pytest.raises(ValueError, match="Unknown device"):
+            neutral_atom_vm.connect_device("stabilizer", profile="ideal_small_array")
+        return
+
+    device = neutral_atom_vm.connect_device("stabilizer", profile="ideal_small_array")
+    program = [
+        {"op": "AllocArray", "n_qubits": 2},
+        {"op": "ApplyGate", "name": "H", "targets": [0]},
+        {"op": "ApplyGate", "name": "CX", "targets": [0, 1]},
+        {"op": "Measure", "targets": [0, 1]},
+    ]
+    job = device.submit(program, shots=4)
+    result = job.result()
+    assert result["status"] == "completed"
