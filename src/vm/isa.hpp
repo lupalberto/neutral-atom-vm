@@ -134,6 +134,7 @@ struct TimingLimits {
     int max_parallel_two_qubit = 0;     // 0 = unlimited
     int max_parallel_per_zone = 0;      // 0 = unlimited
     double measurement_cooldown_ns = 0.0;
+    double measurement_duration_ns = 0.0;
 };
 
 struct PulseLimits {

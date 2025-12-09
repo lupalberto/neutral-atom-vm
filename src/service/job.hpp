@@ -2,6 +2,7 @@
 
 #include "hardware_vm.hpp"
 #include "noise.hpp"
+#include "service/timeline.hpp"
 #include "vm/isa.hpp"
 #include "vm/measurement_record.types.hpp"
 #include "progress_reporter.hpp"
@@ -39,6 +40,9 @@ struct JobResult {
     JobStatus status = JobStatus::Pending;
     std::vector<MeasurementRecord> measurements;
     std::vector<ExecutionLog> logs;
+    std::vector<TimelineEntry> timeline;
+    std::string log_time_units = "ns";
+    std::string timeline_units = "ns";
     double elapsed_time = 0.0;
     std::string message;
 };

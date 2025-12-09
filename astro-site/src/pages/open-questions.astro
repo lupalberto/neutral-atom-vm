@@ -29,23 +29,20 @@ const nav = [
     <h2>Scheduling &amp; logical time</h2>
     <p>
       The ISA and device profiles include timing-related fields (gate durations, cooldowns, parallelism limits),
-      and the engine tracks <code>logical_time</code> plus per-qubit <code>last_measurement_time</code>. However:
+      and <code>logical_time</code> plus per-qubit <code>last_measurement_time</code> are already tracked in the engine.
+      In addition:
     </p>
     <ul>
-      <li>The Squin lowering produces a linear instruction stream with no scheduler or notion of parallelism.</li>
-      <li>Today, <code>logical_time</code> only advances via explicit <code>Wait</code> instructions, not by gate/measurement durations.</li>
-      <li>
-        Timing constraints (like the <code>benchmark_chain</code> measurement cooldown) surface as runtime errors when the
-        program reuses a qubit “too soon,” instead of being prevented by a scheduling pass that constructs a valid schedule.
-      </li>
+      <li>The service now runs a lightweight scheduler that inserts minimal waits so measurement cooldowns are satisfied before the program reaches the engine.</li>
+      <li><code>logical_time</code> advances automatically based on gate durations, measurement durations, waits, and pulses. The explicit <code>Wait</code> primitive therefore represents additional idle time beyond what the scheduler already budgets.</li>
+      <li>The engine continues to validate timing constraints (cooldowns, wait bounds, connectivity) as a safety net, surfacing violations if something slips past the scheduler.</li>
     </ul>
     <p>
-      The intent is sound (ISA/device profiles declare constraints, and the VM validates them), but the implementation
-      is incomplete without:
+      The next steps involve:
     </p>
     <ul>
-      <li>automatic time advance for gates/measurements, and</li>
-      <li>a scheduling/compiler layer that reasons about cooldowns and parallelism up front.</li>
+      <li>enriching the scheduler so it reason about per-zone/parallelism limits and can expose the scheduled timestamps to compilers or UI tooling, and</li>
+      <li>deciding how much of that logic lives in Kirin/Squin vs. the runtime so the same schedule is shared across the stack.</li>
     </ul>
   </section>
 

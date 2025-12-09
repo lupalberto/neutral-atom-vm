@@ -7,36 +7,22 @@ discussing its architecture. It is intentionally candid: some of these are gaps,
 
 **What we have now**
 
-- The ISA and `HardwareConfig` include timing-related fields:
-    - `NativeGate.duration_ns`
-    - `TimingLimits` (including `measurement_cooldown_ns`, `min_wait_ns`, `max_wait_ns`, and parallelism limits).
-- The engine tracks `logical_time` and stores `last_measurement_time` per qubit.
-- `StatevectorEngine::apply_gate` enforces `measurement_cooldown_ns` by comparing `logical_time` with
-  `last_measurement_time` and throwing on violations.
-- `StatevectorEngine::wait` advances `logical_time` explicitly via `Wait` instructions.
-- The Squin lowering (`to_vm_program`) produces a linear instruction stream with no scheduling / timing awareness and
-  never inserts `Wait`.
+- The ISA and `HardwareConfig` still expose timing metadata (gate durations, measurement cooldown, min/max waits, and the other parallelism limits), and `StatevectorEngine` keeps track of `logical_time` plus per-qubit `last_measurement_time`.
+- The service now runs a lightweight scheduler (`schedule_program`) before the program hits the engine. That pass inserts the minimal `<Wait>` instructions needed to satisfy measurement cooldowns and ensures the logical clock reflects the cumulative durations in the requested sequence.
+- `StatevectorEngine` advances `logical_time` automatically for gates (using `NativeGate.duration_ns`), measurements (`TimingLimits.measurement_duration_ns`), waits, and pulses. `Wait` is therefore a way to add extra idle time, not the only way to satisfy cooldown.
+- Timing constraints (cooldown, wait bounds, connectivity) are still enforced inside the engine as a safety net, so hardware-critical violations always surface in the logs even if they slip past the scheduler.
 
 **Open questions / gaps**
 
-- We do not yet:
-    - advance `logical_time` automatically based on gate/measurement durations, or
-    - have a scheduler that reasons about parallelism and cooldown when constructing a program.
-- As a result, examples like the `benchmark_chain` measurement cooldown appear to require manual `Wait` insertion just
-  to respect basic hardware latency. That is more a symptom of missing scheduling / time semantics than an intentional
-  user-facing requirement.
+- The scheduler is intentionally minimal: it treats the program as a single-threaded time stream and guarantees cooldown by delaying gates. We still lack a richer pass that reasons about parallelism per zone, per-target gate counts, or more complex reorderings.
+- We do not yet expose the scheduler’s start/end timestamps upstream (Kirin, CLI logs, visualizers) beyond the inserted `<Wait>` entries. That makes it harder to correlate logical time with compiler IR or display the schedule in a UI.
 
 **Desired direction**
 
-- In a more complete architecture:
-    - Gates and measurements advance `logical_time` by their durations.
-    - `Wait` represents *additional* idle time, not the only way to satisfy cooldown.
-    - A scheduler/ compiler layer is responsible for producing schedules that respect `TimingLimits` and parallelism
-      constraints.
-    - The VM’s role is to validate those schedules against the ISA / device profile before dispatching to a backend.
-- We need to decide:
-    - How much scheduling logic lives in Kirin/Squin vs. in a VM-side pass.
-    - How strict the VM should be in rejecting schedules vs. auto-filling idle when allowed by the spec.
+- Future work can build on this foundation by:
+    - sharing the scheduler between Kirin/Squin (Python) and service/Vm so compilations and runtime agree on the same schedule,
+    - extending it to understand per-zone limits or overlap constraints, and
+    - surfacing the scheduled timestamps to developers (e.g., enriched logs, graphical schedule visualizer).
 
 ## 2. “Pauli backend” vs. Noise-Augmented Statevector
 
@@ -153,4 +139,3 @@ discussing its architecture. It is intentionally candid: some of these are gaps,
 - How prominently should we surface these limitations in public-facing docs vs. internal docs?
 - At what point (once a minimal scheduler or stabilizer backend exists) do we tighten the language on the Astro site and
   in high-level docs to reflect the more complete architecture?
-

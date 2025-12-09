@@ -54,7 +54,7 @@ Outcome: the user never sees the VM internals—just “device + job + measureme
 
 ### Timing-limit example
 
-The `benchmark_chain` profile mentioned above sets `timing_limits.measurement_cooldown_ns = 5.0`. The VM enforces that by remembering when each site was last measured and rejecting the next `ApplyGate` on that site until at least 5.0 logical nanoseconds have elapsed. Because the current lowering never emits any `Wait` instructions, a kernel that measures and then immediately reuses the same qubit will trigger that validation error.
+The `benchmark_chain` profile mentioned above sets `timing_limits.measurement_cooldown_ns = 50_000.0` (a 50 microsecond cooldown). The new scheduler now tracks gate and measurement durations and inserts the minimal idle time needed to respect that cooldown, so a kernel that immediately reuses a measured qubit succeeds without the caller inserting a `Wait` manually.
 
 ```python
 from bloqade import squin
@@ -64,11 +64,12 @@ def reuse_measured_qubit():
     q = squin.qalloc(3)
     squin.h(q[0])
     squin.measure(q[0])
-    squin.h(q[0])  # fails the benchmark_chain cooldown without an intervening Wait
+    squin.h(q[0])  # scheduler inserts the required idle time for the cooldown
 ```
 
-Running this via `connect_device("local-cpu", profile="benchmark_chain")` will raise `runtime_error: Gate violates measurement cooldown on qubit 0`. The fix is to insert a `Wait` (or otherwise let the lowered program advance `logical_time`) before applying another gate to that site. This demonstrates how the ISA/profile contract surfaces hardware constraints, and why compilers/users must respect timing limits or the VM will reject the program before it reaches the engine.
-By adding `squin.wait(5.0)` (or any duration ≥ 5.0) between the `measure` and the following gate, the lowered program gains a `<Wait duration=5.0>` instruction. That increases `logical_time`, satisfies the cooldown, and allows the next `ApplyGate` to execute. This mirrors real hardware: you must budget time after measurements before reusing the same tweezers.
+Running this via `connect_device("local-cpu", profile="benchmark_chain")` now completes, and the log stream documents the scheduler-inserted `<Wait>` (or the core gate durations) that advance `logical_time` before the second `h`. Explicit `squin.wait()` calls remain available when you want additional idle time beyond what the scheduler already provides.
+
+To observe the scheduler in action, run the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>. The CLI logs (`--output json` or `--log-file`) now show a `<Wait>` entry right after the measurement, rather than a runtime error. The job request is still the same as before, but scheduling now prevents the cooldown violation before the backend executes the program.
 
 ---
 
@@ -99,6 +100,8 @@ include `Noise` entries (gate/measurement noise events) and `TimingConstraint`
 entries (measurement cooldown or wait/pulse violations), providing a chronological
 audit trail of enforced hardware constraints plus the existing gate/measurement
 events.
+
+Jobs that go through the scheduler also expose a `timeline` array in the JSON result and Python `JobResult`. Each entry lists the scheduled start time, duration, operation name, and a short detail string, so you can trace how the VM spaced gates, measurements, waits, and inserts idle time without parsing the raw logs. These `timeline` entries, and every `logs[*].time`, are now reported in microseconds (`timeline_units = log_time_units = "us"` in the JSON payload) even though the underlying ISA math continues to run in nanoseconds.
 
 For ad-hoc experiments, `--profile-config path/to/profile.json` can override the
 built-in profile definitions. The JSON file can specify geometry (`positions`,

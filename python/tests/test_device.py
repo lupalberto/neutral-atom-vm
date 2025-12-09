@@ -22,6 +22,9 @@ def test_device_submit_program_runtime():
     assert any(entry.get("category") == "AllocArray" for entry in result["logs"])
     assert result["measurements"]
     assert result["measurements"][0]["bits"] == [0, 1]
+    assert result.get("log_time_units") == "us"
+    assert result.get("timeline_units") == "us"
+    assert result.get("timeline")
 
 
 def test_device_submit_kernel():
@@ -128,6 +131,27 @@ def test_available_presets_lists_built_in_profiles():
         entry = cpu_profiles[profile]
         assert entry["positions"], "expected positions in preset"
         assert "metadata" in entry and entry["metadata"].get("description")
+
+
+def test_presets_include_timing_and_gate_catalogs():
+    presets = available_presets()
+    cpu_profiles = presets.get("local-cpu", {})
+    assert cpu_profiles, "expected local-cpu presets"
+    for profile_name, entry in cpu_profiles.items():
+        timing = entry.get("timing_limits")
+        assert timing, f"missing timing limits for {profile_name}"
+        assert timing["measurement_duration_ns"] == pytest.approx(50_000.0)
+        assert timing["measurement_cooldown_ns"] == pytest.approx(50_000.0)
+        native_gates = entry.get("native_gates")
+        assert native_gates, f"missing native gates for {profile_name}"
+        single_gates = [gate for gate in native_gates if gate.get("arity") == 1]
+        two_gates = [gate for gate in native_gates if gate.get("arity") == 2]
+        assert single_gates, f"no single-qubit gates in {profile_name}"
+        assert two_gates, f"no two-qubit gates in {profile_name}"
+        for gate in single_gates:
+            assert gate.get("duration_ns") == pytest.approx(500.0)
+        for gate in two_gates:
+            assert gate.get("duration_ns") == pytest.approx(1000.0)
 
 
 HAS_ONEAPI = has_oneapi_backend()

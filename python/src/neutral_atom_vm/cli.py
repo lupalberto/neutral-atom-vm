@@ -109,6 +109,21 @@ def _summarize_result(
     message = result.get("message")
     if message:
         lines.append(f"Message: {message}")
+    log_units = result.get("log_time_units")
+    if log_units:
+        lines.append(f"Log time unit: {log_units}")
+    timeline_units = result.get("timeline_units")
+    if timeline_units:
+        lines.append(f"Timeline unit: {timeline_units}")
+
+    timeline_entries = result.get("timeline") or []
+    timeline_summary = _format_timeline_rows(
+        timeline_entries,
+        unit=str(timeline_units or log_units or "ns"),
+    )
+    if timeline_summary:
+        lines.append(f"Timeline ({timeline_units or log_units or 'ns'}):")
+        lines.extend(timeline_summary)
 
     counts: Counter[str] = Counter()
     for rec in measurements:
@@ -147,7 +162,45 @@ def _summarize_result(
     return "\n".join(lines)
 
 
-def _write_log_file(path: str, logs: Sequence[Mapping[str, Any]]) -> None:
+def _format_timeline_rows(
+    timeline: Sequence[Mapping[str, Any]] | Sequence[Any],
+    *,
+    unit: str,
+) -> list[str]:
+    if not timeline:
+        return []
+    rows: list[str] = []
+    structured = [entry for entry in timeline if isinstance(entry, Mapping)]
+    if not structured:
+        return rows
+    for entry in structured:
+        try:
+            start = float(entry.get("start_time", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            start = 0.0
+        try:
+            duration = max(0.0, float(entry.get("duration", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            duration = 0.0
+        end_time = start + duration
+        label = str(entry.get("op", "?"))
+        detail = entry.get("detail")
+        detail_text = ""
+        if isinstance(detail, str) and detail:
+            trimmed = detail if len(detail) <= 60 else detail[:57] + "..."
+            detail_text = f" ({trimmed})"
+        rows.append(
+            f"  {start:9.3f}–{end_time:9.3f} {unit} {label}{detail_text}"
+        )
+    return rows
+
+
+def _write_log_file(
+    path: str,
+    logs: Sequence[Mapping[str, Any]],
+    *,
+    time_units: str | None = None,
+) -> None:
     log_dir = os.path.dirname(path)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
@@ -164,9 +217,11 @@ def _write_log_file(path: str, logs: Sequence[Mapping[str, Any]]) -> None:
             logical_time = entry.get("time")
             category = entry.get("category")
             message = entry.get("message")
+            unit_label = time_units or "ns"
             logger.info(
-                "shot=%s time=%s category=%s message=%s",
+                "shot=%s time_%s=%s category=%s message=%s",
                 shot,
+                unit_label,
                 logical_time,
                 category,
                 message,
@@ -277,11 +332,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.log_file:
         logs = result.get("logs", [])
         try:
-            _write_log_file(args.log_file, logs)
+            _write_log_file(
+                args.log_file,
+                logs,
+                time_units=result.get("log_time_units"),
+            )
         except OSError as exc:
             print(f"Error writing log file {args.log_file!r}: {exc}", file=sys.stderr)
             return 1
         result.pop("logs", None)
+        result.pop("log_time_units", None)
 
     if args.output == "json":
         print(json.dumps(result, indent=2, sort_keys=True))

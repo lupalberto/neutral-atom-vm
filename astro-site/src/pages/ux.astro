@@ -82,10 +82,9 @@ print(result["measurements"])
     <div class="card" style="margin-top: 1rem;">
       <h4>Timing-limit example</h4>
       <p>
-        The <code>benchmark_chain</code> profile enforces a 5 ns measurement cooldown. If a kernel measures a qubit
-        and immediately reuses it without a <code>Wait</code>, the VM rejects the next gate with
-        “Gate violates measurement cooldown on qubit 0”. This shows how the ISA/profile contract prevents
-        hardware-unsafe programs before they reach the engine.
+        The <code>benchmark_chain</code> profile enforces a 50 microsecond (50,000 ns) measurement cooldown. The scheduler now tracks
+        `logical_time` and inserts just enough idle time (either via explicit `<Wait>` inserts or by relying on gate durations)
+        so the kernel below now runs without an explicit <code>Wait</code>.
       </p>
       <pre><code class="language-python">from bloqade import squin
 
@@ -94,19 +93,16 @@ def reuse_measured_qubit():
     q = squin.qalloc(3)
     squin.h(q[0])
     squin.measure(q[0])
-    squin.h(q[0])  # fails benchmark_chain cooldown without an intervening Wait
+    squin.h(q[0])  # scheduler inserts the required idle time for the cooldown
 </code></pre>
       <p>
-        Running the kernel with <code>connect_device("local-cpu", profile="benchmark_chain")</code> raises
-        the timing constraint error unless the compiler inserts a <code>Wait</code> to advance <code>logical_time</code>.
+        Running this kernel with <code>connect_device("local-cpu", profile="benchmark_chain")</code> now
+        completes successfully. The JSON/CLI logs document the inserted `<Wait>` entry (or the gate durations) that bumped
+        `logical_time` before the second `h`. If you still want to enforce a larger gap for external timing reasons,
+        `squin.wait()` remains available and the scheduler treats it as additional idle time.
       </p>
       <p>
-        You can fix the kernel by adding `squin.wait(5.0)` (or any duration ≥ 5.0) between the `measure`
-        and the following `h`. The lowered program then contains `&lt;Wait duration=5.0&gt;` which bumps the logical clock,
-        satisfies the cooldown, and lets the next gate execute.
-      </p>
-      <p>
-        To reproduce the validation, use the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>:
+        To see the scheduler in action, run the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>:
       </p>
     <pre><code>quera-vm run \
   --device local-cpu \
@@ -114,8 +110,9 @@ def reuse_measured_qubit():
   --shots 1 \
   python/examples/benchmark_cooldown_violation.py</code></pre>
       <p>
-        The CLI still submits the same job request as the SDK, and it will print out the same
-        “Gate violates measurement cooldown” error before executing any shots.
+        The CLI still submits the same job request as the SDK, but instead of a runtime error, the `logs`
+        array now includes the scheduler-inserted `<Wait>` entry right after the measurement. You can capture that stream
+        via `--output json` or `--log-file` to audit how the scheduler aligned the program with the hardware cooldown.
       </p>
     </div>
   </section>
@@ -138,6 +135,13 @@ def reuse_measured_qubit():
       When built with oneAPI support (<code>-DNA_VM_WITH_ONEAPI=ON</code>), <code>--device local-arc</code> routes the
       same profile to GPU hardware. CLI logs include categories like <code>Noise</code> and
       <code>TimingConstraint</code>, so timing violations and noise events are visible without digging into backends.
+    </p>
+    <p>
+      Each job now returns a structured `timeline` array (alongside the `logs` and `measurements`) that lists the
+      scheduled start time, duration, operation name, and a short detail string for every instruction. That lets you
+      inspect the planned schedule directly from the CLI or SDK output. Timeline/log timestamps are expressed in
+      microseconds and the JSON includes `timeline_units` / `log_time_units` metadata so downstream tools can label axes
+      correctly even though the VM continues to track logical time in nanoseconds internally.
     </p>
     <p>
       For local experiments, you can also pass <code>--profile-config</code> to load a JSON profile and override the

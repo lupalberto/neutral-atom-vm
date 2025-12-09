@@ -114,7 +114,16 @@ TEST(ServiceApiTests, JobRunnerEmitsExecutionLogs) {
     const auto result = runner.run(job);
 
     ASSERT_FALSE(result.logs.empty());
-    EXPECT_EQ(result.logs.front().category, "AllocArray");
+    EXPECT_EQ(result.log_time_units, "us");
+    EXPECT_EQ(result.logs.front().category, "Timeline");
+    bool saw_alloc = false;
+    for (const auto& entry : result.logs) {
+        if (entry.category == "AllocArray") {
+            saw_alloc = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(saw_alloc);
 }
 
 TEST(ServiceApiTests, BenchmarkChainEnforcesNearestNeighborConnectivity) {
@@ -175,8 +184,29 @@ TEST(ServiceApiTests, BenchmarkChainEnforcesMeasurementCooldown) {
 
     service::JobRunner runner;
     const auto result = runner.run(job);
-    EXPECT_EQ(result.status, service::JobStatus::Failed);
-    EXPECT_NE(result.message.find("measurement cooldown"), std::string::npos);
+    EXPECT_EQ(result.status, service::JobStatus::Completed);
+    EXPECT_FALSE(result.timeline.empty());
+    EXPECT_EQ(result.timeline_units, "us");
+    bool saw_apply_gate = false;
+    for (const auto& entry : result.timeline) {
+        if (entry.op == "ApplyGate") {
+            saw_apply_gate = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(saw_apply_gate);
+    bool saw_wait = false;
+    bool saw_timeline_log = false;
+    for (const auto& entry : result.logs) {
+        if (entry.category == "Wait") {
+            saw_wait = true;
+        }
+        if (entry.category == "Timeline") {
+            saw_timeline_log = true;
+        }
+    }
+    EXPECT_TRUE(saw_wait);
+    EXPECT_TRUE(saw_timeline_log);
 }
 
 TEST(ServiceApiTests, NoisySquareArrayEnforcesGridConnectivity) {

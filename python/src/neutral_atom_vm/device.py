@@ -6,9 +6,108 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 from copy import deepcopy
 
 from .layouts import GridLayout, grid_layout_for_profile
-from .job import HardwareConfig, JobRequest, SimpleNoiseConfig, has_oneapi_backend, JobResult, submit_job
+from .job import (
+    ConnectivityKind,
+    HardwareConfig,
+    JobRequest,
+    NativeGate,
+    SimpleNoiseConfig,
+    TimingLimits,
+    has_oneapi_backend,
+    JobResult,
+    submit_job,
+)
 from .service_client import RemoteServiceError, fetch_remote_device_catalog, submit_job_to_service
 from .squin_lowering import to_vm_program
+
+_SINGLE_QUBIT_DURATION_NS = 500.0
+_TWO_QUBIT_DURATION_NS = 1000.0
+_MEASUREMENT_DURATION_NS = 50_000.0
+
+
+def _timing_limits_config() -> Dict[str, float]:
+    return {
+        "min_wait_ns": 0.0,
+        "max_wait_ns": 0.0,
+        "max_parallel_single_qubit": 0,
+        "max_parallel_two_qubit": 0,
+        "max_parallel_per_zone": 0,
+        "measurement_cooldown_ns": _MEASUREMENT_DURATION_NS,
+        "measurement_duration_ns": _MEASUREMENT_DURATION_NS,
+    }
+
+
+def _native_gate_catalog(connectivity: str) -> list[Dict[str, Any]]:
+    return [
+        {
+            "name": "X",
+            "arity": 1,
+            "duration_ns": _SINGLE_QUBIT_DURATION_NS,
+            "angle_min": 0.0,
+            "angle_max": 0.0,
+            "connectivity": "AllToAll",
+        },
+        {
+            "name": "H",
+            "arity": 1,
+            "duration_ns": _SINGLE_QUBIT_DURATION_NS,
+            "angle_min": 0.0,
+            "angle_max": 0.0,
+            "connectivity": "AllToAll",
+        },
+        {
+            "name": "Z",
+            "arity": 1,
+            "duration_ns": _SINGLE_QUBIT_DURATION_NS,
+            "angle_min": 0.0,
+            "angle_max": 0.0,
+            "connectivity": "AllToAll",
+        },
+        {
+            "name": "CX",
+            "arity": 2,
+            "duration_ns": _TWO_QUBIT_DURATION_NS,
+            "angle_min": 0.0,
+            "angle_max": 0.0,
+            "connectivity": connectivity,
+        },
+    ]
+
+
+def _parse_timing_limits(payload: Mapping[str, Any]) -> TimingLimits:
+    return TimingLimits(
+        min_wait_ns=float(payload.get("min_wait_ns", 0.0) or 0.0),
+        max_wait_ns=float(payload.get("max_wait_ns", 0.0) or 0.0),
+        max_parallel_single_qubit=int(payload.get("max_parallel_single_qubit", 0) or 0),
+        max_parallel_two_qubit=int(payload.get("max_parallel_two_qubit", 0) or 0),
+        max_parallel_per_zone=int(payload.get("max_parallel_per_zone", 0) or 0),
+        measurement_cooldown_ns=float(payload.get("measurement_cooldown_ns", 0.0) or 0.0),
+        measurement_duration_ns=float(payload.get("measurement_duration_ns", 0.0) or 0.0),
+    )
+
+
+def _parse_native_gates(payload: Sequence[Mapping[str, Any]]) -> list[NativeGate]:
+    gates: list[NativeGate] = []
+    for entry in payload:
+        name = str(entry.get("name", ""))
+        if not name:
+            continue
+        try:
+            connectivity = ConnectivityKind.from_str(
+                str(entry.get("connectivity", ConnectivityKind.AllToAll.value))
+            )
+        except ValueError:
+            connectivity = ConnectivityKind.AllToAll
+        gate = NativeGate(
+            name=name,
+            arity=int(entry.get("arity", 1) or 1),
+            duration_ns=float(entry.get("duration_ns", 0.0) or 0.0),
+            angle_min=float(entry.get("angle_min", 0.0) or 0.0),
+            angle_max=float(entry.get("angle_max", 0.0) or 0.0),
+            connectivity=connectivity,
+        )
+        gates.append(gate)
+    return gates
 
 ProgramType = Sequence[Dict[str, Any]]
 KernelType = Callable[..., Any]
@@ -62,6 +161,8 @@ class Device:
     blockade_radius: float = 0.0
     noise: SimpleNoiseConfig | None = None
     grid_layout: GridLayout | None = None
+    native_gates: Sequence[NativeGate] | None = None
+    timing_limits: TimingLimits | None = None
     submit_job_fn: SubmitJobFn | None = None
 
     def submit(
@@ -99,6 +200,8 @@ class Device:
                 positions=list(self.positions),
                 coordinates=self.coordinates,
                 blockade_radius=self.blockade_radius,
+                native_gates=self.native_gates,
+                timing_limits=self.timing_limits or TimingLimits(),
             ),
             device_id=self.id,
             profile=self.profile,
@@ -266,6 +369,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
         },
         "noise": None,
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborChain"),
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
     ("local-cpu", "noisy_square_array"): {
@@ -322,6 +427,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "idle_rate": 200.0,
             "phase": {"idle": 0.02},
         },
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborGrid"),
     },
     # Heavy loss channel illustrating erasure-dominated behavior.
     ("local-cpu", "lossy_chain"): {
@@ -338,6 +445,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "p_loss": 0.1,
             "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
         },
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborChain"),
     },
     ("local-cpu", "lossy_block"): {
         "positions": [float(i) for i in range(16)],
@@ -359,6 +468,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "p_loss": 0.1,
             "loss_runtime": {"per_gate": 0.05, "idle_rate": 5.0},
         },
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("AllToAll"),
     },
     # 20-qubit benchmark chain for GHZ/volume experiments with moderate noise.
     ("local-cpu", "benchmark_chain"): {
@@ -397,6 +508,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
                 ]
             },
         },
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborChain"),
     },
     # SPAM-focused preset with notable readout flips and mild runtime loss.
     ("local-cpu", "readout_stress"): {
@@ -420,6 +533,8 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
             "phase": {"idle": 0.03},
             "loss_runtime": {"per_gate": 0.01, "idle_rate": 3.0},
         },
+        "timing_limits": _timing_limits_config(),
+        "native_gates": _native_gate_catalog("NearestNeighborChain"),
     },
 }
 
@@ -446,6 +561,10 @@ def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
             entry["grid_layout"] = deepcopy(config["grid_layout"])
         if "coordinates" in config:
             entry["coordinates"] = deepcopy(config["coordinates"])
+        if "timing_limits" in config:
+            entry["timing_limits"] = deepcopy(config["timing_limits"])
+        if "native_gates" in config:
+            entry["native_gates"] = deepcopy(config["native_gates"])
         metadata = _PROFILE_METADATA.get(key)
         if metadata:
             entry["metadata"] = dict(metadata)
@@ -500,6 +619,18 @@ def build_device_from_config(
     noise_payload = resolved_config.get("noise")
     if isinstance(noise_payload, Mapping):
         noise_cfg = SimpleNoiseConfig.from_mapping(noise_payload)
+    timing_limits = None
+    timing_payload = resolved_config.get("timing_limits")
+    if isinstance(timing_payload, Mapping):
+        timing_limits = _parse_timing_limits(timing_payload)
+    native_gates = None
+    gates_payload = resolved_config.get("native_gates")
+    if isinstance(gates_payload, Sequence) and not isinstance(gates_payload, (str, bytes)):
+        mapping_entries = [entry for entry in gates_payload if isinstance(entry, Mapping)]
+        if mapping_entries:
+            parsed = _parse_native_gates(mapping_entries)
+            if parsed:
+                native_gates = parsed
     layout_payload = resolved_config.get("grid_layout")
     layout = (
         GridLayout.from_info(layout_payload)
@@ -516,6 +647,8 @@ def build_device_from_config(
         blockade_radius=blockade,
         noise=noise_cfg,
         grid_layout=layout,
+        native_gates=native_gates,
+        timing_limits=timing_limits,
         submit_job_fn=submit_job_fn,
     )
 

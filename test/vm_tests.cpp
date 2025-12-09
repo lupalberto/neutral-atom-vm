@@ -118,6 +118,39 @@ TEST(StatevectorEngineTests, WaitInstruction) {
     EXPECT_NEAR(engine.state().logical_time, 7.5, 1e-9);
 }
 
+TEST(StatevectorEngineTests, GateDurationsAdvanceLogicalTime) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0};
+    NativeGate x;
+    x.name = "X";
+    x.arity = 1;
+    x.duration_ns = 7.5;
+    cfg.native_gates.push_back(x);
+
+    StatevectorEngine engine(cfg);
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{Op::ApplyGate, Gate{"X", {0}}});
+
+    engine.run(program);
+    EXPECT_NEAR(engine.state().logical_time, 7.5, 1e-9);
+}
+
+TEST(StatevectorEngineTests, MeasurementDurationsAdvanceLogicalTime) {
+    HardwareConfig cfg;
+    cfg.positions = {0.0};
+    cfg.timing_limits.measurement_duration_ns = 3.25;
+
+    StatevectorEngine engine(cfg);
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 1});
+    program.push_back(Instruction{Op::Measure, std::vector<int>{0}});
+
+    engine.run(program);
+    EXPECT_NEAR(engine.state().logical_time, 3.25, 1e-9);
+    EXPECT_NEAR(engine.state().last_measurement_time[0], 3.25, 1e-9);
+}
+
 TEST(StatevectorEngineTests, PulseInstruction) {
     HardwareConfig cfg;
     cfg.positions = {0.0, 1.0};

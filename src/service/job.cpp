@@ -1,6 +1,7 @@
 #include "service/job.hpp"
 #include "hardware_vm.hpp"
 #include "noise/device_noise_builder.hpp"
+#include "service/scheduler.hpp"
 
 #include <cmath>
 #include <chrono>
@@ -11,6 +12,13 @@
 #include <utility>
 
 namespace {
+constexpr double kNanosecondsPerMicrosecond = 1000.0;
+constexpr double kMicrosecondsPerNanosecond = 1.0 / kNanosecondsPerMicrosecond;
+constexpr const char* kDisplayTimeUnit = "us";
+constexpr double kDefaultSingleQubitDurationNs = 500.0;
+constexpr double kDefaultTwoQubitDurationNs = 1000.0;
+constexpr double kDefaultMeasurementDurationNs = 50000.0;
+
 std::string escape_json(const std::string& str) {
     std::ostringstream out;
     for (const char ch : str) {
@@ -35,6 +43,41 @@ std::string escape_json(const std::string& str) {
         }
     }
     return out.str();
+}
+
+std::vector<ExecutionLog> build_timeline_logs(const std::vector<service::TimelineEntry>& timeline) {
+    std::vector<ExecutionLog> entries;
+    entries.reserve(timeline.size());
+    for (const auto& event : timeline) {
+        ExecutionLog log;
+        log.shot = 0;
+        const double start_us = event.start_time * kMicrosecondsPerNanosecond;
+        const double duration_us = event.duration * kMicrosecondsPerNanosecond;
+        log.logical_time = start_us;
+        log.category = "Timeline";
+        std::ostringstream oss;
+        oss << event.op;
+        if (!event.detail.empty()) {
+            oss << " " << event.detail;
+        }
+        oss << " duration_us=" << duration_us;
+        log.message = oss.str();
+        entries.push_back(std::move(log));
+    }
+    return entries;
+}
+
+void convert_timeline_to_microseconds(std::vector<service::TimelineEntry>& timeline) {
+    for (auto& entry : timeline) {
+        entry.start_time *= kMicrosecondsPerNanosecond;
+        entry.duration *= kMicrosecondsPerNanosecond;
+    }
+}
+
+void convert_logs_to_microseconds(std::vector<ExecutionLog>& logs) {
+    for (auto& entry : logs) {
+        entry.logical_time *= kMicrosecondsPerNanosecond;
+    }
 }
 
 void append_int_array(const std::vector<int>& values, std::ostringstream& out) {
@@ -64,6 +107,79 @@ void append_double_matrix(const std::vector<std::vector<double>>& values, std::o
         out << ']';
     }
     out << ']';
+}
+
+std::string connectivity_to_string(ConnectivityKind kind) {
+    switch (kind) {
+        case ConnectivityKind::AllToAll:
+            return "AllToAll";
+        case ConnectivityKind::NearestNeighborChain:
+            return "NearestNeighborChain";
+        case ConnectivityKind::NearestNeighborGrid:
+            return "NearestNeighborGrid";
+    }
+    return "AllToAll";
+}
+
+void append_site_descriptor(const SiteDescriptor& site, std::ostringstream& out) {
+    out << "{\"id\":" << site.id
+        << ",\"x\":" << site.x
+        << ",\"y\":" << site.y
+        << ",\"zone_id\":" << site.zone_id << '}';
+}
+
+void append_sites_json(const std::vector<SiteDescriptor>& sites, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t idx = 0; idx < sites.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_site_descriptor(sites[idx], out);
+    }
+    out << ']';
+}
+
+void append_native_gate(const NativeGate& gate, std::ostringstream& out) {
+    out << "{\"name\":\"" << escape_json(gate.name)
+        << "\",\"arity\":" << gate.arity
+        << ",\"duration_ns\":" << gate.duration_ns
+        << ",\"angle_min\":" << gate.angle_min
+        << ",\"angle_max\":" << gate.angle_max
+        << ",\"connectivity\":\"" << connectivity_to_string(gate.connectivity)
+        << "\"}";
+}
+
+void append_native_gates_json(const std::vector<NativeGate>& gates, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t idx = 0; idx < gates.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_native_gate(gates[idx], out);
+    }
+    out << ']';
+}
+
+void append_timing_limits_json(const TimingLimits& limits, std::ostringstream& out) {
+    out << '{'
+        << "\"min_wait_ns\":" << limits.min_wait_ns << ','
+        << "\"max_wait_ns\":" << limits.max_wait_ns << ','
+        << "\"max_parallel_single_qubit\":" << limits.max_parallel_single_qubit << ','
+        << "\"max_parallel_two_qubit\":" << limits.max_parallel_two_qubit << ','
+        << "\"max_parallel_per_zone\":" << limits.max_parallel_per_zone << ','
+        << "\"measurement_cooldown_ns\":" << limits.measurement_cooldown_ns << ','
+        << "\"measurement_duration_ns\":" << limits.measurement_duration_ns
+        << '}';
+}
+
+void append_pulse_limits_json(const PulseLimits& limits, std::ostringstream& out) {
+    out << '{'
+        << "\"detuning_min\":" << limits.detuning_min << ','
+        << "\"detuning_max\":" << limits.detuning_max << ','
+        << "\"duration_min_ns\":" << limits.duration_min_ns << ','
+        << "\"duration_max_ns\":" << limits.duration_max_ns << ','
+        << "\"max_overlapping_pulses\":" << limits.max_overlapping_pulses
+        << '}';
 }
 
 void populate_sites_from_coordinates(HardwareConfig& hw) {
@@ -153,72 +269,53 @@ void enrich_hardware_with_profile_constraints(
         return;
     }
 
-    if (job.profile == "benchmark_chain") {
-        NativeGate cx;
-        cx.name = "CX";
-        cx.arity = 2;
-        cx.duration_ns = 200.0;
-        cx.angle_min = 0.0;
-        cx.angle_max = 0.0;
-        cx.connectivity = ConnectivityKind::NearestNeighborChain;
-
+    auto ensure_native_gates = [](HardwareConfig& cfg, ConnectivityKind two_qubit_connectivity) {
+        if (!cfg.native_gates.empty()) {
+            return;
+        }
         NativeGate x;
         x.name = "X";
         x.arity = 1;
-        x.duration_ns = 50.0;
-
+        x.duration_ns = kDefaultSingleQubitDurationNs;
         NativeGate h;
         h.name = "H";
         h.arity = 1;
-        h.duration_ns = 50.0;
-
+        h.duration_ns = kDefaultSingleQubitDurationNs;
         NativeGate z;
         z.name = "Z";
         z.arity = 1;
-        z.duration_ns = 50.0;
+        z.duration_ns = kDefaultSingleQubitDurationNs;
+        NativeGate cx;
+        cx.name = "CX";
+        cx.arity = 2;
+        cx.duration_ns = kDefaultTwoQubitDurationNs;
+        cx.connectivity = two_qubit_connectivity;
+        cfg.native_gates = {x, h, z, cx};
+    };
 
-        hw.native_gates.clear();
-        hw.native_gates.push_back(x);
-        hw.native_gates.push_back(h);
-        hw.native_gates.push_back(z);
-        hw.native_gates.push_back(cx);
+    auto ensure_measurement_defaults = [](HardwareConfig& cfg) {
+        if (cfg.timing_limits.measurement_duration_ns <= 0.0) {
+            cfg.timing_limits.measurement_duration_ns = kDefaultMeasurementDurationNs;
+        }
+        if (cfg.timing_limits.measurement_cooldown_ns <= 0.0) {
+            cfg.timing_limits.measurement_cooldown_ns = kDefaultMeasurementDurationNs;
+        }
+    };
 
-        hw.pulse_limits.detuning_min = -10.0;
-        hw.pulse_limits.detuning_max = 10.0;
-        hw.pulse_limits.duration_min_ns = 0.0;
-        hw.pulse_limits.duration_max_ns = 1e6;
-        hw.pulse_limits.max_overlapping_pulses = 0;
-        hw.timing_limits.measurement_cooldown_ns = 5.0;
+    auto apply_defaults = [&](ConnectivityKind gate_connectivity) {
+        ensure_native_gates(hw, gate_connectivity);
+        ensure_measurement_defaults(hw);
+    };
+
+    if (job.profile == "benchmark_chain" ||
+        job.profile == "ideal_small_array" ||
+        job.profile == "lossy_chain" ||
+        job.profile == "readout_stress") {
+        apply_defaults(ConnectivityKind::NearestNeighborChain);
+    } else if (job.profile == "lossy_block") {
+        apply_defaults(ConnectivityKind::AllToAll);
     } else if (job.profile == "noisy_square_array") {
-        NativeGate cx;
-        cx.name = "CX";
-        cx.arity = 2;
-        cx.duration_ns = 200.0;
-        cx.angle_min = 0.0;
-        cx.angle_max = 0.0;
-        cx.connectivity = ConnectivityKind::NearestNeighborGrid;
-
-        NativeGate x;
-        x.name = "X";
-        x.arity = 1;
-        x.duration_ns = 50.0;
-
-        NativeGate h;
-        h.name = "H";
-        h.arity = 1;
-        h.duration_ns = 50.0;
-
-        NativeGate z;
-        z.name = "Z";
-        z.arity = 1;
-        z.duration_ns = 50.0;
-
-        hw.native_gates.clear();
-        hw.native_gates.push_back(x);
-        hw.native_gates.push_back(h);
-        hw.native_gates.push_back(z);
-        hw.native_gates.push_back(cx);
-
+        apply_defaults(ConnectivityKind::NearestNeighborGrid);
         // Populate a simple 4x4 grid of site coordinates matching the
         // conceptual geometry of the noisy_square_array preset.
         if (hw.coordinates.empty()) {
@@ -239,6 +336,9 @@ void enrich_hardware_with_profile_constraints(
                 }
             }
         }
+    } else {
+        // Fallback for legacy/custom profiles that still need durations.
+        ensure_measurement_defaults(hw);
     }
 }
 
@@ -267,7 +367,20 @@ std::string to_json(const JobRequest& job) {
         out << ",\"coordinates\":";
         append_double_matrix(job.hardware.coordinates, out);
     }
-    out << ",\"blockade_radius\":" << job.hardware.blockade_radius << "},";
+    out << ",\"blockade_radius\":" << job.hardware.blockade_radius;
+    if (!job.hardware.sites.empty()) {
+        out << ",\"sites\":";
+        append_sites_json(job.hardware.sites, out);
+    }
+    if (!job.hardware.native_gates.empty()) {
+        out << ",\"native_gates\":";
+        append_native_gates_json(job.hardware.native_gates, out);
+    }
+    out << ",\"timing_limits\":";
+    append_timing_limits_json(job.hardware.timing_limits, out);
+    out << ",\"pulse_limits\":";
+    append_pulse_limits_json(job.hardware.pulse_limits, out);
+    out << "},";
     out << "\"program\":";
     out << '[';
     for (std::size_t i = 0; i < job.program.size(); ++i) {
@@ -346,9 +459,16 @@ JobResult JobRunner::run(
             vm.set_progress_reporter(reporter);
         }
         const std::size_t threads = max_threads > 0 ? max_threads : job.max_threads;
-        const auto run_result = vm.run(job.program, shots, {}, threads);
-        result.measurements = run_result.measurements;
-        result.logs = run_result.logs;
+        const SchedulerResult scheduled = schedule_program(job.program, profile.hardware);
+        result.timeline = scheduled.timeline;
+        result.logs = build_timeline_logs(scheduled.timeline);
+        convert_timeline_to_microseconds(result.timeline);
+        result.timeline_units = kDisplayTimeUnit;
+        auto run_result = vm.run(scheduled.program, shots, {}, threads);
+        convert_logs_to_microseconds(run_result.logs);
+        result.log_time_units = kDisplayTimeUnit;
+        result.measurements = std::move(run_result.measurements);
+        result.logs.insert(result.logs.end(), run_result.logs.begin(), run_result.logs.end());
         result.status = JobStatus::Completed;
     } catch (const std::exception& ex) {
         result.status = JobStatus::Failed;

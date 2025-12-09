@@ -31,6 +31,12 @@ std::string format_targets(const std::vector<int>& targets) {
 }
 
 constexpr std::size_t kDefaultOneApiMaxStateElements = 1ULL << 28;  // 4 GiB of complex<double> entries
+constexpr double kNanosecondsPerMicrosecond = 1000.0;
+constexpr double kMicrosecondsPerNanosecond = 1.0 / kNanosecondsPerMicrosecond;
+
+double to_microseconds(double nanoseconds) {
+    return nanoseconds * kMicrosecondsPerNanosecond;
+}
 
 std::size_t oneapi_max_state_elements() {
     static const std::size_t value = [] {
@@ -275,18 +281,20 @@ void StatevectorEngine::alloc_array(int n) {
 }
 
 void StatevectorEngine::apply_gate(const Gate& g) {
+    const double gate_start = state_.logical_time;
     const double cooldown = state_.hw.timing_limits.measurement_cooldown_ns;
     if (cooldown > 0.0) {
-        const double now = state_.logical_time;
         for (int target : g.targets) {
             if (target < 0 || target >= static_cast<int>(state_.last_measurement_time.size())) {
                 continue;
             }
             const double last = state_.last_measurement_time[static_cast<std::size_t>(target)];
-            if (now - last < cooldown) {
+            if (gate_start - last < cooldown) {
                 std::ostringstream oss;
                 oss << "Gate violates measurement cooldown on qubit " << target
-                    << " (now=" << now << " last=" << last << " cooldown=" << cooldown << ")";
+                    << " (start_us=" << to_microseconds(gate_start)
+                    << " last_measurement_us=" << to_microseconds(last)
+                    << " cooldown_us=" << to_microseconds(cooldown) << ")";
                 log_event("TimingConstraint", oss.str());
                 throw std::runtime_error("Gate violates measurement cooldown on qubit " + std::to_string(target));
             }
@@ -294,25 +302,25 @@ void StatevectorEngine::apply_gate(const Gate& g) {
     }
 
     // Enforce native-gate catalog constraints when configured (ISA v1.1).
+    const NativeGate* native_desc = nullptr;
     if (!state_.hw.native_gates.empty()) {
         const int arity = static_cast<int>(g.targets.size());
-        const NativeGate* desc = nullptr;
         for (const auto& candidate : state_.hw.native_gates) {
             if (candidate.name == g.name && candidate.arity == arity) {
-                desc = &candidate;
+                native_desc = &candidate;
                 break;
             }
         }
-        if (!desc) {
+        if (!native_desc) {
             throw std::runtime_error("Gate not supported by hardware: " + g.name);
         }
-        if (desc->angle_max > desc->angle_min) {
-            if (g.param < desc->angle_min || g.param > desc->angle_max) {
+        if (native_desc->angle_max > native_desc->angle_min) {
+            if (g.param < native_desc->angle_min || g.param > native_desc->angle_max) {
                 throw std::invalid_argument("Gate parameter out of range for " + g.name);
             }
         }
         if (arity >= 2) {
-            if (desc->connectivity == ConnectivityKind::NearestNeighborChain) {
+            if (native_desc->connectivity == ConnectivityKind::NearestNeighborChain) {
                 // Simple nearest-neighbor chain constraint over logical indices.
                 for (int i = 0; i < arity; ++i) {
                     for (int j = i + 1; j < arity; ++j) {
@@ -323,7 +331,7 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                         }
                     }
                 }
-            } else if (desc->connectivity == ConnectivityKind::NearestNeighborGrid) {
+            } else if (native_desc->connectivity == ConnectivityKind::NearestNeighborGrid) {
                 // Enforce 2D grid connectivity using the v1.1 site descriptors.
                 if (state_.hw.sites.empty()) {
                     throw std::runtime_error(
@@ -344,13 +352,13 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                         const double dx = std::abs(sa.x - sb.x);
                         const double dy = std::abs(sa.y - sb.y);
                         // Use Manhattan distance 1 as the definition of nearest neighbors.
-                        if (std::abs(dx) + std::abs(dy) != 1.0) {
-                            throw std::runtime_error("Gate violates nearest-neighbor grid connectivity");
-                        }
+                    if (std::abs(dx) + std::abs(dy) != 1.0) {
+                        throw std::runtime_error("Gate violates nearest-neighbor grid connectivity");
                     }
                 }
             }
         }
+    }
     }
 
     if (g.name == "X" && g.targets.size() == 1) {
@@ -389,8 +397,13 @@ void StatevectorEngine::apply_gate(const Gate& g) {
     } else {
         throw std::runtime_error("Unsupported gate: " + g.name);
     }
+    const double duration = native_desc ? native_desc->duration_ns : 0.0;
+    state_.logical_time = gate_start + duration;
     std::ostringstream oss;
-    oss << g.name << " targets=" << format_targets(g.targets) << " param=" << g.param;
+    oss << g.name << " targets=" << format_targets(g.targets)
+        << " param=" << g.param
+        << " start_us=" << to_microseconds(gate_start)
+        << " duration_us=" << to_microseconds(duration);
 #ifdef NA_VM_WITH_ONEAPI
     if (device_noise_engine_ && backend_->is_gpu_backend()) {
         if (auto* gpu_backend = dynamic_cast<OneApiStateBackend*>(backend_.get())) {
@@ -559,7 +572,7 @@ void StatevectorEngine::wait_duration(const WaitInstruction& wait_instr) {
 
     if (should_emit_logs()) {
         std::ostringstream oss;
-        oss << "Wait duration=" << wait_instr.duration;
+        oss << "Wait duration_us=" << to_microseconds(wait_instr.duration);
         log_event("Wait", oss.str());
     }
 }
@@ -596,7 +609,7 @@ void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
     state_.pulse_log.push_back(pulse);
     std::ostringstream oss;
     oss << "Pulse target=" << pulse.target << " detuning=" << pulse.detuning
-        << " duration=" << pulse.duration;
+        << " duration_us=" << to_microseconds(pulse.duration);
     if (should_emit_logs()) {
         log_event("Pulse", oss.str());
     }
@@ -655,6 +668,8 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
 
     MeasurementRecord record;
     bool measured_on_device = false;
+    const double measurement_duration = state_.hw.timing_limits.measurement_duration_ns;
+    const double measurement_start = state_.logical_time;
 #ifdef NA_VM_WITH_ONEAPI
     if (auto* gpu_backend = dynamic_cast<OneApiStateBackend*>(backend_.get())) {
         if (use_batched_shots_) {
@@ -743,6 +758,7 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
         state_.measurements.push_back(std::move(record));
     }
 
+    state_.logical_time += measurement_duration;
     for (int target : targets) {
         if (target >= 0 && target < static_cast<int>(state_.last_measurement_time.size())) {
             state_.last_measurement_time[static_cast<std::size_t>(target)] = state_.logical_time;
@@ -753,7 +769,10 @@ void StatevectorEngine::measure(const std::vector<int>& targets) {
         const auto& latest = state_.measurements.back();
         std::ostringstream oss;
         oss << "Measure targets=" << format_targets(latest.targets)
-            << " bits=" << format_targets(latest.bits);
+            << " bits=" << format_targets(latest.bits)
+            << " start_us=" << to_microseconds(measurement_start)
+            << " duration_us=" << to_microseconds(measurement_duration)
+            << " end_us=" << to_microseconds(state_.logical_time);
         log_event("Measure", oss.str());
     }
 }

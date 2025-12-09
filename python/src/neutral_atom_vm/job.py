@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence, Tuple
+from enum import Enum
 
 import glob
 import importlib
@@ -323,7 +324,91 @@ class SimpleNoiseConfig:
         )
 
 
-@dataclass(frozen=True)
+class ConnectivityKind(Enum):
+    AllToAll = "AllToAll"
+    NearestNeighborChain = "NearestNeighborChain"
+    NearestNeighborGrid = "NearestNeighborGrid"
+
+    @classmethod
+    def from_str(cls, value: str) -> "ConnectivityKind":
+        try:
+            return cls(value)
+        except ValueError as exc:
+            raise ValueError(f"Unknown connectivity kind: {value}") from exc
+
+
+@dataclass
+class SiteDescriptor:
+    id: int = 0
+    x: float = 0.0
+    y: float = 0.0
+    zone_id: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"id": self.id, "x": self.x, "y": self.y, "zone_id": self.zone_id}
+
+
+@dataclass
+class NativeGate:
+    name: str
+    arity: int = 1
+    duration_ns: float = 0.0
+    angle_min: float = 0.0
+    angle_max: float = 0.0
+    connectivity: ConnectivityKind = ConnectivityKind.AllToAll
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "arity": self.arity,
+            "duration_ns": self.duration_ns,
+            "angle_min": self.angle_min,
+            "angle_max": self.angle_max,
+            "connectivity": self.connectivity.value,
+        }
+
+
+@dataclass
+class TimingLimits:
+    min_wait_ns: float = 0.0
+    max_wait_ns: float = 0.0
+    max_parallel_single_qubit: int = 0
+    max_parallel_two_qubit: int = 0
+    max_parallel_per_zone: int = 0
+    measurement_cooldown_ns: float = 0.0
+    measurement_duration_ns: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "min_wait_ns": self.min_wait_ns,
+            "max_wait_ns": self.max_wait_ns,
+            "max_parallel_single_qubit": self.max_parallel_single_qubit,
+            "max_parallel_two_qubit": self.max_parallel_two_qubit,
+            "max_parallel_per_zone": self.max_parallel_per_zone,
+            "measurement_cooldown_ns": self.measurement_cooldown_ns,
+            "measurement_duration_ns": self.measurement_duration_ns,
+        }
+
+
+@dataclass
+class PulseLimits:
+    detuning_min: float = 0.0
+    detuning_max: float = 0.0
+    duration_min_ns: float = 0.0
+    duration_max_ns: float = 0.0
+    max_overlapping_pulses: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "detuning_min": self.detuning_min,
+            "detuning_max": self.detuning_max,
+            "duration_min_ns": self.duration_min_ns,
+            "duration_max_ns": self.duration_max_ns,
+            "max_overlapping_pulses": self.max_overlapping_pulses,
+        }
+ 
+
+@dataclass
 class HardwareConfig:
     """Low-level hardware configuration for a VM job.
 
@@ -335,6 +420,10 @@ class HardwareConfig:
     positions: Sequence[float]
     blockade_radius: float = 0.0
     coordinates: Sequence[Sequence[float]] | None = None
+    sites: Sequence[SiteDescriptor] | None = None
+    native_gates: Sequence[NativeGate] | None = None
+    timing_limits: TimingLimits = field(default_factory=TimingLimits)
+    pulse_limits: PulseLimits = field(default_factory=PulseLimits)
 
     def to_dict(self) -> Dict[str, Any]:
         payload = {
@@ -343,6 +432,12 @@ class HardwareConfig:
         }
         if self.coordinates is not None:
             payload["coordinates"] = [list(coord) for coord in self.coordinates]
+        if self.sites:
+            payload["sites"] = [site.to_dict() for site in self.sites]
+        if self.native_gates:
+            payload["native_gates"] = [gate.to_dict() for gate in self.native_gates]
+        payload["timing_limits"] = self.timing_limits.to_dict()
+        payload["pulse_limits"] = self.pulse_limits.to_dict()
         return payload
 
 
@@ -401,6 +496,9 @@ class JobResult(dict):
         self.shots = shots
         self.layout = layout
         self.coordinates = coordinates
+        self.timeline = list(payload.get("timeline", []))
+        self.timeline_units = payload.get("timeline_units", "ns")
+        self.log_time_units = payload.get("log_time_units", payload.get("time_units", "ns"))
 
     def _repr_html_(self) -> str:  # pragma: no cover - exercised in notebooks
         return render_job_result_html(

@@ -12,6 +12,78 @@ import base64
 from .layouts import GridLayout, grid_layout_for_profile
 
 
+_TIMELINE_BASE_COLORS = [
+    "#4C78A8",
+    "#F58518",
+    "#54A24B",
+    "#E45756",
+    "#72B7B2",
+    "#EECA3B",
+    "#B279A2",
+    "#FF9DA7",
+    "#9D755D",
+    "#BAB0AC",
+]
+
+_TIMELINE_FIXED_COLORS = {
+    "AllocArray": "#4C78A8",
+    "ApplyGate": "#F58518",
+    "Measure": "#54A24B",
+    "Wait": "#E45756",
+    "Pulse": "#72B7B2",
+}
+
+
+def _timeline_color_for_op(op: str) -> str:
+    if not op:
+        return _TIMELINE_BASE_COLORS[0]
+    if op in _TIMELINE_FIXED_COLORS:
+        return _TIMELINE_FIXED_COLORS[op]
+    idx = abs(hash(op)) % len(_TIMELINE_BASE_COLORS)
+    return _TIMELINE_BASE_COLORS[idx]
+
+
+def _timeline_targets(detail: str) -> str:
+    marker = "targets="
+    idx = detail.find(marker)
+    if idx == -1:
+        return ""
+    start = detail.find("[", idx)
+    end = detail.find("]", start + 1)
+    if start == -1 or end == -1 or end <= start:
+        return ""
+    return detail[start : end + 1]
+
+
+def _timeline_segment_label(op_name: str, detail: str) -> str:
+    detail = detail or ""
+    if op_name == "ApplyGate":
+        gate = detail.split(" ", 1)[0] if detail else "Gate"
+        targets = _timeline_targets(detail)
+        return f"{gate}{targets}" if targets else gate
+    if op_name == "Measure":
+        targets = _timeline_targets(detail)
+        return f"M{targets}" if targets else "Measure"
+    if op_name == "Pulse":
+        marker = "target="
+        idx = detail.find(marker)
+        target = None
+        if idx != -1:
+            tail = detail[idx + len(marker):].strip()
+            parts = tail.split()
+            if parts:
+                try:
+                    target = int(float(parts[0]))
+                except ValueError:
+                    target = parts[0]
+        return f"Pulse[{target}]" if target is not None else "Pulse"
+    if op_name == "Wait":
+        return "Wait"
+    if op_name == "AllocArray":
+        return "Alloc"
+    return op_name[:8]
+
+
 def _normalize_profile(profile: str | None) -> str:
     return str(profile) if profile is not None else "(default)"
 
@@ -702,6 +774,96 @@ def format_histogram(
     )
 
 
+def render_timeline_chart(
+    timeline: Sequence[Mapping[str, Any]] | Sequence[Any],
+    *,
+    unit: str = "ns",
+) -> str:
+    if not timeline:
+        return ""
+    structured = [entry for entry in timeline if isinstance(entry, Mapping)]
+    if not structured:
+        return ""
+    span = 0.0
+    for entry in structured:
+        start = float(entry.get("start_time", 0.0))
+        duration = max(0.0, float(entry.get("duration", 0.0)))
+        span = max(span, start + duration)
+    if span <= 0.0:
+        span = 1.0
+    segments: list[str] = []
+    for entry in structured:
+        start = float(entry.get("start_time", 0.0))
+        duration = max(0.0, float(entry.get("duration", 0.0)))
+        start_pct = max(0.0, min(100.0, (start / span) * 100.0))
+        duration_pct = (duration / span) * 100.0
+        width_pct = max(0.25, min(100.0 - start_pct, duration_pct if duration_pct > 0 else 0.25))
+        op_name = str(entry.get("op", "?"))
+        detail = str(entry.get("detail", "") or "")
+        label = escape(_timeline_segment_label(op_name, detail))
+        end_time = start + duration
+        tooltip_text = f"{op_name} {start:.3f}–{end_time:.3f} {unit} (Δ={duration:.3f} {unit})"
+        if detail:
+            tooltip_text += f" — {detail}"
+        tooltip = escape(tooltip_text, quote=True)
+        color = _timeline_color_for_op(op_name)
+        base_style = (
+            "display:flex;align-items:center;justify-content:center;"
+            "font-size:9px;color:#fff;padding:2px;overflow:hidden;text-overflow:ellipsis;"
+            "letter-spacing:0.2px;"
+        )
+        label_style = base_style + (
+            "writing-mode:vertical-rl;text-orientation:mixed;"
+        )
+        if op_name == "Measure":
+            label_style = (
+                "display:flex;align-items:center;justify-content:center;"
+                "font-size:11px;color:#fff;padding:0 6px;overflow:hidden;text-overflow:ellipsis;"
+                "writing-mode:horizontal-tb;text-orientation:mixed;"
+            )
+        segment_html = (
+            "<div class='na-vm-timeline__segment' "
+            f"style=\"position:absolute;left:{start_pct:.4f}%;width:{width_pct:.4f}%;"
+            "top:4px;bottom:4px;border-radius:6px;border:1px solid rgba(0,0,0,0.15);"
+            f"{label_style}"
+            f"background:{color};\" data-tooltip=\"{tooltip}\">{label}</div>"
+        )
+        segments.append(segment_html)
+    container_id = f"na-vm-timeline-{uuid.uuid4().hex}"
+    header = (
+        f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+        f"<strong>Timeline</strong><span style='font-size:0.9em;color:#5f6368;'>0–{span:.3f} {escape(str(unit))}</span>"
+        "</div>"
+    )
+    track = (
+        "<div class='na-vm-timeline__track' "
+        "style='position:relative;height:60px;border:1px solid #d0d7de;border-radius:10px;"
+        "background:#f8fbff;margin-top:6px;'>"
+        + "".join(segments)
+        + "</div>"
+    )
+    script = (
+        "<script>(function(){var root=document.getElementById('" + container_id + "');"
+        "if(!root) return; root.style.position='relative';"
+        "var tip=document.createElement('div');"
+        "tip.style.cssText='position:absolute;display:none;pointer-events:none;padding:4px 8px;"
+        "background:rgba(0,0,0,0.8);color:#fff;border-radius:4px;font-size:11px;max-width:220px;"
+        "z-index:10;white-space:pre-wrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);';"
+        "root.appendChild(tip);"
+        "var segments=root.querySelectorAll('[data-tooltip]');"
+        "segments.forEach(function(seg){"
+        "var move=function(evt){var rect=root.getBoundingClientRect();"
+        "var x=evt.clientX-rect.left+8;var y=evt.clientY-rect.top+8;"
+        "tip.style.left=x+'px';tip.style.top=y+'px';};"
+        "seg.addEventListener('mouseenter',function(evt){tip.textContent=seg.getAttribute('data-tooltip');"
+        "tip.style.display='block'; move(evt);});"
+        "seg.addEventListener('mousemove',move);"
+        "seg.addEventListener('mouseleave',function(){tip.style.display='none';});"
+        "});})();</script>"
+    )
+    return f"<div class='na-vm-timeline' id='{container_id}' style='position:relative;'>{header}{track}</div>{script}"
+
+
 def render_job_result_html(
     *,
     result: Mapping[str, Any],
@@ -722,7 +884,16 @@ def render_job_result_html(
     )
     measurements = result.get("measurements") or []
     histogram = format_histogram(measurements)
+    timeline_entries = result.get("timeline") or []
+    timeline_unit = result.get("timeline_units") or result.get("log_time_units") or "ns"
+    timeline_html = (
+        render_timeline_chart(timeline_entries, unit=str(timeline_unit))
+        if timeline_entries
+        else ""
+    )
     parts = [summary]
+    if timeline_html:
+        parts.append(timeline_html)
     if histogram:
         parts.append(histogram)
     body = "<hr/>".join(parts)
@@ -734,6 +905,7 @@ __all__ = [
     "build_result_summary_html",
     "render_job_result_html",
     "format_histogram",
+    "render_timeline_chart",
     "render_measurement_configuration",
     "display_shot",
 ]

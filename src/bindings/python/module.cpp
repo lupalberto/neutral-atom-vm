@@ -6,9 +6,105 @@
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <stdexcept>
+#include <utility>
 
 namespace py = pybind11;
 
+ConnectivityKind parse_connectivity(py::handle value) {
+    if (!value || value.is_none()) {
+        return ConnectivityKind::AllToAll;
+    }
+    const std::string text = py::cast<std::string>(value);
+    if (text == "AllToAll") {
+        return ConnectivityKind::AllToAll;
+    }
+    if (text == "NearestNeighborChain") {
+        return ConnectivityKind::NearestNeighborChain;
+    }
+    if (text == "NearestNeighborGrid") {
+        return ConnectivityKind::NearestNeighborGrid;
+    }
+    throw std::invalid_argument("Unknown connectivity: " + text);
+}
+
+void fill_site_descriptor(const py::dict& src, SiteDescriptor& dst) {
+    if (src.contains("id")) {
+        dst.id = py::cast<int>(src["id"]);
+    }
+    if (src.contains("x")) {
+        dst.x = py::cast<double>(src["x"]);
+    }
+    if (src.contains("y")) {
+        dst.y = py::cast<double>(src["y"]);
+    }
+    if (src.contains("zone_id")) {
+        dst.zone_id = py::cast<int>(src["zone_id"]);
+    }
+}
+
+void fill_native_gate(const py::dict& src, NativeGate& dst) {
+    if (src.contains("name")) {
+        dst.name = py::cast<std::string>(src["name"]);
+    }
+    if (src.contains("arity")) {
+        dst.arity = py::cast<int>(src["arity"]);
+    }
+    if (src.contains("duration_ns")) {
+        dst.duration_ns = py::cast<double>(src["duration_ns"]);
+    }
+    if (src.contains("angle_min")) {
+        dst.angle_min = py::cast<double>(src["angle_min"]);
+    }
+    if (src.contains("angle_max")) {
+        dst.angle_max = py::cast<double>(src["angle_max"]);
+    }
+    if (src.contains("connectivity")) {
+        dst.connectivity = parse_connectivity(src["connectivity"]);
+    }
+}
+
+void fill_timing_limits(const py::dict& src, TimingLimits& dst) {
+    if (src.contains("min_wait_ns")) {
+        dst.min_wait_ns = py::cast<double>(src["min_wait_ns"]);
+    }
+    if (src.contains("max_wait_ns")) {
+        dst.max_wait_ns = py::cast<double>(src["max_wait_ns"]);
+    }
+    if (src.contains("max_parallel_single_qubit")) {
+        dst.max_parallel_single_qubit = py::cast<int>(src["max_parallel_single_qubit"]);
+    }
+    if (src.contains("max_parallel_two_qubit")) {
+        dst.max_parallel_two_qubit = py::cast<int>(src["max_parallel_two_qubit"]);
+    }
+    if (src.contains("max_parallel_per_zone")) {
+        dst.max_parallel_per_zone = py::cast<int>(src["max_parallel_per_zone"]);
+    }
+    if (src.contains("measurement_cooldown_ns")) {
+        dst.measurement_cooldown_ns = py::cast<double>(src["measurement_cooldown_ns"]);
+    }
+    if (src.contains("measurement_duration_ns")) {
+        dst.measurement_duration_ns = py::cast<double>(src["measurement_duration_ns"]);
+    }
+}
+
+void fill_pulse_limits(const py::dict& src, PulseLimits& dst) {
+    if (src.contains("detuning_min")) {
+        dst.detuning_min = py::cast<double>(src["detuning_min"]);
+    }
+    if (src.contains("detuning_max")) {
+        dst.detuning_max = py::cast<double>(src["detuning_max"]);
+    }
+    if (src.contains("duration_min_ns")) {
+        dst.duration_min_ns = py::cast<double>(src["duration_min_ns"]);
+    }
+    if (src.contains("duration_max_ns")) {
+        dst.duration_max_ns = py::cast<double>(src["duration_max_ns"]);
+    }
+    if (src.contains("max_overlapping_pulses")) {
+        dst.max_overlapping_pulses = py::cast<int>(src["max_overlapping_pulses"]);
+    }
+}
 namespace {
 
 Instruction instruction_from_dict(const py::dict& obj) {
@@ -76,6 +172,9 @@ py::dict job_result_to_dict(const service::JobResult& result) {
     }
     out["measurements"] = measurements;
     out["message"] = result.message;
+    if (!result.log_time_units.empty()) {
+        out["log_time_units"] = result.log_time_units;
+    }
     py::list log_list;
     for (const auto& entry : result.logs) {
         py::dict log;
@@ -86,6 +185,19 @@ py::dict job_result_to_dict(const service::JobResult& result) {
         log_list.append(log);
     }
     out["logs"] = log_list;
+    if (!result.timeline_units.empty()) {
+        out["timeline_units"] = result.timeline_units;
+    }
+    py::list timeline_list;
+    for (const auto& entry : result.timeline) {
+        py::dict item;
+        item["start_time"] = entry.start_time;
+        item["duration"] = entry.duration;
+        item["op"] = entry.op;
+        item["detail"] = entry.detail;
+        timeline_list.append(item);
+    }
+    out["timeline"] = timeline_list;
     return out;
 }
 
@@ -220,7 +332,7 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
     job.program = instructions_from_list(program);
 
     if (job_obj.contains("hardware")) {
-const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
+        const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
         if (hardware.contains("positions")) {
             job.hardware.positions = py::cast<std::vector<double>>(hardware["positions"]);
         }
@@ -230,6 +342,32 @@ const auto hardware = py::cast<py::dict>(job_obj["hardware"]);
         }
         if (hardware.contains("blockade_radius")) {
             job.hardware.blockade_radius = py::cast<double>(hardware["blockade_radius"]);
+        }
+        if (hardware.contains("sites")) {
+            const auto site_list = py::cast<py::list>(hardware["sites"]);
+            job.hardware.sites.clear();
+            job.hardware.sites.reserve(site_list.size());
+            for (const auto& site_obj : site_list) {
+                SiteDescriptor descriptor;
+                fill_site_descriptor(py::cast<py::dict>(site_obj), descriptor);
+                job.hardware.sites.push_back(descriptor);
+            }
+        }
+        if (hardware.contains("native_gates")) {
+            const auto gate_list = py::cast<py::list>(hardware["native_gates"]);
+            job.hardware.native_gates.clear();
+            job.hardware.native_gates.reserve(gate_list.size());
+            for (const auto& gate_obj : gate_list) {
+                NativeGate gate;
+                fill_native_gate(py::cast<py::dict>(gate_obj), gate);
+                job.hardware.native_gates.push_back(std::move(gate));
+            }
+        }
+        if (hardware.contains("timing_limits")) {
+            fill_timing_limits(py::cast<py::dict>(hardware["timing_limits"]), job.hardware.timing_limits);
+        }
+        if (hardware.contains("pulse_limits")) {
+            fill_pulse_limits(py::cast<py::dict>(hardware["pulse_limits"]), job.hardware.pulse_limits);
         }
     } else {
         if (job_obj.contains("positions")) {

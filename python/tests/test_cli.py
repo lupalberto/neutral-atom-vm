@@ -193,6 +193,29 @@ def test_quera_vm_run_reports_blockade_violation(capsys, tmp_path):
     assert "Gate CX on qubits 0/15 violates blockade radius" in captured.err
 
 
+def test_summarize_result_includes_timeline_section():
+    from neutral_atom_vm import cli
+
+    timeline = [
+        {"start_time": 0.0, "duration": 0.5, "op": "AllocArray", "detail": "n_qubits=2"},
+        {"start_time": 0.5, "duration": 0.5, "op": "ApplyGate", "detail": "X targets=[0]"},
+    ]
+    text = cli._summarize_result(
+        {
+            "status": "completed",
+            "elapsed_time": 0.001,
+            "measurements": [],
+            "timeline": timeline,
+            "timeline_units": "us",
+        },
+        device="local-cpu",
+        profile="ideal_small_array",
+        shots=1,
+    )
+    assert "Timeline (us):" in text
+    assert "ApplyGate" in text
+
+
 def test_quera_vm_grid_output_for_noisy_square_array(capsys):
     """Summary output for the 2D profile should include a grid view."""
 

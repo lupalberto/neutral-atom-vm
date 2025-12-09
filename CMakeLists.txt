@@ -41,6 +41,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
     src/noise/loss_tracking_source.cpp
     src/hardware_vm.cpp
     src/service/job.cpp
+    src/service/scheduler.cpp
     src/service/job_service.cpp
 )
 target_include_directories(vm PUBLIC
@@ -78,6 +79,7 @@ if(NA_VM_BUILD_TESTS)
         test/noise_tests.cpp
         test/statevector_engine_sync_tests.cpp
         test/service_job_service_tests.cpp
+        test/scheduler_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)
     if(NA_VM_WITH_ONEAPI)

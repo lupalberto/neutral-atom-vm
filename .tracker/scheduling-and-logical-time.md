@@ -37,6 +37,7 @@ Introduce a proper scheduling layer and complete logical-time semantics for the 
     - Make it clear that the bug in the prototype is the missing scheduler/logical-time semantics, not the presence of cooldown in the ISA.
     - Once the new semantics are in place, update the example to show how a proper schedule avoids the violation without requiring hand-written `Wait` for basic cooldown.
   - Add at least one example of a more complex schedule (with parallel gates and waits) that demonstrates how timing/resource constraints are enforced in a realistic way.
+  - UI/logs should annotate time units explicitly. Internal logical-time math stays in nanoseconds, but CLI/SDK outputs now convert to microseconds and include `timeline_units` / `log_time_units` metadata so notebooks and services can render timelines without guessing units.
 
 - Testing:
   - Add tests that:
@@ -44,3 +45,8 @@ Introduce a proper scheduling layer and complete logical-time semantics for the 
     - exercise `max_parallel_two_qubit` and related limits with explicit time steps and waits.
   - Ensure existing examples (e.g., GHZ, maxcut_ring) still run correctly under the new semantics or are updated to be valid schedules.
 
+## Timing references (2025-12-09)
+
+- **Gate durations:** Neutral-atom Rydberg platforms routinely achieve single-qubit Raman pulses and two-qubit CZ/CX operations in the 0.1–1 µs window with >99% fidelity when using optimized Rydberg waveforms (Nature 2023, “High-fidelity parallel entangling gates on a neutral-atom quantum computer”).
+- **Measurement durations:** EIT-based readout is quoted at roughly 0.05 ms (50 µs) with >99% fidelity, while ensemble-assisted schemes can complete in <10 µs; these are reasonable ranges for the VM’s logical-time measurement budget (EmergentMind topic “Two-dimensional neutral-atom quantum computing”, accessed 2025-12-09).
+- **Lower-bound experiments:** Research demonstrations have reported 6.5 ns Rydberg gates (IEEE Spectrum, “Neutral Atom Qubit … 6.5 ns gate”), but we stick with the conservative 0.5 µs (single-qubit), 1 µs (two-qubit), and 50 µs (measurement) values for default presets.

@@ -51,6 +51,7 @@ add_library(vm STATIC
     ../src/noise/loss_tracking_source.cpp
     ../src/hardware_vm.cpp
     ../src/service/job.cpp
+    ../src/service/scheduler.cpp
     ../src/service/job_service.cpp
 )
 target_include_directories(vm PUBLIC
