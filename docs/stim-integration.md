@@ -141,3 +141,100 @@ By keeping these roles distinct, we ensure:
 - Stim remains the *Pauli/QEC branch* of the stack, optimized for error analysis.
 - The two stay aligned via a shared noise model, but neither is forced into the other's abstraction.
 
+---
+
+## 6. Open Questions and Architectural Concerns (Notes from Discussion)
+
+The prototype work and subsequent review surfaced several important questions about how Stim fits alongside the VM and other backends.
+
+### 6.1 What exactly do we offload to Stim?
+
+Stim is best used as a specialized backend for:
+
+- Clifford circuits (or circuits where the Clifford part is dominant), and
+- Pauli / erasure / readout noise.
+
+In the context of the Neutral Atom VM:
+
+- The VM and service layer still own:
+  - The ISA, device profiles, and geometry (blockade, cooldowns, etc.).
+  - Job handling (`JobRequest`/`JobResult`) and backend selection.
+  - Noise IR / profile selection (which Pauli/loss model applies to this job).
+- A Stim-backed `StabilizerBackend` would receive:
+  - A validated VM program using a supported subset of the ISA (Clifford gates + measurements).
+  - An effective Pauli/loss noise description derived from profiles/IR.
+  - It would then:
+    - build a Stim circuit (gates + `pauli_channel`/erasure ops),
+    - run the circuit for the requested number of shots,
+    - and return measurement bitstrings (and erasures) wrapped as VM `JobResult` records.
+
+Stim does **not** enforce neutral-atom geometry or timing rules; those remain VM responsibilities.
+
+### 6.2 Does Stim have a notion of time?
+
+No. Stim operates on an ordered list of operations; it does not assign durations or enforce cooldowns between them.
+
+This means:
+
+- The VM must maintain its own `logical_time` (advancing on gates/measurements/waits) and enforce timing constraints (e.g., measurement cooldown) before handing the sequence to any backend, including Stim.
+- For the Stim backend, `logical_time` is a **VM-side concept**:
+  - Used to decide if a schedule is valid with respect to device profiles.
+  - Used to derive idle noise / cooldown observance when building the Stim circuit.
+  - Stim itself simply executes the resulting sequence; it does not know about time or enforce timing constraints.
+
+### 6.3 Why not just lower kernels directly to Stim?
+
+Lowering directly to Stim would conflate:
+
+- the **hardware abstraction** (VM ISA + device profiles), and
+- a particular **simulator backend** (Stim).
+
+This causes multiple problems:
+
+- Stim lacks geometry, detailed timing, non-Pauli noise, and pulse-level behavior that real hardware and physics engines care about.
+- Stim only covers a subset of workloads (Clifford + Pauli/loss), whereas the VM must also support non-Clifford gates and richer noise via other backends.
+- Tying compilers directly to Stim semantics would make it harder to evolve hardware simulators or integrate real devices.
+
+The VM remains the stable **target** for compilers; Stim is one among several **backends** that implement that contract for a particular regime.
+
+### 6.4 Orthogonal vs composable backends
+
+Today, backends are effectively orthogonal:
+
+- `StatevectorBackend` for general gates + richer noise.
+- `StabilizerBackend` (planned) for Clifford + Pauli/loss.
+- Future physics/hardware backends.
+
+A fair concern is that this fragments capabilities: each backend is its own "island."
+
+In the current prototype, this is acknowledged as a deliberate simplification:
+
+- For a given job, you pick a single backend (statevector, stabilizer, hardware).
+- That backend either runs the full program or rejects unsupported features.
+
+Longer-term, we may want a **composable** design:
+
+- A routing/scheduling layer that splits one VM program into segments and:
+  - runs Clifford/Pauli segments on Stim,
+  - runs non-Clifford or non-Pauli segments on statevector or physics engines,
+  - and passes state between engines in a controlled way.
+
+This is a significantly more complex hybrid-simulation architecture and is captured as a future architectural question, not something this PoC solves.
+
+### 6.5 Stim and non-Clifford gates
+
+Stim is fundamentally a stabilizer simulator:
+
+- It is exact and very fast for Clifford + Pauli/loss circuits.
+- Non-Clifford gates require approximations or are outright unsupported.
+
+Within the VM:
+
+- A Stim backend will:
+  - support only the Clifford subset of the ISA plus Pauli/loss noise,
+  - reject (or explicitly approximate) non-Clifford gates and non-Pauli noise when selected.
+- Non-Clifford workloads are handled by:
+  - the statevector backend (today), and
+  - future physics or approximate simulators (later).
+
+The open architectural question is where and how to combine these capabilities without confusing users or violating the VM abstraction.
