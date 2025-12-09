@@ -29,6 +29,9 @@
 ## Phase 5 – Advanced Features (Q4)
 - Realistic neutral-atom physics and noise modeling (Hamiltonian evolution, decoherence, SPAM, atom loss).
 - Quantum error correction and mitigation workflows (stabilizer codes, logical error metrics, noise tailoring).
-- Multi-backend support (CPU/GPU/tensor-network) selectable per job.
+- Scheduling + logical-time semantics so device profiles with cooldowns/parallelism are respected up front.
+- Backend/noise architecture separation: disjoint backend kind, shared noise IR, and clearer pairing between statevector/stim/hardware.
+- Stim/stabilizer backend integration for Pauli+loss workloads, plus documentation of its roles and limits.
+- Multi-backend support (CPU/GPU/tensor-network) selectable per job, including explicit capability metadata.
 - Checkpointing/resume for long simulations.
 - Multi-tenant quota enforcement and per-user billing hooks.
