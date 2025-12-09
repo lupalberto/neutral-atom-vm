@@ -32,6 +32,7 @@
 - Scheduling + logical-time semantics so device profiles with cooldowns/parallelism are respected up front.
 - Backend/noise architecture separation: disjoint backend kind, shared noise IR, and clearer pairing between statevector/stim/hardware.
 - Stim/stabilizer backend integration for Pauli+loss workloads, plus documentation of its roles and limits.
+- Distinguish addressable site lattices from occupied configurations: use ISA-level `SiteDescriptor` lists to describe the hardware trap lattice, and treat profile `positions`/coordinates as mappings from logical slots into that lattice so compilers and schedulers can reason about legal atom placements explicitly.
 - Multi-backend support (CPU/GPU/tensor-network) selectable per job, including explicit capability metadata.
 - Checkpointing/resume for long simulations.
 - Multi-tenant quota enforcement and per-user billing hooks.

@@ -357,6 +357,8 @@ HardwareVM::RunResult HardwareVM::run_stabilizer(
     result.measurements.reserve(static_cast<std::size_t>(shots) * builder.groups().size());
     std::vector<MeasurementRecord> shot_records;
     std::vector<ExecutionLog> shot_logs;
+    const std::size_t program_steps = program.size();
+    const bool has_progress = (progress_reporter_ != nullptr);
 
     for (int shot = 0; shot < shots; ++shot) {
         std::mt19937_64 stim_rng(shot_seeds[shot]);
@@ -388,6 +390,11 @@ HardwareVM::RunResult HardwareVM::run_stabilizer(
             result.measurements.push_back(std::move(record));
         }
         result.logs.insert(result.logs.end(), shot_logs.begin(), shot_logs.end());
+        if (has_progress) {
+            for (std::size_t step = 0; step < program_steps; ++step) {
+                progress_reporter_->increment_completed_steps();
+            }
+        }
     }
 
     return result;
