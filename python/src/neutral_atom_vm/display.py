@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from html import escape
 from typing import Any, Mapping, Sequence
 import uuid
@@ -681,97 +682,116 @@ def format_histogram(
     *,
     page_size: int = 24,
 ) -> str:
-    counts: dict[str, int] = {}
-    for rec in measurements:
+    def bitstring_from_record(rec: Mapping[str, Any]) -> str | None:
         bits = rec.get("bits")
         if not bits:
-            continue
-        bitstring_chars: list[str] = []
+            return None
+        chars: list[str] = []
         for bit in bits:
             value, is_loss, text = _interpret_measurement_value(bit)
             if is_loss:
-                bitstring_chars.append("L")
+                chars.append("L")
             elif value is not None:
-                bitstring_chars.append(str(value))
+                chars.append(str(value))
             else:
-                bitstring_chars.append(text)
-        bitstring = "".join(bitstring_chars)
-        counts[bitstring] = counts.get(bitstring, 0) + 1
-    if not counts:
+                chars.append(text)
+        return "".join(chars)
+
+    grouped: dict[tuple[int, ...], Counter[str]] = defaultdict(Counter)
+    for rec in measurements:
+        targets = rec.get("targets") or []
+        if not targets:
+            continue
+        try:
+            targets_tuple = tuple(int(t) for t in targets)
+        except (TypeError, ValueError):
+            continue
+        bitstring = bitstring_from_record(rec)
+        if bitstring is None:
+            continue
+        grouped[targets_tuple][bitstring] += 1
+
+    if not grouped:
         return "<em>No histogram data.</em>"
 
-    sorted_items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    pages: list[list[tuple[str, int]]] = []
-    for i in range(0, len(sorted_items), max(1, page_size)):
-        pages.append(sorted_items[i : i + max(1, page_size)])
+    sections: list[str] = []
+    for targets in sorted(grouped.keys(), key=lambda tup: (len(tup), tup)):
+        counter = grouped[targets]
+        sorted_items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        pages: list[list[tuple[str, int]]] = []
+        for i in range(0, len(sorted_items), max(1, page_size)):
+            pages.append(sorted_items[i : i + max(1, page_size)])
+        if not pages:
+            continue
+        max_count = max(count for _, count in sorted_items)
+        total = sum(counter.values()) or 1
 
-    max_count = max(count for _, count in sorted_items)
-    total = sum(counts.values()) or 1
+        page_blocks: list[str] = []
+        for page_idx, page in enumerate(pages):
+            bars: list[str] = []
+            display = "block" if page_idx == 0 else "none"
+            for bitstring, count in page:
+                width_pct = (count / max_count) * 100 if max_count else 0
+                prob = count / total
+                bars.append(
+                    "<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;'>"
+                    f"<code style='min-width:70px;'>{escape(bitstring)}</code>"
+                    f"<div style='background:#e2e8f7;height:14px;flex:1;position:relative;'>"
+                        f"<div style='background:#276ef1;height:14px;width:{width_pct:.2f}%;'></div>"
+                    "</div>"
+                    "<span style='flex:0 0 120px;min-width:120px;text-align:right;font-family:monospace;white-space:nowrap;'>"
+                    f"{count:>4} ({prob:.2%})</span>"
+                    "</div>"
+                )
+            page_blocks.append(
+                f"<div data-hist-page='{page_idx}' style='display:{display};'>"
+                + "".join(bars)
+                + "</div>"
+            )
 
-    page_blocks: list[str] = []
-    for idx, page in enumerate(pages):
-        bars: list[str] = []
-        display = "block" if idx == 0 else "none"
-        for bitstring, count in page:
-            width_pct = (count / max_count) * 100 if max_count else 0
-            prob = count / total
-            bars.append(
-                "<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;'>"
-                f"<code style='min-width:70px;'>{escape(bitstring)}</code>"
-                f"<div style='background:#e2e8f7;height:14px;flex:1;position:relative;'>"
-                    f"<div style='background:#276ef1;height:14px;width:{width_pct:.2f}%;'></div>"
-                "</div>"
-                "<span style='flex:0 0 120px;min-width:120px;text-align:right;font-family:monospace;white-space:nowrap;'>"
-                f"{count:>4} ({prob:.2%})</span>"
+        container_id = f"na-vm-hist-{uuid.uuid4().hex}"
+        page_count = len(pages)
+        nav_html = ""
+        script = ""
+        if page_count > 1:
+            nav_html = (
+                "<div style='margin-bottom:6px;display:flex;align-items:center;gap:8px;'>"
+                "<button type='button' data-hist-prev>Prev</button>"
+                f"<span>Page <span data-hist-page-label>1</span> / {page_count}</span>"
+                "<button type='button' data-hist-next>Next</button>"
                 "</div>"
             )
-        page_blocks.append(
-            f"<div data-hist-page='{idx}' style='display:{display};'>"
-            + "".join(bars)
+            script = (
+                "<script>(function(){var root=document.getElementById('"
+                + container_id
+                + "'); if(!root) return; var pages=root.querySelectorAll('[data-hist-page]');"
+                "var prev=root.querySelector('[data-hist-prev]');"
+                "var next=root.querySelector('[data-hist-next]');"
+                "var label=root.querySelector('[data-hist-page-label]');"
+                "var current=0; function show(idx){ if(idx<0||idx>=pages.length) return;"
+                "current=idx; pages.forEach(function(el,i){el.style.display = i===idx ? 'block':'none';});"
+                "if(label) label.textContent = (idx+1);"
+                "if(prev) prev.disabled = idx===0;"
+                "if(next) next.disabled = idx===pages.length-1; }"
+                "if(prev) prev.addEventListener('click',function(){show(Math.max(0,current-1));});"
+                "if(next) next.addEventListener('click',function(){show(Math.min(pages.length-1,current+1));});"
+                "show(0);})();</script>"
+            )
+
+        pages_html = (
+            "<div style='overflow-x:auto;max-width:100%;'>"
+            + "".join(page_blocks)
             + "</div>"
         )
 
-    container_id = f"na-vm-hist-{uuid.uuid4().hex}"
-    nav_html = ""
-    script = ""
-    page_count = len(pages)
-    if page_count > 1:
-        nav_html = (
-            "<div style='margin-bottom:6px;display:flex;align-items:center;gap:8px;'>"
-            "<button type='button' data-hist-prev>Prev</button>"
-            f"<span>Page <span data-hist-page-label>1</span> / {page_count}</span>"
-            "<button type='button' data-hist-next>Next</button>"
-            "</div>"
-        )
-        script = (
-            "<script>(function(){var root=document.getElementById('"
-            + container_id
-            + "'); if(!root) return; var pages=root.querySelectorAll('[data-hist-page]');"
-            "var prev=root.querySelector('[data-hist-prev]');"
-            "var next=root.querySelector('[data-hist-next]');"
-            "var label=root.querySelector('[data-hist-page-label]');"
-            "var current=0; function show(idx){ if(idx<0||idx>=pages.length) return;"
-            "current=idx; pages.forEach(function(el,i){el.style.display = i===idx ? 'block':'none';});"
-            "if(label) label.textContent = (idx+1);"
-            "if(prev) prev.disabled = idx===0;"
-            "if(next) next.disabled = idx===pages.length-1; }"
-            "if(prev) prev.addEventListener('click',function(){show(Math.max(0,current-1));});"
-            "if(next) next.addEventListener('click',function(){show(Math.min(pages.length-1,current+1));});"
-            "show(0);})();</script>"
+        sections.append(
+            "<div class='na-vm-histogram-group'>"
+            f"<div><strong>Histogram for targets {list(targets)}</strong></div>"
+            f"{nav_html}{pages_html}</div>"
+            + script
         )
 
-    pages_html = (
-        "<div style='overflow-x:auto;max-width:100%;'>"
-        + "".join(page_blocks)
-        + "</div>"
-    )
-
-    return (
-        f"<div id='{container_id}' class='na-vm-histogram'>"
-        "<div><strong>Histogram</strong></div>"
-        f"{nav_html}{pages_html}</div>"
-        + script
-    )
+    return "<div class='na-vm-histogram'>" + "".join(sections) + "</div>"
 
 
 def render_timeline_chart(
