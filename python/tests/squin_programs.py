@@ -105,3 +105,12 @@ def benchmark_chain_complex():
         squin.z(q[i])
 
     squin.measure(q)
+
+
+@squin.kernel
+def pauli_kick_only():
+    """Applies a deterministic Pauli channel so Stim behavior is observable."""
+
+    q = squin.qalloc(1)
+    squin.single_qubit_pauli_channel(1.0, 0.0, 0.0, q[0])
+    squin.measure(q)

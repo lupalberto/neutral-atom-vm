@@ -406,7 +406,11 @@ std::string to_json(const JobRequest& job) {
         first_entry = false;
         out << "\"" << escape_json(key) << "\":\"" << escape_json(value) << "\"";
     }
-    out << "}}";
+    out << "}";
+    if (job.stim_circuit) {
+        out << ",\"stim_circuit\":\"" << escape_json(*job.stim_circuit) << "\"";
+    }
+    out << '}';
     return out.str();
 }
 
@@ -457,6 +461,9 @@ JobResult JobRunner::run(
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
             profile.device_noise_engine =
                 neutral_atom_vm::noise::build_device_noise_engine(*job.noise_config);
+        }
+        if (job.stim_circuit) {
+            profile.stim_circuit_text = job.stim_circuit;
         }
 
         HardwareVM vm(profile);

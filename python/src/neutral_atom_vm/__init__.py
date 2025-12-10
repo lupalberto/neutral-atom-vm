@@ -23,6 +23,7 @@ from .job import (
     job_result,
     job_status,
     JobResult,
+    has_stabilizer_backend,
 )
 from .squin_lowering import to_vm_program, LoweringError
 from . import cli
@@ -53,4 +54,5 @@ __all__ = [
     "cli",
     "ProfileConfigurator",
     "JobResultViewer",
+    "has_stabilizer_backend",
 ]

@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
+import io
 
 from copy import deepcopy
+from kirin.ir.method import Method
+from kirin.dialects.func import stmts as func_stmts
+from kirin.interp import MethodTable, impl
+from kirin.dialects import ilist
+from bloqade import qubit
 
 from .layouts import GridLayout, grid_layout_for_profile
 from .job import (
@@ -106,6 +112,87 @@ def _stabilizer_config_from(config: Mapping[str, Any]) -> Dict[str, Any]:
     else:
         sanitized.pop("noise", None)
     return sanitized
+
+
+_NOISE_KEYWORDS = (
+    "pauli_channel",
+    "depolarize",
+    "qubit_loss",
+    "correlated_qubit_loss",
+)
+
+
+def _kernel_has_explicit_noise(kernel: Method | None) -> bool:
+    if kernel is None:
+        return False
+    try:
+        text = kernel.print_str()
+    except Exception:
+        return False
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in _NOISE_KEYWORDS)
+
+
+def _emit_stim_circuit(kernel: Method, program: Sequence[Dict[str, Any]]) -> str:
+    try:
+        from bloqade import stim as stim_mod
+        from bloqade.stim.emit import EmitStimMain
+        from bloqade.stim.passes import SquinToStimPass
+    except ImportError as exc:  # pragma: no cover - defensive guard
+        raise RuntimeError(
+            "Generating Stim circuits from squin kernels requires the 'bloqade' package."
+        ) from exc
+
+    working = kernel.similar()
+    SquinToStimPass(kernel.dialects, no_raise=False)(working)
+    _ensure_emit_helpers_registered()
+    # Allow the Stim emitter to see the small helper dialects that remain after
+    # lowering (qubit allocations and ilist materialization).
+    extended_dialects = stim_mod.main.union([qubit, ilist])
+    buffer = io.StringIO()
+    emitter = EmitStimMain(dialects=extended_dialects, io=buffer)
+    emitter.initialize()
+    emitter.run(working)
+    circuit = buffer.getvalue().strip()
+    measure_lines: list[str] = []
+    for instruction in program:
+        if instruction.get("op") != "Measure":
+            continue
+        for target in instruction.get("targets", []):
+            measure_lines.append(f"M {int(target)}")
+    if measure_lines:
+        if circuit:
+            circuit = f"{circuit}\n" + "\n".join(measure_lines)
+        else:
+            circuit = "\n".join(measure_lines)
+    return circuit
+
+
+_EMIT_HELPERS_REGISTERED = False
+
+
+def _ensure_emit_helpers_registered() -> None:
+    global _EMIT_HELPERS_REGISTERED
+    if _EMIT_HELPERS_REGISTERED:
+        return
+
+    @qubit.dialect.register(key="emit.stim")
+    class _StimQubitEmit(MethodTable):
+        @impl(qubit.stmts.New)
+        def emit_new(self, emit, frame, stmt):
+            return tuple("" for _ in stmt.results)
+
+        @impl(qubit.stmts.Measure)
+        def emit_measure(self, emit, frame, stmt):
+            return tuple("" for _ in stmt.results)
+
+    @ilist.dialect.register(key="emit.stim")
+    class _StimIListEmit(MethodTable):
+        @impl(ilist.stmts.New)
+        def emit_ilist_new(self, emit, frame, stmt):
+            return tuple("" for _ in stmt.results)
+
+    _EMIT_HELPERS_REGISTERED = True
 
 
 def _parse_timing_limits(payload: Mapping[str, Any]) -> TimingLimits:
@@ -226,7 +313,16 @@ class Device:
         max_threads: Optional[int] = None,
     ) -> JobRequest:
         """Create a :class:`JobRequest` describing this device + kernel without executing it."""
+        kernel_method = program_or_kernel if isinstance(program_or_kernel, Method) else None
         program = self._normalize_program(program_or_kernel)
+        has_explicit_noise = _kernel_has_explicit_noise(kernel_method)
+        stim_circuit = None
+        if has_explicit_noise and self.id == "stabilizer" and kernel_method is not None:
+            stim_circuit = _emit_stim_circuit(kernel_method, program)
+        elif has_explicit_noise and self.id != "stabilizer":
+            raise RuntimeError(
+                "Explicit squin noise helpers are only supported on the stabilizer backend."
+            )
         _validate_blockade_constraints(program, self.positions, self.blockade_radius, self.coordinates)
         return JobRequest(
             program=program,
@@ -242,6 +338,7 @@ class Device:
             shots=shots,
             max_threads=max_threads,
             noise=self.noise,
+            stim_circuit=stim_circuit,
         )
 
     def _normalize_program(self, program_or_kernel: Union[ProgramType, KernelType]) -> ProgramType:

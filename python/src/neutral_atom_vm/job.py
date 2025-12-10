@@ -466,6 +466,7 @@ class JobRequest:
     job_id: str = "python-client"
     metadata: Dict[str, str] = field(default_factory=dict)
     noise: SimpleNoiseConfig | None = None
+    stim_circuit: str | None = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -482,6 +483,8 @@ class JobRequest:
             data["metadata"] = dict(self.metadata)
         if self.noise:
             data["noise"] = self.noise.to_dict()
+        if self.stim_circuit:
+            data["stim_circuit"] = self.stim_circuit
         return data
 
 

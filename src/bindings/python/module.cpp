@@ -390,6 +390,10 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
         job.metadata = py::cast<std::map<std::string, std::string>>(job_obj["metadata"]);
     }
 
+    if (job_obj.contains("stim_circuit") && !job_obj["stim_circuit"].is_none()) {
+        job.stim_circuit = py::cast<std::string>(job_obj["stim_circuit"]);
+    }
+
     if (job_obj.contains("noise")) {
         const auto noise = py::cast<py::dict>(job_obj["noise"]);
         SimpleNoiseConfig cfg;

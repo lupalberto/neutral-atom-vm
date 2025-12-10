@@ -347,10 +347,18 @@ HardwareVM::RunResult HardwareVM::run_stabilizer(
 ) {
     StimCircuitBuilder builder(profile_);
     builder.translate(program);
-    stim::Circuit circuit = builder.finish();
+    stim::Circuit circuit;
     const std::size_t measurement_count = builder.measurement_count();
-    if (static_cast<std::size_t>(circuit.count_measurements()) != measurement_count) {
-        throw std::runtime_error("Stim backend measurement bookkeeping mismatch");
+    if (profile_.stim_circuit_text) {
+        circuit = stim::Circuit(*profile_.stim_circuit_text);
+        if (static_cast<std::size_t>(circuit.count_measurements()) != measurement_count) {
+            throw std::runtime_error("Stim backend measurement mismatch for provided circuit");
+        }
+    } else {
+        circuit = builder.finish();
+        if (static_cast<std::size_t>(circuit.count_measurements()) != measurement_count) {
+            throw std::runtime_error("Stim backend measurement bookkeeping mismatch");
+        }
     }
 
     RunResult result;

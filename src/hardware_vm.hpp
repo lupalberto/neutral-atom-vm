@@ -29,6 +29,7 @@ struct DeviceProfile {
     std::shared_ptr<const neutral_atom_vm::noise::DeviceNoiseEngine> device_noise_engine;
     std::optional<SimpleNoiseConfig> noise_config;
     BackendKind backend = BackendKind::kCpu;
+    std::optional<std::string> stim_circuit_text;
     // Future extensions: noise configuration, resource limits, diagnostics.
 };
 

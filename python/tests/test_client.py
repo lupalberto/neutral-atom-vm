@@ -5,7 +5,7 @@ print("module file:", neutral_atom_vm.__file__)
 
 pytest.importorskip("bloqade")
 
-from .squin_programs import bell_pair, single_qubit_rotations
+from .squin_programs import bell_pair, single_qubit_rotations, pauli_kick_only
 
 
 def test_submit_job_accepts_job_request():
@@ -129,6 +129,37 @@ def test_squin_lowering_param_gates():
         {"op": "ApplyGate", "name": "RZ", "targets": [0], "param": 0.5},
         {"op": "Measure", "targets": [0]},
     ]
+
+
+@pytest.mark.skipif(
+    not neutral_atom_vm.has_stabilizer_backend(),
+    reason="Stim backend not available in this build",
+)
+def test_stabilizer_job_includes_stim_circuit_for_noise_kernel():
+    dev = neutral_atom_vm.connect_device("stabilizer", profile="ideal_small_array")
+    request = dev.build_job_request(pauli_kick_only, shots=1)
+    payload = request.to_dict()
+    circuit = payload.get("stim_circuit")
+    assert circuit
+    assert "PAULI_CHANNEL_1" in circuit
+
+
+@pytest.mark.skipif(
+    not neutral_atom_vm.has_stabilizer_backend(),
+    reason="Stim backend not available in this build",
+)
+def test_stabilizer_executes_explicit_pauli_channel():
+    dev = neutral_atom_vm.connect_device("stabilizer", profile="ideal_small_array")
+    handle = dev.submit(pauli_kick_only, shots=1)
+    result = handle.result()
+    bits = result["measurements"][0]["bits"]
+    assert bits == [1]
+
+
+def test_statevector_rejects_explicit_noise_kernel():
+    dev = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    with pytest.raises(RuntimeError):
+        dev.build_job_request(pauli_kick_only, shots=1)
 
 
 def main():

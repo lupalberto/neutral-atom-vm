@@ -33,6 +33,7 @@ struct JobRequest {
     std::map<std::string, std::string> metadata;
     ISAVersion isa_version = kCurrentISAVersion;
     std::optional<SimpleNoiseConfig> noise_config;
+    std::optional<std::string> stim_circuit;
 };
 
 struct JobResult {

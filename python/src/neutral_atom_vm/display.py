@@ -701,7 +701,11 @@ def format_histogram(
     for rec in measurements:
         targets = rec.get("targets") or []
         if not targets:
-            continue
+            bits = rec.get("bits") or []
+            if bits:
+                targets = list(range(len(bits)))
+            else:
+                continue
         try:
             targets_tuple = tuple(int(t) for t in targets)
         except (TypeError, ValueError):
