@@ -51,16 +51,14 @@ std::vector<ExecutionLog> build_timeline_logs(const std::vector<service::Timelin
     for (const auto& event : timeline) {
         ExecutionLog log;
         log.shot = 0;
-        const double start_us = event.start_time * kMicrosecondsPerNanosecond;
-        const double duration_us = event.duration * kMicrosecondsPerNanosecond;
-        log.logical_time = start_us;
+        log.logical_time = event.start_time;
         log.category = "Timeline";
         std::ostringstream oss;
         oss << event.op;
         if (!event.detail.empty()) {
             oss << " " << event.detail;
         }
-        oss << " duration_us=" << duration_us;
+        oss << " duration_us=" << event.duration;
         log.message = oss.str();
         entries.push_back(std::move(log));
     }
@@ -472,15 +470,44 @@ JobResult JobRunner::run(
         }
         const std::size_t threads = max_threads > 0 ? max_threads : job.max_threads;
         const SchedulerResult scheduled = schedule_program(job.program, profile.hardware);
-        result.timeline = scheduled.timeline;
-        result.logs = build_timeline_logs(scheduled.timeline);
-        convert_timeline_to_microseconds(result.timeline);
+
+        std::vector<service::TimelineEntry> scheduler_timeline;
+        scheduler_timeline.reserve(scheduled.timeline.size());
+        double step = 0.0;
+        for (const auto& event : scheduled.timeline) {
+            service::TimelineEntry entry;
+            entry.start_time = step;
+            entry.duration = 1.0;
+            entry.op = event.op;
+            entry.detail = event.detail;
+            scheduler_timeline.push_back(std::move(entry));
+            step += 1.0;
+        }
+        result.scheduler_timeline = std::move(scheduler_timeline);
+        result.scheduler_timeline_units = "steps";
+        auto run_result = vm.run(scheduled.program, shots, {}, nullptr, threads);
+        std::vector<service::TimelineEntry> timeline_entries;
+        if (!run_result.backend_timeline.empty()) {
+            timeline_entries.reserve(run_result.backend_timeline.size());
+            for (const auto& event : run_result.backend_timeline) {
+                service::TimelineEntry entry;
+                entry.start_time = event.start_time;
+                entry.duration = event.duration;
+                entry.op = event.op;
+                entry.detail = event.detail;
+                timeline_entries.push_back(std::move(entry));
+            }
+        } else {
+            timeline_entries = scheduled.timeline;
+        }
+        convert_timeline_to_microseconds(timeline_entries);
+        result.timeline = timeline_entries;
         result.timeline_units = kDisplayTimeUnit;
-        auto run_result = vm.run(scheduled.program, shots, {}, threads);
+        result.logs = build_timeline_logs(result.timeline);
         convert_logs_to_microseconds(run_result.logs);
         result.log_time_units = kDisplayTimeUnit;
-        result.measurements = std::move(run_result.measurements);
         result.logs.insert(result.logs.end(), run_result.logs.begin(), run_result.logs.end());
+        result.measurements = std::move(run_result.measurements);
         result.status = JobStatus::Completed;
     } catch (const std::exception& ex) {
         result.status = JobStatus::Failed;

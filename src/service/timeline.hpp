@@ -11,4 +11,11 @@ struct TimelineEntry {
     std::string detail;
 };
 
+inline bool operator==(const TimelineEntry& lhs, const TimelineEntry& rhs) {
+    return lhs.start_time == rhs.start_time &&
+           lhs.duration == rhs.duration &&
+           lhs.op == rhs.op &&
+           lhs.detail == rhs.detail;
+}
+
 }  // namespace service

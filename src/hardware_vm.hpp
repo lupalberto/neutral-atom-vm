@@ -11,6 +11,7 @@
 #include "noise/device_noise.hpp"
 #include "engine_statevector.hpp"
 #include "progress_reporter.hpp"
+#include "vm/instruction_timing.hpp"
 
 // High-level hardware VM façade that executes ISA programs on a concrete
 // backend engine (currently the statevector runtime) using a device profile.
@@ -19,6 +20,13 @@ enum class BackendKind {
     kCpu,
     kOneApi,
     kStabilizer,
+};
+
+struct BackendTimelineEvent {
+    double start_time = 0.0;
+    double duration = 0.0;
+    std::string op;
+    std::string detail;
 };
 
 struct DeviceProfile {
@@ -47,12 +55,14 @@ class HardwareVM {
     struct RunResult {
         std::vector<MeasurementRecord> measurements;
         std::vector<ExecutionLog> logs;
+        std::vector<BackendTimelineEvent> backend_timeline;
     };
 
     RunResult run(
         const std::vector<Instruction>& program,
         int shots = 1,
         const std::vector<std::uint64_t>& shot_seeds = {},
+        const std::vector<neutral_atom_vm::InstructionTiming>* instruction_timings = nullptr,
         std::size_t max_threads = 0
     );
 

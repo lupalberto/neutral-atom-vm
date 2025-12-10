@@ -116,6 +116,15 @@ def _summarize_result(
     if timeline_units:
         lines.append(f"Timeline unit: {timeline_units}")
 
+    # Optional scheduler plan: show the scheduler's view of the program,
+    # which may expose more parallelism than the execution timeline.
+    scheduler_timeline = result.get("scheduler_timeline") or []
+    scheduler_units = result.get("scheduler_timeline_units") or "steps"
+    scheduler_summary = _format_schedule_rows(scheduler_timeline)
+    if scheduler_summary:
+        lines.append(f"Schedule ({scheduler_units}):")
+        lines.extend(scheduler_summary)
+
     timeline_entries = result.get("timeline") or []
     timeline_summary = _format_timeline_rows(
         timeline_entries,
@@ -205,6 +214,26 @@ def _format_timeline_rows(
         rows.append(
             f"  {start:9.3f}–{end_time:9.3f} {unit} {label}{detail_text}"
         )
+    return rows
+
+
+def _format_schedule_rows(
+    timeline: Sequence[Mapping[str, Any]] | Sequence[Any],
+) -> list[str]:
+    if not timeline:
+        return []
+    rows: list[str] = []
+    structured = [entry for entry in timeline if isinstance(entry, Mapping)]
+    if not structured:
+        return rows
+    for index, entry in enumerate(structured):
+        label = str(entry.get("op", "?"))
+        detail = entry.get("detail")
+        detail_text = ""
+        if isinstance(detail, str) and detail:
+            trimmed = detail if len(detail) <= 60 else detail[:57] + "..."
+            detail_text = f" ({trimmed})"
+        rows.append(f"  step {index}: {label}{detail_text}")
     return rows
 
 

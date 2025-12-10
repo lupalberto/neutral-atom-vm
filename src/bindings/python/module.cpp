@@ -198,6 +198,19 @@ py::dict job_result_to_dict(const service::JobResult& result) {
         timeline_list.append(item);
     }
     out["timeline"] = timeline_list;
+    if (!result.scheduler_timeline_units.empty()) {
+        out["scheduler_timeline_units"] = result.scheduler_timeline_units;
+    }
+    py::list scheduler_timeline_list;
+    for (const auto& entry : result.scheduler_timeline) {
+        py::dict item;
+        item["start_time"] = entry.start_time;
+        item["duration"] = entry.duration;
+        item["op"] = entry.op;
+        item["detail"] = entry.detail;
+        scheduler_timeline_list.append(item);
+    }
+    out["scheduler_timeline"] = scheduler_timeline_list;
     return out;
 }
 

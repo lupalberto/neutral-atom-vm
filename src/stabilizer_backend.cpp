@@ -2,10 +2,14 @@
 
 #ifdef NA_VM_WITH_STIM
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
+#include <map>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,6 +21,9 @@
 namespace {
 
 constexpr double kNoiseEpsilon = 1e-12;
+constexpr double kDefaultSingleQubitDurationNs = 500.0;
+constexpr double kDefaultTwoQubitDurationNs = 1000.0;
+constexpr double kDefaultMeasurementDurationNs = 50'000.0;
 
 bool has_single_qubit_noise(const SingleQubitPauliConfig& cfg) {
     return std::abs(cfg.px) > kNoiseEpsilon ||
@@ -53,6 +60,15 @@ class StimCircuitBuilder {
             noise_ = &(*noise_holder_);
             validate_noise_support();
         }
+        initialize_gate_durations(profile.hardware.native_gates);
+        const double measurement_duration = profile.hardware.timing_limits.measurement_duration_ns;
+        if (measurement_duration > 0.0) {
+            measurement_duration_ns_ = measurement_duration;
+        }
+        const double cooldown = profile.hardware.timing_limits.measurement_cooldown_ns;
+        if (cooldown > 0.0) {
+            measurement_cooldown_ns_ = cooldown;
+        }
     }
 
     void translate(const std::vector<Instruction>& program) {
@@ -66,6 +82,12 @@ class StimCircuitBuilder {
                         }
                         allocated_qubits_ += n_qubits;
                         has_allocation_ = true;
+                        logical_time_ = 0.0;
+                        qubit_ready_time_.assign(
+                            static_cast<std::size_t>(allocated_qubits_), 0.0);
+                        last_measure_time_.assign(
+                            static_cast<std::size_t>(allocated_qubits_),
+                            -std::numeric_limits<double>::infinity());
                     }
                     break;
                 case Op::ApplyGate:
@@ -75,7 +97,7 @@ class StimCircuitBuilder {
                     append_measure(std::get<std::vector<int>>(instr.payload));
                     break;
                 case Op::Wait:
-                    append_wait();
+                    append_wait(std::get<WaitInstruction>(instr.payload).duration);
                     break;
                 case Op::MoveAtom:
                 case Op::Pulse:
@@ -97,6 +119,7 @@ class StimCircuitBuilder {
     const std::vector<StimMeasurementGroup>& groups() const { return measurement_groups_; }
     std::size_t measurement_count() const { return measurement_cursor_; }
     const SimpleNoiseConfig* noise() const { return noise_; }
+    const std::vector<BackendTimelineEvent>& timeline() const { return timeline_; }
 
   private:
     void validate_noise_support() const {
@@ -182,17 +205,105 @@ class StimCircuitBuilder {
         throw std::runtime_error("Stim backend only supports 1Q/2Q gates");
     }
 
-    void emit_single_qubit_gate(const std::string& gate, int target) {
-        std::vector<uint32_t> targets{static_cast<uint32_t>(target)};
-        circuit_.safe_append_u(gate, targets);
+    static std::string format_targets(const std::vector<uint32_t>& targets) {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < targets.size(); ++i) {
+            if (i > 0) {
+                oss << ",";
+            }
+            oss << targets[i];
+        }
+        oss << "]";
+        return oss.str();
     }
 
-    void emit_two_qubit_gate(const std::string& gate, int q0, int q1) {
+    void record_timeline_event(
+        const std::string& op,
+        const std::string& detail,
+        double start_time,
+        double duration
+    ) {
+        const double safe_duration = std::max(0.0, duration);
+        timeline_.push_back(BackendTimelineEvent{start_time, safe_duration, op, detail});
+        last_event_start_time_ = start_time;
+    }
+
+    double gate_duration_ns(const std::string& gate, int arity) const {
+        const auto key = std::make_pair(gate, arity);
+        auto it = gate_durations_.find(key);
+        if (it != gate_durations_.end() && it->second > 0.0) {
+            return it->second;
+        }
+        return arity == 1 ? kDefaultSingleQubitDurationNs : kDefaultTwoQubitDurationNs;
+    }
+
+    double earliest_start_for_targets(const std::vector<int>& targets) const {
+        double start = logical_time_;
+        for (int target : targets) {
+            if (target < 0 || target >= allocated_qubits_) {
+                continue;
+            }
+            const std::size_t idx = static_cast<std::size_t>(target);
+            if (idx < qubit_ready_time_.size()) {
+                start = std::max(start, qubit_ready_time_[idx]);
+            }
+            if (idx < last_measure_time_.size()) {
+                start = std::max(start, last_measure_time_[idx] + measurement_cooldown_ns_);
+            }
+        }
+        // Ensure we don't go backwards relative to the last emitted event.
+        start = std::max(start, last_event_start_time_);
+        return start;
+    }
+
+    void emit_single_qubit_gate(
+        const std::string& gate,
+        int target
+    ) {
+        std::vector<uint32_t> targets{static_cast<uint32_t>(target)};
+        circuit_.safe_append_u(gate, targets);
+        const double duration = gate_duration_ns(gate, 1);
+        std::vector<int> logical_targets{target};
+        const double start_time = earliest_start_for_targets(logical_targets);
+        record_timeline_event(
+            gate,
+            "targets=" + format_targets(targets),
+            start_time,
+            duration);
+        const double end_time = start_time + duration;
+        if (static_cast<std::size_t>(target) < qubit_ready_time_.size()) {
+            qubit_ready_time_[static_cast<std::size_t>(target)] = end_time;
+        }
+        logical_time_ = std::max(logical_time_, start_time);
+    }
+
+    void emit_two_qubit_gate(
+        const std::string& gate,
+        int q0,
+        int q1
+    ) {
         std::vector<uint32_t> targets{
             static_cast<uint32_t>(q0),
             static_cast<uint32_t>(q1)
         };
         circuit_.safe_append_u(gate, targets);
+        const double duration = gate_duration_ns(gate, 2);
+        std::vector<int> logical_targets{q0, q1};
+        const double start_time = earliest_start_for_targets(logical_targets);
+        record_timeline_event(
+            gate,
+            "targets=" + format_targets(targets),
+            start_time,
+            duration);
+        const double end_time = start_time + duration;
+        if (static_cast<std::size_t>(q0) < qubit_ready_time_.size()) {
+            qubit_ready_time_[static_cast<std::size_t>(q0)] = end_time;
+        }
+        if (static_cast<std::size_t>(q1) < qubit_ready_time_.size()) {
+            qubit_ready_time_[static_cast<std::size_t>(q1)] = end_time;
+        }
+        logical_time_ = std::max(logical_time_, start_time);
     }
 
     void append_single_qubit_noise(int target) {
@@ -206,6 +317,15 @@ class StimCircuitBuilder {
         std::vector<uint32_t> targets{static_cast<uint32_t>(target)};
         std::vector<double> args{cfg.px, cfg.py, cfg.pz};
         circuit_.safe_append_u("PAULI_CHANNEL_1", targets, args);
+        const double start_time = earliest_start_for_targets(std::vector<int>{target});
+        record_timeline_event(
+            "PAULI_CHANNEL_1",
+            "targets=" + format_targets(targets) +
+                " px=" + std::to_string(cfg.px) +
+                " py=" + std::to_string(cfg.py) +
+                " pz=" + std::to_string(cfg.pz),
+            start_time,
+            0.0);
     }
 
     void append_two_qubit_noise(int control, int target) {
@@ -217,16 +337,34 @@ class StimCircuitBuilder {
             std::vector<uint32_t> targets{static_cast<uint32_t>(control)};
             std::vector<double> args{ctrl_cfg.px, ctrl_cfg.py, ctrl_cfg.pz};
             circuit_.safe_append_u("PAULI_CHANNEL_1", targets, args);
+            record_timeline_event(
+                "PAULI_CHANNEL_1",
+                "targets=" + format_targets(targets) +
+                    " px=" + std::to_string(ctrl_cfg.px) +
+                    " py=" + std::to_string(ctrl_cfg.py) +
+                    " pz=" + std::to_string(ctrl_cfg.pz),
+                earliest_start_for_targets(std::vector<int>{control}),
+                0.0);
         }
         const auto& tgt_cfg = noise_->gate.two_qubit_target;
         if (has_single_qubit_noise(tgt_cfg)) {
             std::vector<uint32_t> targets{static_cast<uint32_t>(target)};
             std::vector<double> args{tgt_cfg.px, tgt_cfg.py, tgt_cfg.pz};
             circuit_.safe_append_u("PAULI_CHANNEL_1", targets, args);
+            record_timeline_event(
+                "PAULI_CHANNEL_1",
+                "targets=" + format_targets(targets) +
+                    " px=" + std::to_string(tgt_cfg.px) +
+                    " py=" + std::to_string(tgt_cfg.py) +
+                    " pz=" + std::to_string(tgt_cfg.pz),
+                earliest_start_for_targets(std::vector<int>{target}),
+                0.0);
         }
     }
 
-    void append_measure(const std::vector<int>& targets) {
+    void append_measure(
+        const std::vector<int>& targets
+    ) {
         if (targets.empty()) {
             return;
         }
@@ -242,10 +380,51 @@ class StimCircuitBuilder {
             ++measurement_cursor_;
         }
         measurement_groups_.push_back(std::move(group));
+        std::vector<int> logical_targets = targets;
+        const double start_time = earliest_start_for_targets(logical_targets);
+        record_timeline_event(
+            "M",
+            "targets=" + format_targets(std::vector<uint32_t>(targets.begin(), targets.end())),
+            start_time,
+            measurement_duration_ns_);
+        const double end_time = start_time + measurement_duration_ns_;
+        for (int target : targets) {
+            if (target < 0 || target >= allocated_qubits_) {
+                continue;
+            }
+            const std::size_t idx = static_cast<std::size_t>(target);
+            if (idx < last_measure_time_.size()) {
+                last_measure_time_[idx] = end_time;
+            }
+            if (idx < qubit_ready_time_.size()) {
+                qubit_ready_time_[idx] = end_time;
+            }
+        }
+        logical_time_ = std::max(logical_time_, start_time);
     }
 
-    void append_wait() {
+    void append_wait(
+        double duration
+    ) {
         circuit_.safe_append_u("TICK", std::vector<uint32_t>{});
+        const double safe_duration = std::max(0.0, duration);
+        const double start_time = logical_time_;
+        record_timeline_event(
+            "TICK",
+            "duration_ns=" + std::to_string(duration),
+            start_time,
+            safe_duration);
+        const double end_time = start_time + safe_duration;
+        logical_time_ = end_time;
+        for (double& ready : qubit_ready_time_) {
+            ready = std::max(ready, end_time);
+        }
+    }
+
+    void initialize_gate_durations(const std::vector<NativeGate>& gates) {
+        for (const auto& gate : gates) {
+            gate_durations_[std::make_pair(to_upper(gate.name), gate.arity)] = gate.duration_ns;
+        }
     }
 
     stim::Circuit circuit_;
@@ -255,6 +434,14 @@ class StimCircuitBuilder {
     std::vector<StimMeasurementGroup> measurement_groups_;
     std::size_t measurement_cursor_ = 0;
     bool has_allocation_ = false;
+    std::vector<BackendTimelineEvent> timeline_;
+    double logical_time_ = 0.0;
+    std::vector<double> qubit_ready_time_;
+    std::vector<double> last_measure_time_;
+    double last_event_start_time_ = 0.0;
+    std::map<std::pair<std::string, int>, double> gate_durations_;
+    double measurement_duration_ns_ = kDefaultMeasurementDurationNs;
+    double measurement_cooldown_ns_ = kDefaultMeasurementDurationNs;
 };
 
 void push_noise_log(
@@ -405,6 +592,7 @@ HardwareVM::RunResult HardwareVM::run_stabilizer(
         }
     }
 
+    result.backend_timeline = builder.timeline();
     return result;
 }
 

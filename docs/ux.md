@@ -47,7 +47,7 @@ Flow:
    result = job.result()
    print(result.measurements)
    ```
-   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we expose device aliases such as `local-cpu` (CPU statevector), `local-arc` (GPU/oneAPI), and, when Stim support is built in, `stabilizer`, which routes the same presets through the Stim-backed stabilizer engine. Choosing `connect_device("stabilizer", profile="ideal_small_array")` (or `quera-vm run --device stabilizer ...`) automatically sanitizes the preset’s noise down to the Pauli/readout/loss terms Stim understands while keeping geometry/timing identical to the CPU persona.
+   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we expose device aliases such as `local-cpu` (CPU statevector), `local-arc` (GPU/oneAPI), and, when Stim support is built in, `stabilizer`, which routes the same presets through the Stim-backed stabilizer engine. Choosing `connect_device("stabilizer", profile="ideal_small_array")` (or `quera-vm run --device stabilizer ...`) automatically sanitizes the preset’s noise down to the Pauli/readout/loss terms Stim understands while keeping geometry/timing identical to the CPU persona. Kernels that call documented squin Pauli-channel helpers run only on the stabilizer backend: the Python SDK detects those helpers, builds the Stim circuit via `bloqade.stim.passes.SquinToStimPass`, and attaches the resulting stimulus to the job so Stim executes the program at the locations you specified. The same kernels raise a clear error if submitted to `local-cpu`, `local-arc`, or future hardware devices, preventing accidental submission of simulation-only noise annotations.
 5. Under the hood: the Python SDK builds a `JobRequest`, attaches hardware/noise profiles, and submits to `JobRunner`, which picks the appropriate backend (ideal, noisy Pauli, etc.) and returns `JobResult`.
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.
@@ -171,6 +171,8 @@ The `local-arc` device ID mirrors `local-cpu`’s profiles but selects the Intel
 
 When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. Similarly, builds that include Stim (`-DNA_VM_WITH_STIM=ON`, enabled by default) can target `--device stabilizer` / `connect_device("stabilizer", ...)` to run Clifford/Pauli workloads on the new stabilizer backend. If a requested backend is unavailable, the CLI prints an explanatory message mentioning which `cmake` toggle to enable.
 
+Kernels that rely on explicit squin Pauli channels or loss helpers now go through the stabilizer backend only. The CLI/SDK raises a clear runtime error when such a kernel targets hardware-style devices, so program annotations remain simulation-only. If Stim support exists, the SDK attaches the prebuilt Stim circuit to the job and the backend runs the annotated `PAULI_CHANNEL_*`/loss operations directly, while the VM still enforces geometry and timing before dispatch.
+
 To keep the Arc run fast, the oneAPI backend now keeps the statevector resident on the SYCL device and only copies it back to the host when a measurement, noise hook, or SDK inspection needs the amplitudes. This avoids the old per-gate copy/wait handshake that made `local-arc` slower than `local-cpu` for gate-heavy workloads.
 
 Measurements now accumulate outcome probabilities and collapse the state directly on the GPU, so only the small probability vector and the sampled bits are copied off-device. Gate/idle noise hooks still execute on the CPU, so they are skipped when you choose `local-arc`; if you need noise modelling, keep running on `local-cpu`.
@@ -189,6 +191,10 @@ If you need a bespoke combination (e.g., larger footprint with custom noise),
 start from a JSON template returned by `available_presets()` and tweak it, then
 pass it to the CLI's `--profile-config` or to
 `neutral_atom_vm.build_device_from_config` in Python.
+
+For loss-aware diagnostics, the SDK’s histogram helper now renders `-1` bits with an `L` prefix (e.g. `L01`),
+so erasure-heavy outcomes from runtime loss or Stim-era events appear clearly in the widget counts and CLI summaries
+without custom parsing.
 
 ### Notebook profile configurator
 

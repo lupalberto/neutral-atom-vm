@@ -114,6 +114,13 @@ const nav = [
         <a href="/noise">Noise &amp; QEC</a> page.
       </li>
     </ul>
+    <p>
+      For Clifford + Pauli workloads, <code>connect_device("stabilizer", ...)</code> now detects kernels that call
+      <code>squin.single_qubit_pauli_channel</code>/<code>squin.two_qubit_pauli_channel</code> and attaches the Stim
+      circuit synthesized by <code>bloqade.stim</code>. The VM still validates geometry/timing, but Stim executes the
+      prebuilt circuit instead of reconstructing noise via <code>SimpleNoiseConfig</code>, so users can author noise
+      at the Squin level without extra wiring.
+    </p>
   </section>
 
   <section>

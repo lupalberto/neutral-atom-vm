@@ -42,8 +42,10 @@ struct JobResult {
     std::vector<MeasurementRecord> measurements;
     std::vector<ExecutionLog> logs;
     std::vector<TimelineEntry> timeline;
+    std::vector<TimelineEntry> scheduler_timeline;
     std::string log_time_units = "ns";
     std::string timeline_units = "ns";
+    std::string scheduler_timeline_units = "ns";
     double elapsed_time = 0.0;
     std::string message;
 };

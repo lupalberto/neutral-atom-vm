@@ -209,6 +209,67 @@ TEST(ServiceApiTests, BenchmarkChainEnforcesMeasurementCooldown) {
     EXPECT_TRUE(saw_timeline_log);
 }
 
+#ifdef NA_VM_WITH_STIM
+TEST(ServiceApiTests, StimBackendTimelineIsChronological) {
+    service::JobRequest job;
+    job.job_id = "stim-timeline-order";
+    job.device_id = "stabilizer";
+    job.profile = "ideal_square_grid";
+    job.hardware.positions = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
+    job.hardware.blockade_radius = 2.0;
+    job.shots = 1;
+
+    NativeGate x_gate;
+    x_gate.name = "X";
+    x_gate.arity = 1;
+    x_gate.duration_ns = 500.0;
+    NativeGate h_gate;
+    h_gate.name = "H";
+    h_gate.arity = 1;
+    h_gate.duration_ns = 500.0;
+    NativeGate z_gate;
+    z_gate.name = "Z";
+    z_gate.arity = 1;
+    z_gate.duration_ns = 500.0;
+    NativeGate cx_gate;
+    cx_gate.name = "CX";
+    cx_gate.arity = 2;
+    cx_gate.duration_ns = 1000.0;
+    job.hardware.native_gates = {x_gate, h_gate, z_gate, cx_gate};
+    job.hardware.timing_limits.measurement_duration_ns = 50000.0;
+    job.hardware.timing_limits.measurement_cooldown_ns = 50000.0;
+
+    job.program.push_back(Instruction{Op::AllocArray, 6});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {2}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"X", {3}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {0, 1}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {2, 3}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {1}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {0, 4}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {1, 4}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {1}, 0.0}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{4}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {1, 5}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {2, 5}, 0.0}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{5}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{0, 1, 2, 3}});
+
+    service::JobRunner runner;
+    const auto result = runner.run(job);
+
+    ASSERT_EQ(result.status, service::JobStatus::Completed);
+    ASSERT_FALSE(result.timeline.empty());
+    double last_start = -1.0;
+    for (const auto& entry : result.timeline) {
+        EXPECT_GE(entry.start_time, last_start);
+        last_start = entry.start_time;
+    }
+}
+#endif  // NA_VM_WITH_STIM
+
 TEST(ServiceApiTests, NoisySquareArrayEnforcesGridConnectivity) {
     service::JobRequest job;
     job.job_id = "job-noisy-square-grid";
@@ -290,5 +351,103 @@ TEST(ServiceApiTests, JobRunnerLogsMeasurementNoiseEvents) {
         GTEST_SKIP() << "Noise logs not observed for this configuration";
     }
 }
+
+TEST(ServiceApiTests, TimelineLogsMatchEntries) {
+    service::JobRequest job;
+    job.job_id = "job-log-timeline-sync";
+    job.hardware.positions = {0.0, 1.0};
+    job.hardware.blockade_radius = 1.0;
+    job.program.push_back(Instruction{Op::AllocArray, 2});
+    job.program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"H", {0}, 0.0},
+    });
+    job.program.push_back(Instruction{
+        Op::ApplyGate,
+        Gate{"CX", {0, 1}, 0.0},
+    });
+    job.program.push_back(Instruction{
+        Op::Measure,
+        std::vector<int>{0},
+    });
+
+    service::JobRunner runner;
+    const auto result = runner.run(job);
+
+    ASSERT_EQ(result.status, service::JobStatus::Completed);
+    ASSERT_FALSE(result.timeline.empty());
+    ASSERT_FALSE(result.logs.empty());
+
+    std::size_t measure_idx = result.timeline.size();
+    for (std::size_t idx = 0; idx < result.timeline.size(); ++idx) {
+        if (result.timeline[idx].op == "Measure") {
+            measure_idx = idx;
+            break;
+        }
+    }
+    ASSERT_LT(measure_idx, result.timeline.size());
+
+    const auto& entry = result.timeline[measure_idx];
+    const auto& log_entry = result.logs[measure_idx];
+    EXPECT_NEAR(entry.start_time, log_entry.logical_time, 1e-6);
+}
+
+#ifdef NA_VM_WITH_STIM
+TEST(ServiceApiTests, StimBackendExposesPlanAndExecutionTimelines) {
+    service::JobRequest job;
+    job.job_id = "stim-plan-vs-exec";
+    job.device_id = "stabilizer";
+    job.profile = "ideal_square_grid";
+    job.hardware.positions = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
+    job.hardware.blockade_radius = 2.0;
+    job.shots = 1;
+
+    NativeGate x_gate;
+    x_gate.name = "X";
+    x_gate.arity = 1;
+    x_gate.duration_ns = 500.0;
+    NativeGate h_gate;
+    h_gate.name = "H";
+    h_gate.arity = 1;
+    h_gate.duration_ns = 500.0;
+    NativeGate z_gate;
+    z_gate.name = "Z";
+    z_gate.arity = 1;
+    z_gate.duration_ns = 500.0;
+    NativeGate cx_gate;
+    cx_gate.name = "CX";
+    cx_gate.arity = 2;
+    cx_gate.duration_ns = 1000.0;
+    job.hardware.native_gates = {x_gate, h_gate, z_gate, cx_gate};
+    job.hardware.timing_limits.measurement_duration_ns = 50000.0;
+    job.hardware.timing_limits.measurement_cooldown_ns = 50000.0;
+
+    job.program.push_back(Instruction{Op::AllocArray, 6});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {2}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"X", {3}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {0, 1}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {2, 3}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {1}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {0, 4}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {1, 4}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {0}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"H", {1}, 0.0}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{4}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {1, 5}, 0.0}});
+    job.program.push_back(Instruction{Op::ApplyGate, Gate{"CX", {2, 5}, 0.0}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{5}});
+    job.program.push_back(Instruction{Op::Measure, std::vector<int>{0, 1, 2, 3}});
+
+    service::JobRunner runner;
+    const auto result = runner.run(job);
+
+    ASSERT_EQ(result.status, service::JobStatus::Completed);
+    ASSERT_FALSE(result.timeline.empty());
+    ASSERT_FALSE(result.scheduler_timeline.empty());
+    EXPECT_NE(result.timeline, result.scheduler_timeline);
+}
+#endif  // NA_VM_WITH_STIM
 
 }  // namespace

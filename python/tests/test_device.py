@@ -25,6 +25,8 @@ def test_device_submit_program_runtime():
     assert result.get("log_time_units") == "us"
     assert result.get("timeline_units") == "us"
     assert result.get("timeline")
+    assert result.get("scheduler_timeline_units") == "steps"
+    assert result.get("scheduler_timeline")
 
 
 def test_device_submit_kernel():

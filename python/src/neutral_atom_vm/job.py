@@ -509,6 +509,8 @@ class JobResult(dict):
         self.coordinates = coordinates
         self.timeline = list(payload.get("timeline", []))
         self.timeline_units = payload.get("timeline_units", "ns")
+        self.scheduler_timeline = list(payload.get("scheduler_timeline", []))
+        self.scheduler_timeline_units = payload.get("scheduler_timeline_units", "ns")
         self.log_time_units = payload.get("log_time_units", payload.get("time_units", "ns"))
 
     def _repr_html_(self) -> str:  # pragma: no cover - exercised in notebooks

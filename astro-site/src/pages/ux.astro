@@ -162,10 +162,17 @@ def reuse_measured_qubit():
     <p>
       When built with oneAPI support (<code>-DNA_VM_WITH_ONEAPI=ON</code>), <code>--device local-arc</code> routes the
       same profile to GPU hardware. When Stim support is enabled (<code>-DNA_VM_WITH_STIM=ON</code>, now the default) you
-      can also pass <code>--device stabilizer</code> (or <code>connect_device("stabilizer", ...)</code>) to run the same
-      presets on the Stim-backed stabilizer engine for Clifford/Pauli workloads. CLI logs include categories like
-      <code>Noise</code> and <code>TimingConstraint</code>, so timing violations and noise events are visible without
-      digging into backends.
+      can also pass <code>--device stabilizer</code> (or <code>connect_device("stabilizer", ...)</code>) to run Clifford/Pauli workloads on the Stim-backed engine.
+      The SDK detects kernels that call documented helpers such as <code>squin.single_qubit_pauli_channel</code> /
+      <code>squin.two_qubit_pauli_channel</code>, injects the resulting Stim circuit into the job, and skips rebuilding
+      those noise channels from <code>SimpleNoiseConfig</code>. CLI logs include categories like <code>Noise</code> and
+      <code>TimingConstraint</code>, so timing violations and noise events are visible without digging into backends.
+    </p>
+    <p>
+      Kernels that rely on explicit squin noise helpers are now treated as simulation-only artifacts: they run on
+      <code>--device stabilizer</code> and raise a clear error on hardware-style devices (e.g., <code>local-cpu</code>). That prevents
+      accidental submission of noise-annotated programs to real hardware while still letting you tune loss/Pauli profiles
+      for Stim-based analysis.
     </p>
     <p>
       Each job now returns a structured `timeline` array (alongside the `logs` and `measurements`) that lists the
@@ -205,6 +212,7 @@ def reuse_measured_qubit():
       <li><strong>Logs:</strong> Execution logs capture gate, measurement, noise, and timing categories per shot.</li>
       <li><strong>Diagnostics:</strong> Blockade and geometry checks happen both in the SDK and inside <code>StatevectorEngine</code>.</li>
       <li><strong>Error surfacing:</strong> Unsupported ISA versions and invalid qubit indices raise explicit errors propagated through <code>JobResult.message</code>.</li>
+      <li><strong>Histograms:</strong> The result widgets now render `-1` bits as loss with an `L` prefix (e.g., `L01`), highlighting erasure-heavy outcomes from both VM and stabilizer runs.</li>
       <li><strong>End-to-end demo:</strong> the workflow script in <code>python/README.md</code> gives a CLI-free local tour of the full path from kernel to measurements.</li>
     </ul>
   </section>

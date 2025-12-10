@@ -48,6 +48,7 @@ HardwareVM::RunResult HardwareVM::run(
     const std::vector<Instruction>& program,
     int shots,
     const std::vector<std::uint64_t>& shot_seeds,
+    const std::vector<neutral_atom_vm::InstructionTiming>* instruction_timings,
     std::size_t max_threads
 ) {
     if (!is_supported_isa_version(profile_.isa_version)) {
@@ -83,6 +84,7 @@ HardwareVM::RunResult HardwareVM::run(
 #endif
     }
 
+    (void)instruction_timings;
     if (profile_.backend == BackendKind::kOneApi) {
 #ifdef NA_VM_WITH_ONEAPI
         return run_oneapi_batched(program, num_shots, seeds);

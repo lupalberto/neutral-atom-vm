@@ -96,6 +96,26 @@ const nav = [
       Engines can either combine them with device configs or switch to a program-aware strategy. Detection happens during
       lowering so we do not double-count noise or violate the effective IR.
     </p>
+    <p>
+      When targeting the Stim-backed <code>stabilizer</code> device, the Python SDK now recognizes kernels that call the
+      documented Pauli helpers and routes them straight to Stim. The lowering pipeline runs <code>bloqade.stim.passes.SquinToStimPass</code>, emits the prebuilt
+      circuit, and attaches it to the job. Stim therefore receives the exact <code>PAULI_CHANNEL*</code> calls at the program locations you authored, while the VM
+      continues to enforce geometry, timing, and blockade via the usual ISA validation.
+    </p>
+    <pre><code class="language-python">from bloqade import squin
+
+@squin.kernel
+def noisy_bell():
+    q = squin.qalloc(2)
+    squin.h(q[0])
+    squin.cx(q[0], q[1])
+    squin.single_qubit_pauli_channel(0.02, 0.0, 0.0, q[1])
+    squin.measure(q)
+</code></pre>
+    <p>
+      When you submit this kernel via <code>connect_device("stabilizer", profile="ideal_small_array")</code>, the job payload includes a Stim circuit whose execution honors the annoted Pauli channel.
+      Sending the same kernel to hardware-style devices (e.g., <code>local-cpu</code>) now raises a clear error so programmatic noise stays simulation-only.
+    </p>
   </section>
 
   <section>
