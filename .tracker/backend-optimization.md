@@ -1,11 +1,10 @@
 # Ticket: Backend Optimization
 
 - **Priority:** Low
-- **Status:** Backlog
+- **Status:** Superseded
 
 ## Summary
-Swap the naive CPU statevector loops for pluggable backends (GPU, tensor networks, fast Clifford simulators) so large-scale experiments and QEC workloads can run efficiently.
+Refocused into the broader “advanced backends / multi-backend” work (see `.tracker/advanced-backends.md` and the roadmap Phase 5 bullet on multi-backend support), so this ticket is now superseded.
 
 ## Notes
-- Keep the current reference backend for clarity/tests.
-- Explore pybind11 or C API so the VM can load backend plugins at runtime.
+- The original goal—adding pluggable high-performance engines (GPU/statevector, tensor network, fast Clifford)—is still captured by the `advanced-backends`/Phase 5 items, so no separate effort is necessary here anymore.

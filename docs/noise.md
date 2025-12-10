@@ -183,7 +183,8 @@ The Neutral Atom VM does not attempt to simulate every microscopic process direc
    - A pluggable `NoiseEngine` interface is responsible for turning device-level effective parameters into stochastic operations applied during runtime. The VM owns **when** noise is applied (around gates, during waits, at measurement), while the engine owns **how** to sample and apply it.
    - Internally, the engine realizes noise as Pauli and loss channels acting on the simulated state and on measurement records.
 
-In this design the user program does **not** schedule noise explicitly. Instead, the device configuration and `NoiseEngine` determine how noisy the evolution is, and the VM injects noise automatically at the appropriate points in the instruction stream.
+In this design the user program at the VM ISA level does **not** schedule noise explicitly. Instead, the device configuration and `NoiseEngine` determine how noisy the evolution is, and the VM injects noise automatically at the appropriate points in the instruction stream.
+Higher-level dialects (such as squin + Bloqade's noise dialect) may introduce *program-level* Pauli/loss channels for simulation workflows, but those are interpreted by simulator backends (statevector+noise, Stim) rather than as new ISA instructions.
 
 ---
 

@@ -61,6 +61,8 @@ In the current repository:
     - Hardware configuration (`HardwareConfig`).
     - Logical time, pulse log, measurement records.
 
+Notably, the ISA is **noise-free**: it models idealized hardware operations. Noise is introduced either via device/profile configuration and `NoiseEngine` hooks, or via higher-level simulation IR (e.g. squin + Pauli/loss noise dialect lowered to Stim). This keeps the ISA suitable for both simulators and real devices while allowing simulators to support richer fault-injection workflows above the ISA.
+
 At this stage, timing and pulse semantics are deliberately minimal: the VM uses them mostly as bookkeeping, not as full continuous‑time dynamics.
 
 In the near term we will evolve this into a **constrained ISA** in the hardware sense:

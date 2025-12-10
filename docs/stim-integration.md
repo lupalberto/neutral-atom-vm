@@ -141,6 +141,12 @@ By keeping these roles distinct, we ensure:
 - Stim remains the *Pauli/QEC branch* of the stack, optimized for error analysis.
 - The two stay aligned via a shared noise model, but neither is forced into the other's abstraction.
 
+In particular:
+
+- **Kernel-level Pauli channels live above the VM ISA.** Bloqade's squin + noise dialect (and helpers such as `single_qubit_pauli_channel` / `depolarize2`) are used to describe *where* Pauli/loss noise should appear in a circuit.
+- **`SquinNoiseToStim` is the canonical squin → Stim lowering.** When targeting Stim directly, Bloqade rewrites those noise ops into Stim's `PAULI_CHANNEL_*` / erasure primitives at precise locations in the circuit.
+- The Neutral Atom VM's ISA remains gate-only; for squin + Stim workflows we treat the resulting Stim circuit as a simulator-specific artifact, attached alongside the VM program rather than encoded as new ISA instructions.
+
 ---
 
 ## 5.5 Selecting the stabilizer backend today
