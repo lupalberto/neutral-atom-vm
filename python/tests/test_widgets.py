@@ -304,6 +304,81 @@ def test_geometry_tab_has_subtabs_and_help():
     assert help_output.layout.display != "none"
 
 
+def test_geometry_distance_summary_reports_range():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    summary = configurator.distance_html.value.lower()
+    assert "min 1.000" in summary
+    assert "max 2.000" in summary
+    assert "avg 1.333" in summary
+
+
+def test_lattice_grid_only_uses_site_buttons():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    buttons = [
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.Button)
+    ]
+    assert buttons, "expected the lattice grid to render buttons for each site"
+    html_children = [
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.HTML)
+    ]
+    assert all(not child.value.strip() for child in html_children), "distance labels should no longer be rendered"
+
+
+def test_lattice_buttons_use_site_id_labels():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    buttons = [
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.Button)
+    ]
+    assert buttons, "expected buttons to describe sites"
+    assert all(button.description.startswith("s") for button in buttons), "site buttons should label sites as sN"
+
+
+def test_geometry_plot_annotations_use_site_ids():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    if not getattr(configurator, "_plotly_available", False):
+        return
+    assert any(str(text).startswith("s") for text in configurator._last_geometry_annotations)
+
+
+def test_geometry_plot_uses_scatter3d_on_3d_layout():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    if not getattr(configurator, "_plotly_available", False):
+        return
+    configurator.device_dropdown.value = "device-gamma"
+    configurator.profile_dropdown.value = "block3d"
+    fig = configurator._last_geometry_figure
+    assert fig is not None
+    assert any(getattr(trace, "type", "").lower() == "scatter3d" for trace in fig.data)
+
+
+def test_geometry_plot_labels_render_inside_markers():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    if not getattr(configurator, "_plotly_available", False):
+        return
+    fig = configurator._last_geometry_figure
+    assert fig is not None
+    first_trace = fig.data[0]
+    assert getattr(first_trace, "textposition", None) == "middle center"
+
+
 def test_row_selector_toggle_targets_specific_row():
     from neutral_atom_vm.widgets import ProfileConfigurator
 
@@ -377,6 +452,18 @@ def test_clearing_sites_emits_empty_site_ids():
     configurator.clear_button.click()
     payload = configurator.profile_payload
     assert payload["config"]["site_ids"] == []
+
+
+def test_clear_occupancy_clears_region_sites():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    configurator.clear_button.click()
+    payload = configurator.profile_payload
+    regions = payload["config"].get("regions") or []
+    assert regions, "expected regions metadata to stay present"
+    assert all(region["site_ids"] == [] for region in regions)
 
 
 def test_assign_role_creates_custom_regions_from_selection():

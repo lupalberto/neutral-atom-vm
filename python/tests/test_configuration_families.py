@@ -32,3 +32,16 @@ def test_device_applies_active_configuration_family():
     assert active_name in device.configuration_families
     active = device.configuration_families[active_name]
     assert list(active.site_ids) == list(device.site_ids)
+
+
+def test_build_device_rejects_empty_site_ids():
+    presets = available_presets()
+    config = dict(presets["local-cpu"]["ideal_small_array"])
+    config.pop("configuration_families", None)
+    config["site_ids"] = []
+    with pytest.raises(ValueError, match="at least one occupied site"):
+        build_device_from_config(
+            "local-cpu",
+            profile="ideal_small_array",
+            config=config,
+        )

@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 from html import escape
+import math
 import re
 from collections import Counter
 from typing import Any, Callable, Dict, Iterable, Mapping, MutableMapping, Sequence
+from IPython.display import display
+from IPython.display import display
 
 from .device import available_presets
 from .display import build_result_summary_html, format_histogram
@@ -21,6 +24,11 @@ except ModuleNotFoundError as exc:  # pragma: no cover - informative error at im
     _WIDGET_IMPORT_ERROR = exc
 else:  # pragma: no cover - kept for clarity
     _WIDGET_IMPORT_ERROR = None
+
+try:
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    go = None
 
 
 @dataclass(frozen=True)
@@ -430,10 +438,29 @@ class ProfileConfigurator:
         self.zone_summary = widgets.HTML(
             layout=widgets.Layout(min_height="32px", padding="4px", border="none"),
         )
+        self.distance_html = widgets.HTML(
+            value="<em>Distance data unavailable.</em>",
+            layout=widgets.Layout(min_height="24px", padding="4px 0", border="none"),
+        )
+        self._plotly_available = go is not None
+        self.geometry_plot = widgets.Output(
+            layout=widgets.Layout(min_height="0", height="100%", padding="8px 0", width="100%", flex="1", overflow="hidden"),
+        )
+        self._last_geometry_annotations: list[str] = []
+        self._last_geometry_figure: Any | None = None
         self.warning_html = widgets.HTML(
             value="<em>No warnings.</em>",
             layout=widgets.Layout(min_height="32px", padding="4px 0", border="none"),
         )
+
+        self.geometry_preview_toggle = widgets.ToggleButton(
+            description="Show preview",
+            value=True,
+            button_style="info",
+            tooltip="Toggle the geometry preview",
+            layout=widgets.Layout(width="120px"),
+        )
+        self.geometry_preview_toggle.observe(self._on_preview_toggle, names="value")
 
         self.geometry_help_button = widgets.Button(
             description="Show geometry help",
@@ -520,7 +547,13 @@ class ProfileConfigurator:
         )
         self.select_layer_button.on_click(lambda _: self._toggle_layer_selection())
         self.lattice_grid = widgets.GridBox(
-            layout=widgets.Layout(width="100%", grid_template_columns="repeat(5, minmax(40px, 1fr))", grid_gap="4px"),
+            layout=widgets.Layout(
+                width="100%",
+                grid_template_columns="repeat(5, minmax(40px, 1fr))",
+                grid_gap="4px",
+                overflow_x="hidden",
+                overflow_y="hidden",
+            ),
         )
         self.region_palette = widgets.VBox(layout=widgets.Layout(gap="4px"))
         self._configuration_families: Dict[str, Mapping[str, Any]] = {}
@@ -594,13 +627,51 @@ class ProfileConfigurator:
             ],
             layout=widgets.Layout(margin="8px 0", gap="4px"),
         )
+        map_column = widgets.VBox(
+            [
+                selection_controls,
+                self.lattice_grid,
+            ],
+            layout=widgets.Layout(flex="2", min_width="0"),
+        )
+        self.preview_column = widgets.VBox(
+            [
+                self.geometry_plot,
+            ],
+            layout=widgets.Layout(
+                min_width="260px",
+                width="100%",
+                height="100%",
+                display="flex",
+                flex_flow="column",
+                align_items="center",
+                justify_content="center",
+                overflow="hidden",
+            ),
+        )
+        map_preview_row = widgets.Box(
+            [map_column, self.preview_column],
+            layout=widgets.Layout(
+                display="grid",
+                grid_template_columns="minmax(0, 2fr) minmax(260px, 1fr)",
+                gap="12px",
+                align_items="stretch",
+                padding="8px",
+            ),
+        )
+        preview_toggle_row = widgets.HBox(
+            [self.geometry_preview_toggle],
+            layout=widgets.Layout(justify_content="flex-end"),
+        )
+        self._apply_preview_visibility()
         geometry_map_box = widgets.VBox(
             [
                 self.geometry_summary,
                 self.zone_summary,
+                self.distance_html,
                 self.warning_html,
-                selection_controls,
-                self.lattice_grid,
+                preview_toggle_row,
+                map_preview_row,
                 widgets.HTML("<strong>Regions</strong>"),
                 self.region_palette,
             ],
@@ -673,7 +744,7 @@ class ProfileConfigurator:
                 self.metadata_html,
                 tabs,
             ],
-            layout=widgets.Layout(width="920px"),
+            layout=widgets.Layout(width="100%", min_width="0"),
         )
 
         self._update_dimension_layout()
@@ -1012,7 +1083,10 @@ class ProfileConfigurator:
         self.geometry_summary.value = self._geometry_summary_text()
         self._update_layout_selectors()
         self._update_zone_summary()
+        self._update_distance_summary()
         self._update_warnings()
+        self._update_geometry_plot()
+        self._apply_preview_visibility()
         self._render_lattice_map()
         self._render_region_palette()
 
@@ -1282,6 +1356,178 @@ class ProfileConfigurator:
             parts.append(f"zone {zone}: {occupied[zone]}/{total[zone]}")
         self.zone_summary.value = "<strong>Zones:</strong> " + ", ".join(parts)
 
+    def _grid_dimension_counts(self) -> tuple[int, int, int]:
+        info = self._site_layout_info or {}
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", len(self._preset_sites))))
+        layers = max(1, int(info.get("layers", 1)))
+        return rows, cols, layers
+
+    def _axis_range(self, values: Sequence[float], match_span: float | None = None) -> tuple[float, float]:
+        if not values:
+            return (-0.5, 0.5)
+        min_v = min(values)
+        max_v = max(values)
+        span = max_v - min_v
+        if match_span is None:
+            margin = max(span * 0.1, 0.25)
+            if span == 0:
+                margin = max(margin, 0.25)
+            return (min_v - margin, max_v + margin)
+        center = (min_v + max_v) / 2
+        half = match_span / 2
+        margin = max(match_span * 0.02, 0.05)
+        half += margin
+        return (center - half, center + half)
+
+    def _update_distance_summary(self) -> None:
+        if len(self._preset_sites) < 2:
+            self.distance_html.value = "<em>Distance data unavailable.</em>"
+            return
+
+        coords = [self._site_coordinate_triplet(idx) for idx in range(len(self._preset_sites))]
+
+        distances: list[float] = []
+        for idx in range(len(coords) - 1):
+            x0, y0, z0 = coords[idx]
+            for next_idx in range(idx + 1, len(coords)):
+                x1, y1, z1 = coords[next_idx]
+                dx = x0 - x1
+                dy = y0 - y1
+                dz = z0 - z1
+                distances.append(math.sqrt(dx * dx + dy * dy + dz * dz))
+
+        if not distances:
+            self.distance_html.value = "<em>Distance data unavailable.</em>"
+            return
+
+        min_distance = min(distances)
+        max_distance = max(distances)
+        avg_distance = sum(distances) / len(distances)
+        self.distance_html.value = (
+            f"<strong>Site separation:</strong> min {min_distance:.3f}, "
+            f"max {max_distance:.3f}, avg {avg_distance:.3f}"
+        )
+
+    def _update_geometry_plot(self) -> None:
+        self._last_geometry_annotations = []
+        with self.geometry_plot:
+            self.geometry_plot.clear_output(wait=True)
+            if not self._plotly_available:
+                display(widgets.HTML(
+                    value="<em>Install plotly to see the geometry preview.</em>"
+                ))
+                return
+            if not self._preset_sites:
+                display(widgets.HTML(
+                    value="<em>Geometry unavailable.</em>"
+                ))
+                return
+
+            xs: list[float] = []
+            ys: list[float] = []
+            annotations: list[str] = []
+            colors: list[str] = []
+            for idx in range(len(self._preset_sites)):
+                site_id = self._site_id_at_index(idx)
+                x, y, _ = self._site_coordinate_triplet(idx)
+                xs.append(x)
+                ys.append(y)
+                label = f"s{site_id}"
+                annotations.append(label)
+                role = self._site_role_for(site_id)
+                occupied = site_id in self._current_site_ids
+                colors.append(self._color_for_role(role) if occupied else "#f5f5f5")
+            self._last_geometry_annotations = annotations
+
+            info = self._site_layout_info or {}
+            dim = int(info.get("dim", 2))
+            z_values: list[float] = [self._site_coordinate_triplet(idx)[2] for idx in range(len(self._preset_sites))]
+            has_z = dim >= 3 or any(abs(z) > 1e-9 for z in z_values)
+            hover_template = (
+                "Site %{text}<br>X: %{x:.3f}<br>Y: %{y:.3f}"
+                + ("<br>Z: %{z:.3f}" if has_z else "")
+                + "<extra></extra>"
+            )
+            scatter_kwargs = dict(
+                x=xs,
+                y=ys,
+                mode="markers+text",
+                marker=dict(size=16, color=colors, line=dict(width=1, color="#222")),
+                text=annotations,
+                textposition="middle center",
+                textfont=dict(color="#ffffff"),
+                hovertemplate=hover_template,
+            )
+            if has_z:
+                scatter_kwargs["z"] = z_values
+                trace = go.Scatter3d(**scatter_kwargs)  # type: ignore[attr-defined]
+            else:
+                trace = go.Scatter(**scatter_kwargs)  # type: ignore[attr-defined]
+
+            span_x = max(xs) - min(xs) if xs else 0.0
+            span_y = max(ys) - min(ys) if ys else 0.0
+            span_z = max(z_values) - min(z_values) if z_values else 0.0
+            common_span = max(span_x, span_y, span_z, 0.1)
+            range_x = self._axis_range(xs, match_span=common_span)
+            range_y = self._axis_range(ys, match_span=common_span)
+            range_z = self._axis_range(z_values, match_span=common_span)
+            if has_z:
+                fig = go.Figure(
+                    data=[trace],
+                    layout=go.Layout(
+                        title="Lattice geometry",
+                        margin=dict(l=0, r=0, t=24, b=0),
+                        scene=dict(
+                            aspectmode="cube",
+                            xaxis=dict(title="X", zeroline=False, showline=False, range=range_x),
+                            yaxis=dict(title="Y", zeroline=False, showline=False, range=range_y),
+                            zaxis=dict(title="Z", zeroline=False, showline=False, range=range_z),
+                        ),
+                    ),
+                )
+            else:
+                fig = go.Figure(
+                    data=[trace],
+                    layout=go.Layout(
+                        title="Lattice geometry",
+                        margin=dict(l=0, r=0, t=24, b=0),
+                        xaxis=dict(
+                            title="X",
+                            zeroline=False,
+                            showline=False,
+                            mirror="ticks",
+                            range=range_x,
+                        ),
+                        yaxis=dict(
+                            title="Y",
+                            scaleanchor="x",
+                            scaleratio=1,
+                            zeroline=False,
+                            showline=False,
+                            mirror="ticks",
+                            range=range_y,
+                        ),
+                    ),
+                )
+            fig.update_layout(autosize=True)
+            self._last_geometry_figure = fig
+            display(fig)
+
+    def _on_preview_toggle(self, change: Dict[str, Any]) -> None:
+        if not change:
+            return
+        self._apply_preview_visibility()
+        if change.get("new"):
+            self._update_geometry_plot()
+
+    def _apply_preview_visibility(self) -> None:
+        if not hasattr(self, "preview_column"):
+            return
+        shown = bool(self.geometry_preview_toggle.value)
+        self.preview_column.layout.display = "" if shown else "none"
+        self.geometry_preview_toggle.description = "Hide preview" if shown else "Show preview"
+
     def _update_warnings(self) -> None:
         if not self._current_site_ids:
             self.warning_html.value = "<em>No warnings.</em>"
@@ -1309,38 +1555,97 @@ class ProfileConfigurator:
                 widgets.HTML("<em>Lattice data unavailable for this profile.</em>"),
             )
             return
-        cols = 1
-        if self._site_layout_info:
-            cols = max(1, int(self._site_layout_info.get("cols", 1)))
-        cols = min(cols or 1, max(1, len(self._preset_sites)))
-        self.lattice_grid.layout.grid_template_columns = f"repeat({cols}, minmax(40px, 1fr))"
+
+        rows, cols, layers = self._grid_dimension_counts()
+        template = f"repeat({cols}, minmax(40px, 1fr))" if cols else "minmax(40px, 1fr)"
+        self.lattice_grid.layout.grid_template_columns = template
+        self.lattice_grid.layout.grid_gap = "4px"
+        self.lattice_grid.layout.grid_auto_flow = "row"
+        self.lattice_grid.layout.width = "100%"
+        self.lattice_grid.layout.min_width = "0"
+
+        pending_color = None
+        if self._role_assignment_mode:
+            pending_role = self.region_role_dropdown.value
+            if isinstance(pending_role, str):
+                pending_color = self._color_for_role(pending_role.upper())
+
         children: list[widgets.Widget] = []
-        for idx, site in enumerate(self._preset_sites):
-            site_id = int(site.get("id", idx))
-            occupied = site_id in self._current_site_ids
-            role = self._site_role_for(site_id)
-            pending_color = None
-            if self._role_assignment_mode:
-                pending_role = self.region_role_dropdown.value
-                pending_color = self._color_for_role(pending_role.upper()) if isinstance(pending_role, str) else None
-            if self._role_assignment_mode and site_id in self._pending_role_selection and pending_color:
-                color = pending_color
-            else:
-                color = self._color_for_role(role) if occupied else "#f5f5f5"
-            tooltip_parts = [f"site {site_id}", f"zone {site.get('zone_id', 0)}"]
-            if role:
-                tooltip_parts.append(f"role {role.lower()}")
-            tooltip_parts.append("occupied" if occupied else "vacant")
-            tooltip = "; ".join(tooltip_parts)
-            button = widgets.Button(
-                description=str(site_id),
-                tooltip=tooltip,
-                layout=widgets.Layout(height="56px", min_width="48px", width="100%"),
-            )
-            button.style.button_color = color
-            button.on_click(partial(self._handle_site_click, site_id))
-            children.append(button)
+        for layer in range(layers - 1, -1, -1):
+            for row in range(rows - 1, -1, -1):
+                for col in range(cols):
+                    site_index = layer * rows * cols + row * cols + col
+                    if site_index < len(self._preset_sites):
+                        children.append(
+                            self._site_button_for_index(site_index, pending_color)
+                        )
+                    else:
+                        children.append(self._empty_grid_cell(height="56px"))
+
         self.lattice_grid.children = tuple(children)
+
+    def _site_button_for_index(
+        self, index: int, pending_color: str | None
+    ) -> widgets.Button:
+        site = self._preset_sites[index]
+        site_id = self._site_id_at_index(index)
+        occupied = site_id in self._current_site_ids
+        role = self._site_role_for(site_id)
+        if self._role_assignment_mode and site_id in self._pending_role_selection and pending_color:
+            color = pending_color
+        else:
+            color = self._color_for_role(role) if occupied else "#f5f5f5"
+        tooltip_parts = [
+            f"site {site_id}",
+            f"zone {site.get('zone_id', 0)}",
+        ]
+        if role:
+            tooltip_parts.append(f"role {role.lower()}")
+        tooltip_parts.append("occupied" if occupied else "vacant")
+        tooltip = "; ".join(tooltip_parts)
+        button = widgets.Button(
+            description=f"s{site_id}",
+            tooltip=tooltip,
+            layout=widgets.Layout(height="56px", min_width="48px", width="100%"),
+        )
+        button.style.button_color = color
+        button.on_click(partial(self._handle_site_click, site_id))
+        return button
+
+    def _empty_grid_cell(self, *, width: str = "100%", height: str = "30px") -> widgets.HTML:
+        return widgets.HTML(
+            value="",
+            layout=widgets.Layout(width=width, height=height),
+        )
+
+    def _site_id_at_index(self, index: int) -> int:
+        site = self._preset_sites[index]
+        try:
+            return int(site.get("id", index))
+        except (TypeError, ValueError):
+            return index
+
+    def _site_coordinate_triplet(self, index: int) -> tuple[float, float, float]:
+        site = self._preset_sites[index]
+        return (
+            self._safe_float(site.get("x", 0.0)),
+            self._safe_float(site.get("y", 0.0)),
+            self._safe_float(site.get("z", 0.0)),
+        )
+
+    def _safe_float(self, value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _distance_between_site_indices(self, idx_a: int, idx_b: int) -> float:
+        x0, y0, z0 = self._site_coordinate_triplet(idx_a)
+        x1, y1, z1 = self._site_coordinate_triplet(idx_b)
+        dx = x0 - x1
+        dy = y0 - y1
+        dz = z0 - z1
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
 
     def _render_region_palette(self) -> None:
         if not self._region_definitions:
@@ -1355,9 +1660,17 @@ class ProfileConfigurator:
                 name = region.get("name", "region")
                 site_ids = region.get("site_ids", [])
                 just_created = bool(region.pop("_just_created", False))
-                included = just_created or all(int(site_id) in self._current_site_ids for site_id in site_ids)
+                active_site_ids: list[int] = []
+                for entry in site_ids:
+                    try:
+                        sid = int(entry)
+                    except (TypeError, ValueError):
+                        continue
+                    if sid in self._current_site_ids:
+                        active_site_ids.append(sid)
+                included = just_created or bool(active_site_ids)
                 checkbox = widgets.Checkbox(
-                    description=f"{name} ({len(site_ids)} sites)",
+                    description=f"{name} ({len(active_site_ids)} sites)",
                     value=included,
                     indent=False,
                 )
@@ -1536,9 +1849,17 @@ class ProfileConfigurator:
         config["site_ids"] = ordered_site_ids
         regions_payload = []
         for region in self._region_definitions:
+            active_site_ids = []
+            for entry in region.get("site_ids", []):
+                try:
+                    sid = int(entry)
+                except (TypeError, ValueError):
+                    continue
+                if sid in self._current_site_ids:
+                    active_site_ids.append(sid)
             region_entry = {
                 "name": region["name"],
-                "site_ids": list(region["site_ids"]),
+                "site_ids": active_site_ids,
                 "role": region["role"],
             }
             if region.get("zone_id") is not None:

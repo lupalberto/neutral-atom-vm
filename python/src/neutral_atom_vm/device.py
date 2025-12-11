@@ -605,6 +605,7 @@ def _distance_between(
     return abs(positions[idx0] - positions[idx1])
 
 
+
 _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     (
         "local-cpu",
@@ -1017,11 +1018,16 @@ def build_device_from_config(
         else:
             active_family = next(iter(configuration_families.values()))
             default_family_name = active_family.name
-    parsed_site_ids = _parse_site_ids(resolved_config.get("site_ids"))
-    resolved_site_ids = list(active_family.site_ids) if active_family else list(parsed_site_ids or [])
+    raw_site_ids = resolved_config.get("site_ids")
+    site_ids_provided = isinstance(raw_site_ids, Sequence) and not isinstance(raw_site_ids, (str, bytes))
+    parsed_site_ids = _parse_site_ids(raw_site_ids) if site_ids_provided else None
+    parsed_site_ids_list = list(parsed_site_ids) if parsed_site_ids else []
+    resolved_site_ids = list(active_family.site_ids) if active_family else parsed_site_ids_list
     if not default_family_name and active_family:
         default_family_name = active_family.name
     site_descriptors = _parse_site_descriptors(resolved_config.get("sites"))
+    if not resolved_site_ids:
+        raise ValueError("Configuration must specify at least one occupied site.")
     region_entries = _parse_regions(resolved_config.get("regions"))
     if not region_entries and active_family:
         region_entries = list(active_family.regions)
@@ -1054,7 +1060,7 @@ def build_device_from_config(
         profile=profile,
         positions=positions,
         coordinates=coord_entries,
-        site_ids=resolved_site_ids or None,
+        site_ids=(resolved_site_ids if resolved_site_ids else ([] if site_ids_provided else None)),
         sites=site_descriptors,
         blockade_radius=blockade,
         noise=noise_cfg,
