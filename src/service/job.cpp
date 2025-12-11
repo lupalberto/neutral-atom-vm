@@ -3,6 +3,7 @@
 #include "noise/device_noise_builder.hpp"
 #include "service/scheduler.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <iomanip>
@@ -200,6 +201,54 @@ void populate_sites_from_coordinates(HardwareConfig& hw) {
     }
 }
 
+void ensure_site_ids(HardwareConfig& hw) {
+    std::size_t expected = hw.positions.size();
+    expected = std::max(expected, hw.coordinates.size());
+    expected = std::max(expected, hw.site_ids.size());
+    if (hw.site_ids.size() >= expected) {
+        return;
+    }
+    const std::size_t current = hw.site_ids.size();
+    hw.site_ids.resize(expected);
+    for (std::size_t idx = current; idx < expected; ++idx) {
+        hw.site_ids[idx] = static_cast<int>(idx);
+    }
+}
+
+void ensure_positions_from_sites(HardwareConfig& hw) {
+    if (hw.site_ids.empty()) {
+        return;
+    }
+    if (hw.positions.size() >= hw.site_ids.size()) {
+        return;
+    }
+    const auto site_index = build_site_index(hw);
+    const std::size_t current = hw.positions.size();
+    hw.positions.resize(hw.site_ids.size(), 0.0);
+    for (std::size_t slot = current; slot < hw.site_ids.size(); ++slot) {
+        const SiteDescriptor* site = site_descriptor_for_slot(hw, site_index, static_cast<int>(slot));
+        if (site) {
+            hw.positions[slot] = site->x;
+        }
+    }
+}
+
+void ensure_coordinates_from_sites(HardwareConfig& hw) {
+    if (!hw.coordinates.empty() || hw.site_ids.empty()) {
+        return;
+    }
+    const auto site_index = build_site_index(hw);
+    hw.coordinates.resize(hw.site_ids.size());
+    for (std::size_t slot = 0; slot < hw.site_ids.size(); ++slot) {
+        const SiteDescriptor* site = site_descriptor_for_slot(hw, site_index, static_cast<int>(slot));
+        if (site) {
+            hw.coordinates[slot] = {site->x, site->y};
+        } else if (slot < hw.positions.size()) {
+            hw.coordinates[slot] = {hw.positions[slot]};
+        }
+    }
+}
+
 void append_instruction_json(const Instruction& instr, std::ostringstream& out) {
     out << "{\"op\":\"";
     switch (instr.op) {
@@ -365,6 +414,10 @@ std::string to_json(const JobRequest& job) {
         out << job.hardware.positions[i];
     }
     out << ']';
+    if (!job.hardware.site_ids.empty()) {
+        out << ",\"site_ids\":";
+        append_int_array(job.hardware.site_ids, out);
+    }
     if (!job.hardware.coordinates.empty()) {
         out << ",\"coordinates\":";
         append_double_matrix(job.hardware.coordinates, out);
@@ -452,6 +505,9 @@ JobResult JobRunner::run(
         HardwareConfig hw = job.hardware;
         populate_sites_from_coordinates(hw);
         enrich_hardware_with_profile_constraints(job, hw);
+        ensure_site_ids(hw);
+        ensure_positions_from_sites(hw);
+        ensure_coordinates_from_sites(hw);
         profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {

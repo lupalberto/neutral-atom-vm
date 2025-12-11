@@ -119,3 +119,36 @@ TEST(SchedulerTests, RespectsTwoQubitParallelLimit) {
     ASSERT_EQ(starts.size(), 2u);
     EXPECT_GE(starts[1], starts[0] + 1000.0);
 }
+
+TEST(SchedulerTests, RespectsZoneLimitWithSiteIdMapping) {
+    HardwareConfig hw;
+    hw.positions = {0.0, 1.0};
+    hw.site_ids = {2, 3};
+    hw.sites = {
+        SiteDescriptor{0, 0.0, 0.0, 10},
+        SiteDescriptor{1, 1.0, 0.0, 11},
+        SiteDescriptor{2, 0.0, 0.0, 5},
+        SiteDescriptor{3, 1.0, 0.0, 5},
+    };
+    hw.timing_limits.max_parallel_per_zone = 1;
+    NativeGate x;
+    x.name = "X";
+    x.arity = 1;
+    x.duration_ns = 500.0;
+    hw.native_gates = {x};
+
+    std::vector<Instruction> program;
+    program.push_back(Instruction{Op::AllocArray, 2});
+    program.push_back(Instruction{Op::ApplyGate, Gate{"X", {0}, 0.0}});
+    program.push_back(Instruction{Op::ApplyGate, Gate{"X", {1}, 0.0}});
+
+    const service::SchedulerResult scheduled = service::schedule_program(program, hw);
+    std::vector<double> starts;
+    for (const auto& entry : scheduled.timeline) {
+        if (entry.op == "ApplyGate") {
+            starts.push_back(entry.start_time);
+        }
+    }
+    ASSERT_EQ(starts.size(), 2u);
+    EXPECT_GE(starts[1], starts[0] + 500.0);
+}

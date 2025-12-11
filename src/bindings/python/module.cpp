@@ -366,6 +366,9 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
                 job.hardware.sites.push_back(descriptor);
             }
         }
+        if (hardware.contains("site_ids")) {
+            job.hardware.site_ids = py::cast<std::vector<int>>(hardware["site_ids"]);
+        }
         if (hardware.contains("native_gates")) {
             const auto gate_list = py::cast<py::list>(hardware["native_gates"]);
             job.hardware.native_gates.clear();

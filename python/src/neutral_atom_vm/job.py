@@ -428,6 +428,7 @@ class HardwareConfig:
     positions: Sequence[float]
     blockade_radius: float = 0.0
     coordinates: Sequence[Sequence[float]] | None = None
+    site_ids: Sequence[int] | None = None
     sites: Sequence[SiteDescriptor] | None = None
     native_gates: Sequence[NativeGate] | None = None
     timing_limits: TimingLimits = field(default_factory=TimingLimits)
@@ -440,6 +441,8 @@ class HardwareConfig:
         }
         if self.coordinates is not None:
             payload["coordinates"] = [list(coord) for coord in self.coordinates]
+        if self.site_ids is not None:
+            payload["site_ids"] = [int(site_id) for site_id in self.site_ids]
         if self.sites:
             payload["sites"] = [site.to_dict() for site in self.sites]
         if self.native_gates:

@@ -209,6 +209,9 @@ The prototype ISA is captured in `src/vm/isa.hpp`, which must remain the definit
 - **Hardware configuration:**
   - `HardwareConfig` exposes the atom `positions` (1D array for this version) and a `blockade_radius`.
   - Engines use the hardware configuration to enforce constraints before applying two-qubit operations.
+  - (New) `site_ids` map each logical slot to a `SiteDescriptor` ID, and `sites` list the full lattice with per-site coordinates and zone metadata, so clients can distinguish an addressable lattice from a chosen occupied configuration.
+
+When the richer fields are populated, `positions`/`coordinates` become derived, backwards-compatible per-slot geometry, while `site_ids`/`sites` describe the actual layout and allow schedulers/compilers to reason about legal subsets, zone limits, and adjacency in terms of lattice identities.
 
 Keeping this section synchronized with `src/vm/isa.hpp` ensures ISA v1 remains a clean, engine-agnostic contract—the exact behavior the new hardware ISA ticket requires.
 

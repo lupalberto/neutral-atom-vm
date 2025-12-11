@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -149,6 +151,7 @@ struct HardwareConfig {
     // Legacy v1.0 fields.
     std::vector<double> positions;  // 1D positions for atoms
     std::vector<std::vector<double>> coordinates;  // Optional multidimensional coordinates.
+    std::vector<int> site_ids;  // Mapping from logical slots into the lattice described by `sites`.
     double blockade_radius = 0.0;
 
     // v1.1 extensions.
@@ -157,3 +160,49 @@ struct HardwareConfig {
     TimingLimits timing_limits;
     PulseLimits pulse_limits;
 };
+
+using SiteIndexMap = std::unordered_map<int, std::size_t>;
+
+inline SiteIndexMap build_site_index(const HardwareConfig& hw) {
+    SiteIndexMap index;
+    index.reserve(hw.sites.size());
+    for (std::size_t idx = 0; idx < hw.sites.size(); ++idx) {
+        index[hw.sites[idx].id] = idx;
+    }
+    return index;
+}
+
+inline const SiteDescriptor* site_descriptor_for_slot(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int slot
+) {
+    if (slot < 0) {
+        return nullptr;
+    }
+    const std::size_t slot_index = static_cast<std::size_t>(slot);
+    if (slot_index >= hw.site_ids.size()) {
+        return nullptr;
+    }
+    const int site_id = hw.site_ids[slot_index];
+    auto it = index.find(site_id);
+    if (it == index.end()) {
+        return nullptr;
+    }
+    const std::size_t site_index = it->second;
+    if (site_index >= hw.sites.size()) {
+        return nullptr;
+    }
+    return &hw.sites[site_index];
+}
+
+inline int zone_for_slot(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int slot
+) {
+    if (const SiteDescriptor* site = site_descriptor_for_slot(hw, index, slot)) {
+        return site->zone_id;
+    }
+    return 0;
+}

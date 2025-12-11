@@ -17,6 +17,7 @@ from .job import (
     HardwareConfig,
     JobRequest,
     NativeGate,
+    SiteDescriptor,
     SimpleNoiseConfig,
     TimingLimits,
     has_oneapi_backend,
@@ -264,6 +265,35 @@ def _parse_native_gates(payload: Sequence[Mapping[str, Any]]) -> list[NativeGate
         gates.append(gate)
     return gates
 
+
+def _parse_site_descriptors(entries: Sequence[Any] | None) -> Sequence[SiteDescriptor] | None:
+    if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+        return None
+    descriptors: list[SiteDescriptor] = []
+    for item in entries:
+        if not isinstance(item, Mapping):
+            continue
+        descriptor = SiteDescriptor(
+            id=int(item.get("id", len(descriptors))),
+            x=float(item.get("x", 0.0) or 0.0),
+            y=float(item.get("y", 0.0) or 0.0),
+            zone_id=int(item.get("zone_id", 0) or 0),
+        )
+        descriptors.append(descriptor)
+    return descriptors or None
+
+
+def _parse_site_ids(entries: Sequence[Any] | None) -> Sequence[int] | None:
+    if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+        return None
+    site_ids: list[int] = []
+    for entry in entries:
+        try:
+            site_ids.append(int(entry))
+        except (TypeError, ValueError):
+            continue
+    return site_ids or None
+
 ProgramType = Sequence[Dict[str, Any]]
 KernelType = Callable[..., Any]
 SubmitJobFn = Callable[[JobRequest], Mapping[str, Any]]
@@ -313,6 +343,8 @@ class Device:
     profile: Optional[str]
     positions: Sequence[float]
     coordinates: Sequence[Sequence[float]] | None = None
+    site_ids: Sequence[int] | None = None
+    sites: Sequence[SiteDescriptor] | None = None
     blockade_radius: float = 0.0
     noise: SimpleNoiseConfig | None = None
     grid_layout: GridLayout | None = None
@@ -364,6 +396,8 @@ class Device:
                 positions=list(self.positions),
                 coordinates=self.coordinates,
                 blockade_radius=self.blockade_radius,
+                site_ids=list(self.site_ids) if self.site_ids else None,
+                sites=list(self.sites) if self.sites else None,
                 native_gates=self.native_gates,
                 timing_limits=self.timing_limits or TimingLimits(),
             ),
@@ -774,6 +808,10 @@ def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
             entry["grid_layout"] = deepcopy(config["grid_layout"])
         if "coordinates" in config:
             entry["coordinates"] = deepcopy(config["coordinates"])
+        if "site_ids" in config:
+            entry["site_ids"] = list(config["site_ids"])
+        if "sites" in config:
+            entry["sites"] = deepcopy(config["sites"])
         if "timing_limits" in config:
             entry["timing_limits"] = deepcopy(config["timing_limits"])
         if "native_gates" in config:
@@ -832,6 +870,8 @@ def build_device_from_config(
     if coord_entries and len(positions) != len(coord_entries):
         positions = list(range(len(coord_entries)))
     blockade = float(resolved_config.get("blockade_radius", 0.0))
+    site_ids = _parse_site_ids(resolved_config.get("site_ids"))
+    site_descriptors = _parse_site_descriptors(resolved_config.get("sites"))
     noise_cfg = None
     noise_payload = resolved_config.get("noise")
     if isinstance(noise_payload, Mapping):
@@ -845,9 +885,9 @@ def build_device_from_config(
     if isinstance(gates_payload, Sequence) and not isinstance(gates_payload, (str, bytes)):
         mapping_entries = [entry for entry in gates_payload if isinstance(entry, Mapping)]
         if mapping_entries:
-            parsed = _parse_native_gates(mapping_entries)
-            if parsed:
-                native_gates = parsed
+                    parsed = _parse_native_gates(mapping_entries)
+                    if parsed:
+                        native_gates = parsed
     layout_payload = resolved_config.get("grid_layout")
     layout = (
         GridLayout.from_info(layout_payload)
@@ -861,6 +901,8 @@ def build_device_from_config(
         profile=profile,
         positions=positions,
         coordinates=coord_entries,
+        site_ids=site_ids,
+        sites=site_descriptors,
         blockade_radius=blockade,
         noise=noise_cfg,
         grid_layout=layout,

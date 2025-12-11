@@ -326,6 +326,7 @@ SchedulerResult schedule_program(
 
     SchedulingState state;
     state.timeline = &result.timeline;
+    const SiteIndexMap site_lookup = build_site_index(hardware_config);
 
     for (const auto& instr : program) {
         switch (instr.op) {
@@ -342,11 +343,10 @@ SchedulerResult schedule_program(
                     0.0
                 );
                 state.qubit_zones.assign(static_cast<std::size_t>(std::max(0, n)), 0);
-                if (!hardware_config.sites.empty()) {
-                    const auto max_sites = std::min<std::size_t>(hardware_config.sites.size(), state.qubit_zones.size());
-                    for (std::size_t idx = 0; idx < max_sites; ++idx) {
-                        state.qubit_zones[idx] = hardware_config.sites[idx].zone_id;
-                    }
+                for (std::size_t idx = 0; idx < state.qubit_zones.size(); ++idx) {
+                    state.qubit_zones[idx] = zone_for_slot(
+                        hardware_config, site_lookup, static_cast<int>(idx)
+                    );
                 }
                 state.active_ops.clear();
                 state.active_single_qubit = 0;

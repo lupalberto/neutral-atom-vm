@@ -74,6 +74,7 @@ StatevectorEngine::StatevectorEngine(
 )
     : backend_(backend ? std::move(backend) : std::make_unique<CpuStateBackend>()) {
     state_.hw = std::move(cfg);
+    refresh_site_mapping();
     if (seed != std::numeric_limits<std::uint64_t>::max()) {
         rng_.seed(seed);
     } else {
@@ -337,20 +338,17 @@ void StatevectorEngine::apply_gate(const Gate& g) {
                     throw std::runtime_error(
                         "Nearest-neighbor grid connectivity requires site coordinates");
                 }
-                const auto& sites = state_.hw.sites;
                 for (int i = 0; i < arity; ++i) {
                     for (int j = i + 1; j < arity; ++j) {
                         const int a = g.targets[static_cast<std::size_t>(i)];
                         const int b = g.targets[static_cast<std::size_t>(j)];
-                        if (a < 0 || b < 0 ||
-                            a >= static_cast<int>(sites.size()) ||
-                            b >= static_cast<int>(sites.size())) {
+                        const SiteDescriptor* sa = site_descriptor_for_qubit(a);
+                        const SiteDescriptor* sb = site_descriptor_for_qubit(b);
+                        if (!sa || !sb) {
                             throw std::runtime_error("Gate targets out of range for grid connectivity");
                         }
-                        const auto& sa = sites[static_cast<std::size_t>(a)];
-                        const auto& sb = sites[static_cast<std::size_t>(b)];
-                        const double dx = std::abs(sa.x - sb.x);
-                        const double dy = std::abs(sa.y - sb.y);
+                        const double dx = std::abs(sa->x - sb->x);
+                        const double dy = std::abs(sa->y - sb->y);
                         // Use Manhattan distance 1 as the definition of nearest neighbors.
                     if (std::abs(dx) + std::abs(dy) != 1.0) {
                         throw std::runtime_error("Gate violates nearest-neighbor grid connectivity");
@@ -647,8 +645,59 @@ double StatevectorEngine::distance_between_qubits(int q0, int q1) const {
             }
         }
     }
+    const SiteDescriptor* sa = site_descriptor_for_qubit(q0);
+    const SiteDescriptor* sb = site_descriptor_for_qubit(q1);
+    if (sa && sb) {
+        const double dx = sa->x - sb->x;
+        const double dy = sa->y - sb->y;
+        return std::sqrt(dx * dx + dy * dy);
+    }
     const auto& positions = state_.hw.positions;
     return std::abs(positions[static_cast<std::size_t>(q0)] - positions[static_cast<std::size_t>(q1)]);
+}
+
+void StatevectorEngine::refresh_site_mapping() {
+    state_.site_index.clear();
+    state_.site_index.reserve(state_.hw.sites.size());
+    for (std::size_t idx = 0; idx < state_.hw.sites.size(); ++idx) {
+        state_.site_index[state_.hw.sites[idx].id] = idx;
+    }
+    state_.slot_site_indices.clear();
+    if (state_.hw.site_ids.empty()) {
+        state_.slot_site_indices.resize(state_.hw.sites.size());
+        for (std::size_t idx = 0; idx < state_.hw.sites.size(); ++idx) {
+            state_.slot_site_indices[idx] = idx;
+        }
+        return;
+    }
+    state_.slot_site_indices.resize(
+        state_.hw.site_ids.size(),
+        std::numeric_limits<std::size_t>::max()
+    );
+    for (std::size_t slot = 0; slot < state_.hw.site_ids.size(); ++slot) {
+        const int site_id = state_.hw.site_ids[slot];
+        const auto it = state_.site_index.find(site_id);
+        if (it != state_.site_index.end()) {
+            state_.slot_site_indices[slot] = it->second;
+        }
+    }
+}
+
+const SiteDescriptor* StatevectorEngine::site_descriptor_for_qubit(int qubit) const {
+    if (qubit < 0) {
+        return nullptr;
+    }
+    const std::size_t slot = static_cast<std::size_t>(qubit);
+    if (slot < state_.slot_site_indices.size()) {
+        const std::size_t site_idx = state_.slot_site_indices[slot];
+        if (site_idx < state_.hw.sites.size()) {
+            return &state_.hw.sites[site_idx];
+        }
+    }
+    if (slot < state_.hw.sites.size()) {
+        return &state_.hw.sites[slot];
+    }
+    return nullptr;
 }
 
 void StatevectorEngine::measure(const std::vector<int>& targets) {
