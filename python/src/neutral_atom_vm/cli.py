@@ -404,6 +404,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     if status_line_active:
         print(file=sys.stderr)
+    status_value = result.get("status")
+    if isinstance(status_value, str) and status_value.lower() != "completed":
+        return 1
     return 0
 
 

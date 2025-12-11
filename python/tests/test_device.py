@@ -114,8 +114,10 @@ def test_build_device_from_config_with_coordinates():
         {"op": "Measure", "targets": [0, 1]},
     ]
 
-    with pytest.raises(ValueError, match="blockade radius"):
-        device.submit(program, shots=1)
+    job = device.submit(program, shots=1)
+    result = job.result()
+    assert result["status"] == "failed"
+    assert "violates blockade radius" in result["message"]
 
 
 def test_available_presets_lists_built_in_profiles():
@@ -265,8 +267,10 @@ def test_device_submit_raises_on_blockade_violation():
         {"op": "Measure", "targets": [0, 15]},
     ]
 
-    with pytest.raises(ValueError, match="blockade radius"):
-        device.submit(program, shots=1)
+    job = device.submit(program, shots=1)
+    result = job.result()
+    assert result["status"] == "failed"
+    assert "nearest-neighbor chain connectivity" in result["message"]
 
 
 def test_device_submit_forwards_thread_limit(monkeypatch):

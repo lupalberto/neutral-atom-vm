@@ -190,7 +190,7 @@ def test_quera_vm_run_reports_blockade_violation(capsys, tmp_path):
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "Gate CX on qubits 0/15 violates blockade radius" in captured.err
+    assert "violates nearest-neighbor chain connectivity" in captured.out
 
 
 def test_summarize_result_includes_timeline_section():

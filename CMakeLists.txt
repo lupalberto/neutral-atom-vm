@@ -58,6 +58,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
     src/hardware_vm.cpp
     src/stabilizer_backend.cpp
     src/service/job.cpp
+    src/service/job_validation.cpp
     src/service/scheduler.cpp
     src/service/job_service.cpp
 )
@@ -104,6 +105,7 @@ if(NA_VM_BUILD_TESTS)
         test/noise_tests.cpp
         test/statevector_engine_sync_tests.cpp
         test/service_job_service_tests.cpp
+        test/service_job_validation_tests.cpp
         test/scheduler_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)

@@ -132,7 +132,7 @@ TEST(ServiceApiTests, BenchmarkChainEnforcesNearestNeighborConnectivity) {
     job.device_id = "local-cpu";
     job.profile = "benchmark_chain";
     job.hardware.positions = {0.0, 1.3, 2.6};
-    job.hardware.blockade_radius = 1.6;
+    job.hardware.blockade_radius = 3.0;
     job.shots = 1;
 
     // CX on neighboring qubits 0-1 should be allowed.
@@ -216,7 +216,7 @@ TEST(ServiceApiTests, StimBackendTimelineIsChronological) {
     job.device_id = "stabilizer";
     job.profile = "ideal_square_grid";
     job.hardware.positions = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
-    job.hardware.blockade_radius = 2.0;
+    job.hardware.blockade_radius = 10.0;
     job.shots = 1;
 
     NativeGate x_gate;
@@ -283,7 +283,7 @@ TEST(ServiceApiTests, NoisySquareArrayEnforcesGridConnectivity) {
         0.0, 1.0, 2.0, 3.0,
         0.0, 1.0, 2.0, 3.0,
     };
-    job.hardware.blockade_radius = 2.0;
+    job.hardware.blockade_radius = 10.0;
     job.shots = 1;
 
     // First, a CX on a horizontal neighbor (0-1) should be allowed.
@@ -399,7 +399,7 @@ TEST(ServiceApiTests, StimBackendExposesPlanAndExecutionTimelines) {
     job.device_id = "stabilizer";
     job.profile = "ideal_square_grid";
     job.hardware.positions = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
-    job.hardware.blockade_radius = 2.0;
+    job.hardware.blockade_radius = 10.0;
     job.shots = 1;
 
     NativeGate x_gate;

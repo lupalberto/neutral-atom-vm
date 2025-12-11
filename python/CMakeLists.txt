@@ -68,6 +68,7 @@ add_library(vm STATIC
     ../src/hardware_vm.cpp
     ../src/stabilizer_backend.cpp
     ../src/service/job.cpp
+    ../src/service/job_validation.cpp
     ../src/service/scheduler.cpp
     ../src/service/job_service.cpp
 )

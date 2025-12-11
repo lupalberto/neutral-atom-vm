@@ -1,6 +1,7 @@
 #include "service/job.hpp"
 #include "hardware_vm.hpp"
 #include "noise/device_noise_builder.hpp"
+#include "service/job_validation.hpp"
 #include "service/scheduler.hpp"
 
 #include <algorithm>
@@ -537,6 +538,7 @@ JobResult JobRunner::run(
         ensure_positions_from_sites(hw);
         ensure_coordinates_from_sites(hw);
         validate_active_qubits(hw, job.program);
+        validate_blockade_constraints(hw, job.program);
         profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {

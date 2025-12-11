@@ -511,7 +511,6 @@ class Device:
             raise RuntimeError(
                 "Explicit squin noise helpers are only supported on the stabilizer backend."
             )
-        _validate_blockade_constraints(program, self.positions, self.blockade_radius, self.coordinates)
         job_metadata: Dict[str, str] = {}
         if self.active_configuration_family_name:
             job_metadata["configuration_family"] = self.active_configuration_family_name
@@ -539,70 +538,6 @@ class Device:
         if callable(program_or_kernel):
             return to_vm_program(program_or_kernel)
         return list(program_or_kernel)
-
-
-def _validate_blockade_constraints(
-    program: Sequence[Dict[str, Any]],
-    positions: Sequence[float],
-    blockade_radius: float,
-    coordinates: Sequence[Sequence[float]] | None = None,
-) -> None:
-    if not positions or blockade_radius <= 0.0:
-        return
-
-    pos_list = list(positions)
-    limit = len(pos_list)
-    threshold = blockade_radius + 1e-12
-    coord_list = None
-    if coordinates:
-        coord_list = [tuple(float(v) for v in entry) for entry in coordinates]
-
-    for instruction in program:
-        if instruction.get("op") != "ApplyGate":
-            continue
-
-        targets = instruction.get("targets") or []
-        indices: list[int] = []
-        for raw in targets:
-            try:
-                idx = int(raw)
-            except (TypeError, ValueError):
-                continue
-            indices.append(idx)
-
-        if len(indices) < 2:
-            continue
-
-        gate_name = instruction.get("name", "<unknown>")
-        for idx in indices:
-            if idx < 0 or idx >= limit:
-                raise ValueError(
-                    f"Gate {gate_name} references qubit {idx}, but device has positions 0..{limit - 1}"
-                )
-
-        for i in range(len(indices)):
-            for j in range(i + 1, len(indices)):
-                q0 = indices[i]
-                q1 = indices[j]
-                if _distance_between(pos_list, coord_list, q0, q1) > threshold:
-                    raise ValueError(
-                        f"Gate {gate_name} on qubits {q0}/{q1} violates blockade radius {blockade_radius:.3f}"
-                    )
-
-
-def _distance_between(
-    positions: Sequence[float],
-    coords: Sequence[Sequence[float]] | None,
-    idx0: int,
-    idx1: int,
-) -> float:
-    if coords and idx0 < len(coords) and idx1 < len(coords):
-        vec0 = coords[idx0]
-        vec1 = coords[idx1]
-        dim = min(len(vec0), len(vec1))
-        if dim:
-            return float(sum((float(vec0[d]) - float(vec1[d])) ** 2 for d in range(dim)) ** 0.5)
-    return abs(positions[idx0] - positions[idx1])
 
 
 
@@ -1025,6 +960,11 @@ def build_device_from_config(
     resolved_site_ids = list(active_family.site_ids) if active_family else parsed_site_ids_list
     if not default_family_name and active_family:
         default_family_name = active_family.name
+    if not resolved_site_ids:
+        if site_ids_provided:
+            raise ValueError("Configuration must specify at least one occupied site.")
+        if positions:
+            resolved_site_ids = list(range(len(positions)))
     site_descriptors = _parse_site_descriptors(resolved_config.get("sites"))
     if not resolved_site_ids:
         raise ValueError("Configuration must specify at least one occupied site.")
