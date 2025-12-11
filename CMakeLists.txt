@@ -84,6 +84,7 @@ if(NA_VM_BUILD_TESTS)
         test/statevector_engine_sync_tests.cpp
         test/service_job_service_tests.cpp
         test/service_job_validation_tests.cpp
+        test/validator_registry_tests.cpp
         test/scheduler_tests.cpp
     )
     target_link_libraries(vm_tests PRIVATE vm gtest_main)

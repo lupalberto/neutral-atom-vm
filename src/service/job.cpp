@@ -318,30 +318,6 @@ void ensure_site_ids(HardwareConfig& hw) {
     }
 }
 
-void validate_active_qubits(
-    const HardwareConfig& hw,
-    const std::vector<Instruction>& program
-) {
-    const std::size_t limit = hw.site_ids.size();
-    if (limit == 0) {
-        throw std::runtime_error("Configuration must specify at least one occupied site.");
-    }
-    for (const auto& instr : program) {
-        if (instr.op != Op::ApplyGate) {
-            continue;
-        }
-        const auto& gate = std::get<Gate>(instr.payload);
-        for (int target : gate.targets) {
-            if (target < 0 || static_cast<std::size_t>(target) >= limit) {
-                throw std::runtime_error(
-                    "Gate " + gate.name + " references qubit " + std::to_string(target) +
-                    " but configuration only allocates qubits 0.." + std::to_string(limit - 1)
-                );
-            }
-        }
-    }
-}
-
 void ensure_positions_from_sites(HardwareConfig& hw) {
     if (hw.site_ids.empty()) {
         return;
@@ -651,9 +627,8 @@ JobResult JobRunner::run(
         ensure_site_ids(hw);
         ensure_positions_from_sites(hw);
         ensure_coordinates_from_sites(hw);
-        validate_active_qubits(hw, job.program);
-        validate_blockade_constraints(hw, job.program);
-        validate_transport_constraints(hw, job.program);
+        auto validators = make_validator_registry_for(job, hw);
+        validators.run_all_validators(hw, job.program);
         profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {
