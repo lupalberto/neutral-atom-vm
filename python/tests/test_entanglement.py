@@ -12,7 +12,7 @@ from .squin_programs import bell_pair  # noqa: E402
 def test_bell_pair_produces_correlated_bits():
     """Bell pair should yield perfectly correlated measurement outcomes."""
 
-    device = connect_device("local-cpu", profile="ideal_small_array")
+    device = connect_device("state-vector", profile="ideal_small_array")
     handle = device.submit(bell_pair, shots=32)
     result = handle.result()
 

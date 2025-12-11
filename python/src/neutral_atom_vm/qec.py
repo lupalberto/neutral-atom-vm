@@ -57,7 +57,7 @@ def repetition_code_job(
     that only the optionally provided ``noise`` argument contributes errors.
     """
 
-    target_device = device_id or ("stabilizer" if has_stabilizer_backend() else "local-cpu")
+    target_device = device_id or ("stabilizer" if has_stabilizer_backend() else "state-vector")
     presets = available_presets()
     preset_config = presets.get(target_device, {}).get(profile)
     if preset_config is None:

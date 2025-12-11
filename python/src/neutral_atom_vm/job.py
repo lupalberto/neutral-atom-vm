@@ -68,14 +68,6 @@ def _load_native_module():
     )
 
 
-def has_oneapi_backend() -> bool:
-    module = _load_native_module()
-    func = getattr(module, "has_oneapi_backend", None)
-    if func is None:
-        return False
-    return bool(func())
-
-
 def has_stabilizer_backend() -> bool:
     module = _load_native_module()
     func = getattr(module, "has_stabilizer_backend", None)
@@ -578,7 +570,7 @@ class JobRequest:
 
     program: Program
     hardware: HardwareConfig
-    device_id: str = "local-cpu"
+    device_id: str = "state-vector"
     profile: str | None = None
     shots: int = 1
     max_threads: Optional[int] = None

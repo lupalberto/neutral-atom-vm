@@ -23,7 +23,7 @@ def test_submit_job_accepts_job_request():
             positions=[0.0, 1.0],
             blockade_radius=1.0,
         ),
-        device_id="local-cpu",
+        device_id="state-vector",
         profile=None,
         shots=32,
     )
@@ -46,7 +46,7 @@ def test_submit_job_preserves_job_id_roundtrip():
             positions=[0.0],
             blockade_radius=1.0,
         ),
-        device_id="local-cpu",
+        device_id="state-vector",
         profile=None,
         shots=1,
         job_id="python-test-job-123",
@@ -68,7 +68,7 @@ def test_submit_job_applies_noise_loss():
             positions=[0.0],
             blockade_radius=1.0,
         ),
-        device_id="local-cpu",
+        device_id="state-vector",
         profile=None,
         shots=1,
         noise=neutral_atom_vm.SimpleNoiseConfig(p_loss=1.0),
@@ -97,7 +97,7 @@ def test_idle_noise_causes_phase_flip():
             positions=[0.0],
             blockade_radius=1.0,
         ),
-        device_id="local-cpu",
+        device_id="state-vector",
         profile=None,
         shots=64,
         noise=neutral_atom_vm.SimpleNoiseConfig(idle_rate=1000.0),
@@ -157,7 +157,7 @@ def test_stabilizer_executes_explicit_pauli_channel():
 
 
 def test_statevector_rejects_explicit_noise_kernel():
-    dev = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    dev = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
     with pytest.raises(RuntimeError):
         dev.build_job_request(pauli_kick_only, shots=1)
 

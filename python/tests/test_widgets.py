@@ -679,7 +679,7 @@ def test_job_result_viewer_handles_missing_measurements():
     viewer = JobResultViewer()
     viewer.load_result(
         {"status": "failed", "measurements": [], "message": "boom"},
-        device="local-cpu",
+        device="state-vector",
         profile=None,
         shots=2,
     )
@@ -971,7 +971,7 @@ def test_configurator_applies_grid_layout():
     presets = available_presets()
     configurator = ProfileConfigurator(
         presets=presets,
-        default_device="local-cpu",
+        default_device="state-vector",
     )
     label = configurator._label_for_value("lossy_block")
     configurator.profile_dropdown.value = label

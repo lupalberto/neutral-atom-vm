@@ -118,7 +118,7 @@ def noisy_bell():
     <p>
       When you submit this kernel via <code>connect_device("stabilizer", profile="ideal_small_array")</code>, the job
       payload includes a Stim circuit whose execution honors the annotated Pauli channel. Sending the same kernel to
-      hardware-style devices (for example, <code>local-cpu</code>) now raises a clear error so programmatic noise stays
+      hardware-style devices (for example, <code>state-vector</code>) now raises a clear error so programmatic noise stays
       simulation-only.
     </p>
   </section>
@@ -137,7 +137,7 @@ def noisy_bell():
           The module <code>neutral_atom_vm.qec</code> includes a <code>repetition_code_job</code> helper that constructs a
           small repetition-code circuit (distance and rounds configurable), submits it to the VM, and returns a
           <code>JobResult</code>. By default it targets the Stim-backed <code>stabilizer</code> device when available,
-          falling back to <code>local-cpu</code> with Pauli-only noise.
+          falling back to <code>state-vector</code> with Pauli-only noise.
         </p>
         <pre><code class="language-python">from neutral_atom_vm import qec
 

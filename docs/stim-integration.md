@@ -154,7 +154,7 @@ In particular:
 The current repo now ships a Stim-backed backend behind the existing device abstraction:
 
 - Builds default to `-DNA_VM_WITH_STIM=ON` (pass `-DNA_VM_WITH_STIM=OFF` if Stim is not available in your toolchain). The Python wheel build exposes the same toggle.
-- Presets can be targeted by selecting the `stabilizer` device alias. It reuses the geometry/timing metadata from `local-cpu` but automatically sanitizes preset noise down to Pauli/readout/loss terms before emitting the job.
+- Presets can be targeted by selecting the `stabilizer` device alias. It reuses the geometry/timing metadata from `state-vector` but automatically sanitizes preset noise down to Pauli/readout/loss terms before emitting the job.
 - CLI / SDK usage:
 
   ```
@@ -167,7 +167,7 @@ The current repo now ships a Stim-backed backend behind the existing device abst
 
   or `connect_device("stabilizer", profile="ideal_small_array").submit(bell_pair, shots=...)`.
 
-The backend currently accepts the Clifford subset of the ISA plus Pauli/readout/loss noise; unsupported operations raise clear errors so callers can fall back to `local-cpu`. Future work focuses on feeding the shared noise IR directly, expanding the supported gates/noise, and clarifying how non-Clifford segments route between backends.
+The backend currently accepts the Clifford subset of the ISA plus Pauli/readout/loss noise; unsupported operations raise clear errors so callers can fall back to `state-vector`. Future work focuses on feeding the shared noise IR directly, expanding the supported gates/noise, and clarifying how non-Clifford segments route between backends.
 
 ---
 

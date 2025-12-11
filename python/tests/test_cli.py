@@ -15,7 +15,7 @@ def test_quera_vm_run_executes_kernel_and_prints_result(capsys):
         "--output",
         "json",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--shots",
@@ -44,7 +44,7 @@ def test_quera_vm_run_writes_logs_to_file(tmp_path, capsys):
         "--output",
         "json",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--shots",
@@ -102,7 +102,7 @@ def test_quera_vm_run_accepts_profile_config(capsys, tmp_path):
         "--profile-config",
         str(profile_cfg),
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--shots",
@@ -144,7 +144,7 @@ def test_quera_vm_run_accepts_script_path_with_kernel(capsys, tmp_path):
         "--output",
         "json",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--shots",
@@ -178,7 +178,7 @@ def test_quera_vm_run_reports_blockade_violation(capsys, tmp_path):
     argv = [
         "run",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "benchmark_chain",
         "--shots",
@@ -211,7 +211,7 @@ def test_summarize_result_includes_timeline_section():
             "timeline": timeline,
             "timeline_units": "us",
         },
-        device="local-cpu",
+        device="state-vector",
         profile="ideal_small_array",
         shots=1,
     )
@@ -229,7 +229,7 @@ def test_quera_vm_grid_output_for_noisy_square_array(capsys):
     argv = [
         "run",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "noisy_square_array",
         "--shots",
@@ -263,7 +263,7 @@ def test_quera_vm_run_accepts_configuration_family(monkeypatch, capsys):
     fake_device = FakeDevice()
 
     def fake_connect(device_id: str, profile: str | None):  # type: ignore[override]
-        assert device_id == "local-cpu"
+        assert device_id == "state-vector"
         assert profile == "ideal_small_array"
         return fake_device
 
@@ -283,7 +283,7 @@ def test_quera_vm_run_accepts_configuration_family(monkeypatch, capsys):
     argv = [
         "run",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--configuration-family",
@@ -329,7 +329,7 @@ def test_quera_vm_run_rejects_unknown_configuration_family(monkeypatch):
     argv = [
         "run",
         "--device",
-        "local-cpu",
+        "state-vector",
         "--profile",
         "ideal_small_array",
         "--configuration-family",

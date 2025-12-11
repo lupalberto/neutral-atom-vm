@@ -7,7 +7,7 @@ namespace {
 
 service::JobRequest make_blockade_job() {
     service::JobRequest job;
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware.positions = {0.0, 3.0};
     job.hardware.site_ids = {0, 1};
@@ -22,7 +22,7 @@ service::JobRequest make_blockade_job() {
 
 service::JobRequest make_interaction_job() {
     service::JobRequest job;
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware.positions = {0.0, 1.0, 2.0};
     job.hardware.site_ids = {0, 1, 2};
@@ -61,7 +61,7 @@ service::JobRequest make_zone_blockade_job() {
 
 service::JobRequest make_transport_job() {
     service::JobRequest job;
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware.positions = {0.0, 1.0, 2.0};
     job.hardware.site_ids = {0, 1, 2};

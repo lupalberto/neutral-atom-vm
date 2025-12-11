@@ -65,7 +65,7 @@ def ghz():
     squin.cx(q[0], q[2])
     squin.measure(q)
 
-dev = connect_device("local-cpu", profile="ideal_small_array")
+dev = connect_device("state-vector", profile="ideal_small_array")
 result = dev.submit(ghz, shots=1000).result()
 print(result["measurements"])
 </code></pre>
@@ -84,7 +84,7 @@ print(result["measurements"])
       <h4>Timing-limit example</h4>
       <p>
         The <code>benchmark_chain</code> profile enforces a 50 microsecond (50,000 ns) measurement cooldown. The scheduler now tracks
-        `logical_time` and inserts just enough idle time (either via explicit `<Wait>` inserts or by relying on gate durations)
+        `logical_time` and inserts just enough idle time (either via explicit <code>&lt;Wait&gt;</code> inserts or by relying on gate durations)
         so the kernel below now runs without an explicit <code>Wait</code>.
       </p>
       <pre><code class="language-python">from bloqade import squin
@@ -97,8 +97,8 @@ def reuse_measured_qubit():
     squin.h(q[0])  # scheduler inserts the required idle time for the cooldown
 </code></pre>
       <p>
-        Running this kernel with <code>connect_device("local-cpu", profile="benchmark_chain")</code> now
-        completes successfully. The JSON/CLI logs document the inserted `<Wait>` entry (or the gate durations) that bumped
+        Running this kernel with <code>connect_device("state-vector", profile="benchmark_chain")</code> now
+        completes successfully. The JSON/CLI logs document the inserted <code>&lt;Wait&gt;</code> entry (or the gate durations) that bumped
         `logical_time` before the second `h`. If you still want to enforce a larger gap for external timing reasons,
         `squin.wait()` remains available and the scheduler treats it as additional idle time.
       </p>
@@ -106,13 +106,13 @@ def reuse_measured_qubit():
         To see the scheduler in action, run the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>:
       </p>
     <pre><code>quera-vm run \
-  --device local-cpu \
+  --device state-vector \
   --profile benchmark_chain \
   --shots 1 \
   python/examples/benchmark_cooldown_violation.py</code></pre>
       <p>
         The CLI still submits the same job request as the SDK, but instead of a runtime error, the `logs`
-        array now includes the scheduler-inserted `<Wait>` entry right after the measurement. You can capture that stream
+        array now includes the scheduler-inserted <code>&lt;Wait&gt;</code> entry right after the measurement. You can capture that stream
         via `--output json` or `--log-file` to audit how the scheduler aligned the program with the hardware cooldown.
       </p>
       <p>
@@ -121,12 +121,12 @@ def reuse_measured_qubit():
         the first finishes; if the limit is raised to 2, the gates share the same timestamp.
       </p>
 <pre><code class="language-python">program = [
-    {"op": "AllocArray", "n_qubits": 4},
-    {"op": "ApplyGate", "name": "H", "targets": [0]},
-    {"op": "ApplyGate", "name": "H", "targets": [2]},
-    {"op": "ApplyGate", "name": "CX", "targets": [0, 1]},
-    {"op": "ApplyGate", "name": "CX", "targets": [2, 3]},
-    {"op": "Measure", "targets": [0, 1, 2, 3]},
+    &#123;"op": "AllocArray", "n_qubits": 4&#125;,
+    &#123;"op": "ApplyGate", "name": "H", "targets": [0]&#125;,
+    &#123;"op": "ApplyGate", "name": "H", "targets": [2]&#125;,
+    &#123;"op": "ApplyGate", "name": "CX", "targets": [0, 1]&#125;,
+    &#123;"op": "ApplyGate", "name": "CX", "targets": [2, 3]&#125;,
+    &#123;"op": "Measure", "targets": [0, 1, 2, 3]&#125;,
 ]</code></pre>
       <p>
         The CLI timeline shows the scheduler’s choices:
@@ -154,16 +154,15 @@ def reuse_measured_qubit():
       profile JSON overrides, log streaming, remote services). Example invocation:
     </p>
 <pre><code>quera-vm run \
-  --device local-cpu \
+  --device state-vector \
   --profile benchmark_chain \
   --shots 1000 \
   --output json \
   examples/ghz.py
 </code></pre>
     <p>
-      When built with oneAPI support (<code>-DNA_VM_WITH_ONEAPI=ON</code>), <code>--device local-arc</code> routes the
-      same profile to GPU hardware. When Stim support is enabled (<code>-DNA_VM_WITH_STIM=ON</code>, now the default) you
-      can also pass <code>--device stabilizer</code> (or <code>connect_device("stabilizer", ...)</code>) to run Clifford/Pauli workloads on the Stim-backed engine.
+      When Stim support is enabled (<code>-DNA_VM_WITH_STIM=ON</code>, now the default) you can pass
+      <code>--device stabilizer</code> (or <code>connect_device("stabilizer", ...)</code>) to run Clifford/Pauli workloads on the Stim-backed engine.
       The SDK detects kernels that call documented helpers such as <code>squin.single_qubit_pauli_channel</code> /
       <code>squin.two_qubit_pauli_channel</code>, injects the resulting Stim circuit into the job, and skips rebuilding
       those noise channels from <code>SimpleNoiseConfig</code>. CLI logs include categories like <code>Noise</code> and
@@ -171,7 +170,7 @@ def reuse_measured_qubit():
     </p>
     <p>
       Kernels that rely on explicit squin noise helpers are now treated as simulation-only artifacts: they run on
-      <code>--device stabilizer</code> and raise a clear error on hardware-style devices (e.g., <code>local-cpu</code>). That prevents
+      <code>--device stabilizer</code> and raise a clear error on hardware-style devices (e.g., <code>state-vector</code>). That prevents
       accidental submission of noise-annotated programs to real hardware while still letting you tune loss/Pauli profiles
       for Stim-based analysis.
     </p>
@@ -191,9 +190,9 @@ def reuse_measured_qubit():
   <section>
     <h2>Operator journey (service / ops)</h2>
     <p>
-      The same job schema and device/profile model extend naturally to a service. The <code>docs/docker-service.md</code>
-      document and the <code>RemoteServiceError</code> plumbing in <code>python/src/neutral_atom_vm/service_client.py</code>
-      show how <code>quera-vm</code> can talk to a Dockerized VM service over HTTP.
+      The same job schema and device/profile model extend naturally to a service. The <code>RemoteServiceError</code>
+      plumbing in <code>python/src/neutral_atom_vm/service_client.py</code>
+      shows how <code>quera-vm</code> can talk to the VM service over HTTP.
     </p>
     <p>
       Jobs carry device IDs, profile metadata, ISA versions, hardware limits, and programs. The service enqueues work,

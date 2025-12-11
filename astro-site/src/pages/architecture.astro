@@ -126,7 +126,7 @@ struct HardwareConfig &#123;
     <div class="card" style="margin-top:1rem;">
       <h4>Examples of profiles</h4>
       <ul>
-        <li><code>local-cpu / ideal_small_array</code> – 10-site chain, ideal (noise-free) baseline.</li>
+        <li><code>state-vector / ideal_small_array</code> – 10-site chain, ideal (noise-free) baseline.</li>
         <li><code>noisy_square_array</code> – 4×4 grid with depolarizing and idle-phase noise.</li>
         <li><code>lossy_chain</code> &amp; <code>lossy_block</code> – heavy-loss presets to stress erasure-aware code.</li>
         <li><code>benchmark_chain</code> – 20-site chain with correlated CZ noise and timing constraints.</li>
@@ -147,12 +147,11 @@ struct HardwareConfig &#123;
     <h2>Backends and roadmap</h2>
     <p>
       The current prototype uses a statevector backend implemented in <code>src/engine_statevector.hpp/.cpp</code>,
-      with optional GPU acceleration via oneAPI when built with <code>NA_VM_WITH_ONEAPI=ON</code>. The architectural
-      hooks are designed to make additional engines straightforward.
+      and the architectural hooks are designed to make additional engines straightforward.
     </p>
     <ul>
       <li><strong>Today:</strong> CPU statevector engine with pluggable noise (<code>SimpleNoiseEngine</code>).</li>
-      <li><strong>Optional:</strong> oneAPI-backed statevector (“local-arc” device id) for GPU experiments.</li>
+      <li><strong>Optional:</strong> Stim-backed stabilizer engine for Pauli/loss workloads.</li>
       <li><strong>Future:</strong> Pauli-style engines for large QEC codes, pulse-level neutral-atom physics engines, and hardware drivers.</li>
     </ul>
     <p>

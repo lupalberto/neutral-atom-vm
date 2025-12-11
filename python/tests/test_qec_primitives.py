@@ -8,7 +8,7 @@ def test_repetition_code_zero_noise_has_zero_logical_errors():
         distance=3,
         rounds=1,
         shots=16,
-        device_id="local-cpu",
+        device_id="state-vector",
         profile="lossy_block",
         profile_noise=False,
     )
@@ -27,7 +27,7 @@ def test_repetition_code_noise_increases_logical_errors():
         distance=3,
         rounds=1,
         shots=32,
-        device_id="local-cpu",
+        device_id="state-vector",
         profile="lossy_block",
         profile_noise=False,
     )
@@ -35,7 +35,7 @@ def test_repetition_code_noise_increases_logical_errors():
         distance=3,
         rounds=1,
         shots=32,
-        device_id="local-cpu",
+        device_id="state-vector",
         profile="lossy_block",
         profile_noise=False,
         noise=noise,
@@ -60,7 +60,7 @@ def test_repetition_code_metrics_counts_only_data_targets():
         distance=1,
         rounds=1,
         shots=shots,
-        device_id="local-cpu",
+        device_id="state-vector",
         profile="lossy_block",
         profile_noise=False,
     )

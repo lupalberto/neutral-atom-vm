@@ -5,7 +5,7 @@ from neutral_atom_vm.device import available_presets, build_device_from_config
 
 def test_presets_expose_named_configuration_families():
     presets = available_presets()
-    config = presets["local-cpu"]["ideal_small_array"]
+    config = presets["state-vector"]["ideal_small_array"]
     assert "configuration_families" in config
     families = config["configuration_families"]
     assert isinstance(families, dict)
@@ -20,9 +20,9 @@ def test_presets_expose_named_configuration_families():
 
 def test_device_applies_active_configuration_family():
     presets = available_presets()
-    config = presets["local-cpu"]["ideal_small_array"]
+    config = presets["state-vector"]["ideal_small_array"]
     device = build_device_from_config(
-        "local-cpu",
+        "state-vector",
         profile="ideal_small_array",
         config=config,
     )
@@ -36,12 +36,12 @@ def test_device_applies_active_configuration_family():
 
 def test_build_device_rejects_empty_site_ids():
     presets = available_presets()
-    config = dict(presets["local-cpu"]["ideal_small_array"])
+    config = dict(presets["state-vector"]["ideal_small_array"])
     config.pop("configuration_families", None)
     config["site_ids"] = []
     with pytest.raises(ValueError, match="at least one occupied site"):
         build_device_from_config(
-            "local-cpu",
+            "state-vector",
             profile="ideal_small_array",
             config=config,
         )

@@ -16,7 +16,7 @@ def test_render_job_result_includes_timeline_chart():
     }
     html = render_job_result_html(
         result=result,
-        device="local-cpu",
+        device="state-vector",
         profile="ideal_small_array",
         shots=1,
     )

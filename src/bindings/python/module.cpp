@@ -396,7 +396,7 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
     if (job_obj.contains("device_id")) {
         job.device_id = py::cast<std::string>(job_obj["device_id"]);
     } else {
-        job.device_id = "local-cpu";
+        job.device_id = "state-vector";
     }
 
     if (job_obj.contains("profile") && !job_obj["profile"].is_none()) {
@@ -592,14 +592,6 @@ py::dict job_result(const std::string& job_id) {
     return job_result_to_dict(*result);
 }
 
-bool has_oneapi_backend() {
-#ifdef NA_VM_WITH_ONEAPI
-    return true;
-#else
-    return false;
-#endif
-}
-
 bool has_stabilizer_backend() {
 #ifdef NA_VM_WITH_STIM
     return true;
@@ -635,11 +627,6 @@ PYBIND11_MODULE(_neutral_atom_vm, m) {
         &job_result,
         py::arg("job_id"),
         "Fetch the final result for an async job (raises if not ready)."
-    );
-    m.def(
-        "has_oneapi_backend",
-        &has_oneapi_backend,
-        "Return true when the bindings were built with the oneAPI backend."
     );
     m.def(
         "has_stabilizer_backend",

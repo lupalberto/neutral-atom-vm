@@ -19,7 +19,7 @@ Each persona interacts with the VM via different surfaces, but they all rely on 
 
 ## 1. Python SDK / Bloqade Journey
 
-Goal: `connect_device("local-cpu", profile="ideal_small_array")` returns a device handle that behaves like actual hardware.
+Goal: `connect_device("state-vector", profile="ideal_small_array")` returns a device handle that behaves like actual hardware.
 
 Flow:
 
@@ -39,7 +39,7 @@ Flow:
 3. Device selection:
    ```python
    from neutral_atom_vm import connect_device
-   dev = connect_device("local-cpu", profile="ideal_small_array")
+   dev = connect_device("state-vector", profile="ideal_small_array")
    ```
 4. Job submission:
    ```python
@@ -47,7 +47,7 @@ Flow:
    result = job.result()
    print(result.measurements)
    ```
-   The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we expose device aliases such as `local-cpu` (CPU statevector), `local-arc` (GPU/oneAPI), and, when Stim support is built in, `stabilizer`, which routes the same presets through the Stim-backed stabilizer engine. Choosing `connect_device("stabilizer", profile="ideal_small_array")` (or `quera-vm run --device stabilizer ...`) automatically sanitizes the preset’s noise down to the Pauli/readout/loss terms Stim understands while keeping geometry/timing identical to the CPU persona. Kernels that call documented squin Pauli-channel helpers run only on the stabilizer backend: the Python SDK detects those helpers, builds the Stim circuit via `bloqade.stim.passes.SquinToStimPass`, and attaches the resulting stimulus to the job so Stim executes the program at the locations you specified. The same kernels raise a clear error if submitted to `local-cpu`, `local-arc`, or future hardware devices, preventing accidental submission of simulation-only noise annotations.
+  The helper `neutral_atom_vm.connect_device` now exists and returns the `dev` handle with minimal configuration. Profiles are resolved internally (e.g., `"ideal_small_array"`), so callers do not configure positions directly. For backwards compatibility we expose device aliases such as `state-vector` (CPU statevector) and, when Stim support is built in, `stabilizer`, which routes the same presets through the Stim-backed stabilizer engine. Choosing `connect_device("stabilizer", profile="ideal_small_array")` (or `quera-vm run --device stabilizer ...`) automatically sanitizes the preset’s noise down to the Pauli/readout/loss terms Stim understands while keeping geometry/timing identical to the CPU persona. Kernels that call documented squin Pauli-channel helpers run only on the stabilizer backend: the Python SDK detects those helpers, builds the Stim circuit via `bloqade.stim.passes.SquinToStimPass`, and attaches the resulting stimulus to the job so Stim executes the program at the locations you specified. The same kernels raise a clear error if submitted to `state-vector` or future hardware devices, preventing accidental submission of simulation-only noise annotations.
 5. Under the hood: the Python SDK builds a `JobRequest`, attaches hardware/noise profiles, and submits to `JobRunner`, which picks the appropriate backend (ideal, noisy Pauli, etc.) and returns `JobResult`.
 
 Outcome: the user never sees the VM internals—just “device + job + measurements.” The SDK handles instruction lowering, profile selection, and result reporting.
@@ -67,7 +67,7 @@ def reuse_measured_qubit():
     squin.h(q[0])  # scheduler inserts the required idle time for the cooldown
 ```
 
-Running this via `connect_device("local-cpu", profile="benchmark_chain")` now completes, and the log stream documents the scheduler-inserted `<Wait>` (or the core gate durations) that advance `logical_time` before the second `h`. Explicit `squin.wait()` calls remain available when you want additional idle time beyond what the scheduler already provides.
+Running this via `connect_device("state-vector", profile="benchmark_chain")` now completes, and the log stream documents the scheduler-inserted `<Wait>` (or the core gate durations) that advance `logical_time` before the second `h`. Explicit `squin.wait()` calls remain available when you want additional idle time beyond what the scheduler already provides.
 
 To observe the scheduler in action, run the shipped kernel in <code>python/examples/benchmark_cooldown_violation.py</code>. The CLI logs (`--output json` or `--log-file`) now show a `<Wait>` entry right after the measurement, rather than a runtime error. The job request is still the same as before, but scheduling now prevents the cooldown violation before the backend executes the program.
 
@@ -87,7 +87,7 @@ program = [
     {"op": "Measure", "targets": [0, 1, 2, 3]},
 ]
 
-device = connect_device("local-cpu", profile="noisy_square_array")
+device = connect_device("state-vector", profile="noisy_square_array")
 job = device.submit(program, shots=1)
 result = job.result()
 ```
@@ -114,7 +114,7 @@ Goal: provide a shortcut for developers to run kernels without writing Python gl
 Example command:
 ```
 quera-vm run \
-  --device local-cpu \
+  --device state-vector \
   --profile dev_debug \
   --shots 1_000 \
   examples/ghz.py
@@ -164,29 +164,23 @@ Python SDK share the same registry, which can be inspected via
 
 | Device ID   | Profile             | Geometry summary                                         | Noise focus                                                     | Primary persona/use case        |
 |-------------|---------------------|----------------------------------------------------------|-----------------------------------------------------------------|---------------------------------|
-| `local-cpu` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
-| `local-cpu` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
-| `local-cpu` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
-| `local-cpu` | `lossy_block`       | 16-site 2×4×2 block (1.5×1.0×1.0 spacing, blockade 1.5)   | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
-| `local-cpu` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
-| `local-cpu` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
+| `state-vector` | `ideal_small_array` | 10-site 1D chain (unit spacing, blockade radius 1.5)      | Noise disabled - idealized tutorials                            | SDK & CLI onboarding            |
+| `state-vector` | `noisy_square_array`| Conceptual 4x4 grid flattened to 16 slots, blockade 2.0   | ~1% depolarizing gate noise + idle phase drift                  | Algorithm prototyping           |
+| `state-vector` | `lossy_chain`       | 6-site chain (1.5 spacing)                                | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `state-vector` | `lossy_block`       | 16-site 2×4×2 block (1.5×1.0×1.0 spacing, blockade 1.5)   | Heavy loss: upfront 10% + runtime per-gate/idle loss channels   | Loss-aware algorithm research   |
+| `state-vector` | `benchmark_chain`   | 20-site chain (1.3 spacing, blockade 1.6)                 | Moderate depolarizing, idle phase drift, correlated CZ channel  | Integration & throughput tests  |
+| `state-vector` | `readout_stress`    | 8-site chain (unit spacing, blockade 1.2)                 | 3% symmetric readout flips + mild runtime loss                  | Diagnostics / SPAM sensitivity  |
 
 To use one of these presets from the CLI:
 
 ```
-quera-vm run --device local-cpu --profile benchmark_chain \
+quera-vm run --device state-vector --profile benchmark_chain \
   --shots 1000 examples/ghz.py
 ```
 
-The `local-arc` device ID mirrors `local-cpu`’s profiles but selects the Intel Arc GPU backend when the oneAPI runtime is enabled. The metadata returned by `neutral_atom_vm.available_presets()` includes labels/descriptions that help you differentiate the CPU vs. Arc personas.
-
-When the VM is built with `cmake -DNA_VM_WITH_ONEAPI=ON ..` and a compatible Intel oneAPI runtime is available, `--device local-arc` (or `connect_device("local-arc", profile="benchmark_chain")`) executes on the GPU backend. Similarly, builds that include Stim (`-DNA_VM_WITH_STIM=ON`, enabled by default) can target `--device stabilizer` / `connect_device("stabilizer", ...)` to run Clifford/Pauli workloads on the new stabilizer backend. If a requested backend is unavailable, the CLI prints an explanatory message mentioning which `cmake` toggle to enable.
+When the VM is built with Stim support (`-DNA_VM_WITH_STIM=ON`, enabled by default), `--device stabilizer` / `connect_device("stabilizer", ...)` execute the Stim-backed stabilizer engine. The CLI/SDK prints a clear runtime error when the requested backend is unavailable (e.g., when the package wasn’t built with Stim), so developers know which `cmake` toggle to flip before retrying.
 
 Kernels that rely on explicit squin Pauli channels or loss helpers now go through the stabilizer backend only. The CLI/SDK raises a clear runtime error when such a kernel targets hardware-style devices, so program annotations remain simulation-only. If Stim support exists, the SDK attaches the prebuilt Stim circuit to the job and the backend runs the annotated `PAULI_CHANNEL_*`/loss operations directly, while the VM still enforces geometry and timing before dispatch.
-
-To keep the Arc run fast, the oneAPI backend now keeps the statevector resident on the SYCL device and only copies it back to the host when a measurement, noise hook, or SDK inspection needs the amplitudes. This avoids the old per-gate copy/wait handshake that made `local-arc` slower than `local-cpu` for gate-heavy workloads.
-
-Measurements now accumulate outcome probabilities and collapse the state directly on the GPU, so only the small probability vector and the sampled bits are copied off-device. Gate/idle noise hooks still execute on the CPU, so they are skipped when you choose `local-arc`; if you need noise modelling, keep running on `local-cpu`.
 
 If a request violates a hardware constraint (for example, a CX between tweezers outside the preset blockade), the CLI now prints the reason on stderr and exits with status 1 so you can fix the circuit before spending shots. Successful runs also echo any backend `message` (e.g., rich diagnostics or loss counts) in the summary.
 
@@ -195,7 +189,7 @@ From the SDK, the same preset is available via:
 ```python
 from neutral_atom_vm import connect_device
 
-dev = connect_device("local-cpu", profile="benchmark_chain")
+dev = connect_device("state-vector", profile="benchmark_chain")
 ```
 
 If you need a bespoke combination (e.g., larger footprint with custom noise),
@@ -319,7 +313,7 @@ quera-vm serve --config vm-service.toml
 
 Client interaction (gRPC/REST):
 1. `JobRequest` includes:
-   - Device ID (e.g., `local-cpu`).
+   - Device ID (e.g., `state-vector`).
    - Profile metadata (geometry, noise model, supported gates and connectivity).
    - ISA version and **hardware constraints**:
      - Gate durations and scheduling/parallelism rules.
@@ -337,7 +331,7 @@ This mode supports CI, staging, and production setups where multiple users submi
 ## 4. Key UX Goals Moving Forward
 
 1. **Device abstraction**
-   - Named devices (`local-cpu`, `local-arc`, etc.) with profiles for geometry, capabilities, and noise.
+   - Named devices (`state-vector`, `stabilizer`, etc.) with profiles for geometry, capabilities, and noise.
    - Device IDs exposed through the SDK/CLI so users know what they are hitting.
 
 2. **Compiler visibility**

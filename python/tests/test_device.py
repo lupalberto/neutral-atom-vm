@@ -4,10 +4,10 @@ import neutral_atom_vm.device as device_mod
 import pytest
 from neutral_atom_vm import to_vm_program
 from neutral_atom_vm.device import build_device_from_config, available_presets
-from neutral_atom_vm.job import has_oneapi_backend, has_stabilizer_backend
+from neutral_atom_vm.job import has_stabilizer_backend
 
 def test_device_submit_program_runtime():
-    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},
@@ -34,7 +34,7 @@ def test_device_submit_kernel():
 
     from .squin_programs import bell_pair
 
-    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
     job = device.submit(bell_pair, shots=1)
     result = job.result()
     assert result["status"] == "completed"
@@ -52,7 +52,7 @@ def test_loop_kernel_lowers_and_runs():
         for instruction in program
     )
 
-    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
     job = device.submit(loop_cx, shots=1)
     result = job.result()
     assert result["status"] == "completed"
@@ -67,7 +67,7 @@ def test_complex_squin_kernel_runs_on_benchmark_chain():
 
     from .squin_programs import benchmark_chain_complex
 
-    device = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
+    device = neutral_atom_vm.connect_device("state-vector", profile="benchmark_chain")
     job = device.submit(benchmark_chain_complex, shots=4)
     result = job.result()
 
@@ -87,7 +87,7 @@ def test_build_device_from_config_injects_noise():
         "blockade_radius": 1.0,
         "noise": {"p_loss": 1.0},
     }
-    device = build_device_from_config("local-cpu", profile=None, config=cfg)
+    device = build_device_from_config("state-vector", profile=None, config=cfg)
 
     program = [
         {"op": "AllocArray", "n_qubits": 1},
@@ -106,7 +106,7 @@ def test_build_device_from_config_with_coordinates():
         "coordinates": [[0, 0], [0, 2]],
         "blockade_radius": 1.0,
     }
-    device = build_device_from_config("local-cpu", profile=None, config=cfg)
+    device = build_device_from_config("state-vector", profile=None, config=cfg)
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},
@@ -123,17 +123,13 @@ def test_build_device_from_config_with_coordinates():
 def test_available_presets_lists_built_in_profiles():
     presets = available_presets()
 
-    assert "local-cpu" in presets
-    if HAS_ONEAPI:
-        assert "local-arc" in presets
-    else:
-        assert "local-arc" not in presets
+    assert "state-vector" in presets
     if HAS_STABILIZER:
         assert "stabilizer" in presets
     else:
         assert "stabilizer" not in presets
 
-    cpu_profiles = presets["local-cpu"]
+    cpu_profiles = presets["state-vector"]
     for profile in ("ideal_small_array", "benchmark_chain", "readout_stress"):
         assert profile in cpu_profiles
         entry = cpu_profiles[profile]
@@ -143,8 +139,8 @@ def test_available_presets_lists_built_in_profiles():
 
 def test_presets_include_timing_and_gate_catalogs():
     presets = available_presets()
-    cpu_profiles = presets.get("local-cpu", {})
-    assert cpu_profiles, "expected local-cpu presets"
+    cpu_profiles = presets.get("state-vector", {})
+    assert cpu_profiles, "expected state-vector presets"
     for profile_name, entry in cpu_profiles.items():
         timing = entry.get("timing_limits")
         assert timing, f"missing timing limits for {profile_name}"
@@ -164,7 +160,7 @@ def test_presets_include_timing_and_gate_catalogs():
 
 def test_square_grid_preset_exposes_configuration_families():
     presets = available_presets()
-    cpu_profiles = presets.get("local-cpu", {})
+    cpu_profiles = presets.get("state-vector", {})
     grid = cpu_profiles.get("ideal_square_grid")
     assert grid is not None, "expected ideal_square_grid preset"
 
@@ -197,7 +193,7 @@ def test_square_grid_preset_exposes_configuration_families():
 )
 def test_other_presets_expose_configuration_families(profile):
     presets = available_presets()
-    cpu_profiles = presets.get("local-cpu", {})
+    cpu_profiles = presets.get("state-vector", {})
     entry = cpu_profiles.get(profile)
     assert entry is not None, f"expected preset {profile}"
 
@@ -216,15 +212,14 @@ def test_other_presets_expose_configuration_families(profile):
     assert regions, f"expected regions metadata for {profile} preset"
 
 
-HAS_ONEAPI = has_oneapi_backend()
-DEVICE_ALIAS_IDS = ["local-cpu"]
-if HAS_ONEAPI:
-    DEVICE_ALIAS_IDS.append("local-arc")
 HAS_STABILIZER = has_stabilizer_backend()
+DEVICE_ALIAS_IDS = ["state-vector"]
+if HAS_STABILIZER:
+    DEVICE_ALIAS_IDS.append("stabilizer")
 
 @pytest.mark.parametrize("device_id", DEVICE_ALIAS_IDS)
 def test_connect_device_aliases_preserve_profiles(device_id):
-    reference = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
+    reference = neutral_atom_vm.connect_device("state-vector", profile="benchmark_chain")
     aliased = neutral_atom_vm.connect_device(device_id, profile="benchmark_chain")
 
     assert aliased.positions == reference.positions
@@ -245,7 +240,7 @@ def test_connect_device_rejects_legacy_quera_alias():
     ],
 )
 def test_connect_device_supports_new_presets(profile, expected_qubits):
-    device = neutral_atom_vm.connect_device("local-cpu", profile=profile)
+    device = neutral_atom_vm.connect_device("state-vector", profile=profile)
 
     assert len(device.positions) == expected_qubits
     assert device.noise is not None
@@ -253,7 +248,7 @@ def test_connect_device_supports_new_presets(profile, expected_qubits):
 
 
 def test_connect_device_supports_lossy_block():
-    device = neutral_atom_vm.connect_device("local-cpu", profile="lossy_block")
+    device = neutral_atom_vm.connect_device("state-vector", profile="lossy_block")
 
     assert len(device.positions) == 16
     assert device.noise is not None
@@ -314,7 +309,7 @@ def test_connect_device_can_target_remote_service(monkeypatch):
 
 
 def test_device_submit_raises_on_blockade_violation():
-    device = neutral_atom_vm.connect_device("local-cpu", profile="benchmark_chain")
+    device = neutral_atom_vm.connect_device("state-vector", profile="benchmark_chain")
     program = [
         {"op": "AllocArray", "n_qubits": 16},
         {"op": "ApplyGate", "name": "CX", "targets": [0, 15], "param": 0.0},
@@ -339,7 +334,7 @@ def test_device_submit_forwards_thread_limit(monkeypatch):
 
     monkeypatch.setattr(device_mod, "submit_job", fake_submit)
 
-    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
     program = [
         {"op": "AllocArray", "n_qubits": 1},
         {"op": "Measure", "targets": [0]},
@@ -350,7 +345,7 @@ def test_device_submit_forwards_thread_limit(monkeypatch):
 
 
 def test_job_result_renders_summary_html():
-    device = neutral_atom_vm.connect_device("local-cpu", profile="ideal_small_array")
+    device = neutral_atom_vm.connect_device("state-vector", profile="ideal_small_array")
 
     program = [
         {"op": "AllocArray", "n_qubits": 2},

@@ -482,8 +482,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run_parser.add_argument(
         "--device",
-        default="local-cpu",
-        help="Device identifier (e.g. local-cpu, local-arc, stabilizer)",
+        default="state-vector",
+        help="Device identifier (e.g. state-vector, stabilizer)",
     )
     run_parser.add_argument(
         "--profile",

@@ -30,7 +30,7 @@ while still emitting a profile payload that the VM and existing SDK can consume 
 Restructure the widget into three conceptual areas:
 
 1. **Device & Profile Bar** – unchanged in spirit, but with clearer semantics:
-   - `Device` dropdown – device id such as `local-cpu`, `local-arc`, hardware IDs.
+- `Device` dropdown – device id such as `local-cpu`, `stabilizer`, hardware IDs.
    - `Profile` dropdown – preset profiles with labels and small hints:
      - label + persona (“Ideal square grid (education)”),
      - tooltip with qubit count and dimensionality.

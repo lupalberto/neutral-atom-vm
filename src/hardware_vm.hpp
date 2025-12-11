@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "noise.hpp"
-#include "noise/device_noise.hpp"
 #include "engine_statevector.hpp"
 #include "progress_reporter.hpp"
 #include "vm/instruction_timing.hpp"
@@ -18,7 +17,6 @@
 
 enum class BackendKind {
     kCpu,
-    kOneApi,
     kStabilizer,
 };
 
@@ -34,7 +32,6 @@ struct DeviceProfile {
     ISAVersion isa_version = kCurrentISAVersion;
     HardwareConfig hardware;
     std::shared_ptr<const NoiseEngine> noise_engine;
-    std::shared_ptr<const neutral_atom_vm::noise::DeviceNoiseEngine> device_noise_engine;
     std::optional<SimpleNoiseConfig> noise_config;
     BackendKind backend = BackendKind::kCpu;
     std::optional<std::string> stim_circuit_text;
@@ -67,13 +64,6 @@ class HardwareVM {
     );
 
   private:
-#ifdef NA_VM_WITH_ONEAPI
-    RunResult run_oneapi_batched(
-        const std::vector<Instruction>& program,
-        int num_shots,
-        const std::vector<std::uint64_t>& shot_seeds
-    );
-#endif
 #ifdef NA_VM_WITH_STIM
     RunResult run_stabilizer(
         const std::vector<Instruction>& program,

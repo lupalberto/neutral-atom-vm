@@ -16,7 +16,7 @@ namespace {
 
 JobRequest make_simple_job() {
     JobRequest job;
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware.positions = {0.0};
     job.shots = 1;

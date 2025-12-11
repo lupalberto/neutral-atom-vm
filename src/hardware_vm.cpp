@@ -1,6 +1,4 @@
 #include "hardware_vm.hpp"
-#include "noise/device_noise_builder.hpp"
-#include "oneapi_state_backend.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -13,19 +11,8 @@
 namespace {
 
 std::unique_ptr<StateBackend> make_state_backend(BackendKind backend) {
-    switch (backend) {
-        case BackendKind::kOneApi:
-#ifdef NA_VM_WITH_ONEAPI
-            return std::make_unique<OneApiStateBackend>();
-#else
-            throw std::runtime_error(
-                "oneAPI backend unavailable; rebuild with NA_VM_WITH_ONEAPI=ON"
-            );
-#endif
-        case BackendKind::kCpu:
-        default:
-            return std::make_unique<CpuStateBackend>();
-    }
+    (void)backend;
+    return std::make_unique<CpuStateBackend>();
 }
 
 }  // namespace
@@ -85,14 +72,6 @@ HardwareVM::RunResult HardwareVM::run(
     }
 
     (void)instruction_timings;
-    if (profile_.backend == BackendKind::kOneApi) {
-#ifdef NA_VM_WITH_ONEAPI
-        return run_oneapi_batched(program, num_shots, seeds);
-#else
-        throw std::runtime_error(
-            "oneAPI backend unavailable; rebuild with NA_VM_WITH_ONEAPI=ON");
-#endif
-    }
 
     const std::size_t hardware_threads = std::thread::hardware_concurrency();
     const std::size_t default_threads = hardware_threads > 0 ? hardware_threads : 1;
@@ -140,9 +119,6 @@ HardwareVM::RunResult HardwareVM::run(
                     if (profile_.noise_engine) {
                         engine.set_noise_model(profile_.noise_engine);
                     }
-                    if (profile_.device_noise_engine) {
-                        engine.set_device_noise_engine(profile_.device_noise_engine);
-                    }
                     engine.run(program);
                     per_shot_measurements[shot] = engine.state().measurements;
                     per_shot_logs[shot] = engine.state().logs;
@@ -177,36 +153,3 @@ HardwareVM::RunResult HardwareVM::run(
 
     return result;
 }
-
-#ifdef NA_VM_WITH_ONEAPI
-HardwareVM::RunResult HardwareVM::run_oneapi_batched(
-    const std::vector<Instruction>& program,
-    int num_shots,
-    const std::vector<std::uint64_t>& shot_seeds
-) {
-    HardwareConfig hw = profile_.hardware;
-    StatevectorEngine engine(hw, make_state_backend(BackendKind::kOneApi));
-    if (progress_reporter_) {
-        engine.set_progress_reporter(progress_reporter_);
-    }
-    if (profile_.noise_engine) {
-        engine.set_noise_model(profile_.noise_engine);
-    }
-    if (profile_.device_noise_engine) {
-        engine.set_device_noise_engine(profile_.device_noise_engine);
-    }
-    engine.run_batched(program, num_shots, shot_seeds);
-
-    RunResult result;
-    const auto& batched_measurements = engine.batched_measurements();
-    for (int shot = 0; shot < num_shots; ++shot) {
-        if (static_cast<std::size_t>(shot) < batched_measurements.size()) {
-            for (const auto& record : batched_measurements[static_cast<std::size_t>(shot)]) {
-                result.measurements.push_back(record);
-            }
-        }
-    }
-    result.logs = engine.logs();
-    return result;
-}
-#endif

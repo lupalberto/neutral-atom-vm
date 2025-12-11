@@ -24,7 +24,6 @@ from .job import (
     SiteDescriptor,
     SimpleNoiseConfig,
     TimingLimits,
-    has_oneapi_backend,
     has_stabilizer_backend,
     JobResult,
     submit_job,
@@ -612,7 +611,7 @@ class Device:
 
 _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     (
-        "local-cpu",
+        "state-vector",
         "ideal_small_array",
     ): {
         "label": "Ideal tutorial array",
@@ -622,7 +621,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "education",
     },
     (
-        "local-cpu",
+        "state-vector",
         "ideal_square_grid",
     ): {
         "label": "Ideal square grid",
@@ -632,7 +631,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "geometry exploration",
     },
     (
-        "local-cpu",
+        "state-vector",
         "noisy_square_array",
     ): {
         "label": "Noisy square array",
@@ -642,7 +641,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "algorithm prototyping",
     },
     (
-        "local-cpu",
+        "state-vector",
         "lossy_chain",
     ): {
         "label": "Loss-dominated chain",
@@ -652,7 +651,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "loss-aware algorithms",
     },
     (
-        "local-cpu",
+        "state-vector",
         "lossy_block",
     ): {
         "label": "Lossy block array (2×4×2)",
@@ -662,7 +661,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "loss-aware algorithms",
     },
     (
-        "local-cpu",
+        "state-vector",
         "benchmark_chain",
     ): {
         "label": "Benchmark chain (20 qubits)",
@@ -672,7 +671,7 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
         "persona": "integration + benchmarking",
     },
     (
-        "local-cpu",
+        "state-vector",
         "readout_stress",
     ): {
         "label": "Readout stress array",
@@ -683,23 +682,11 @@ _PROFILE_METADATA: Dict[Tuple[str, Optional[str]], Dict[str, str]] = {
     },
 }
 
-has_oneapi = has_oneapi_backend()
 has_stabilizer = has_stabilizer_backend()
-for (device_id, profile), meta in list(_PROFILE_METADATA.items()):
-    if device_id != "local-cpu":
-        continue
-    if not has_oneapi:
-        continue
-    arc_meta = dict(meta)
-    arc_meta["label"] = f"{meta['label']} (Arc GPU)"
-    arc_meta["description"] = (
-        meta["description"] + " Executed on Intel Arc via the oneAPI backend."
-    )
-    _PROFILE_METADATA[("local-arc", profile)] = arc_meta
 
 _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     # UX-aligned ideal profile for quick tutorial runs.
-    ("local-cpu", "ideal_small_array"): {
+    ("state-vector", "ideal_small_array"): {
         "positions": [float(i) for i in range(10)],
         "blockade_radius": 1.5,
         "grid_layout": {
@@ -737,7 +724,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "default_configuration_family": "dense_chain",
     },
     # 2D noiseless grid for layout exploration.
-    ("local-cpu", "ideal_square_grid"): {
+    ("state-vector", "ideal_square_grid"): {
         "positions": [float(i) for i in range(16)],
         "coordinates": [
             [float(x), float(y)]
@@ -792,7 +779,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "default_configuration_family": "full",
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
-    ("local-cpu", "noisy_square_array"): {
+    ("state-vector", "noisy_square_array"): {
         "positions": [
             0.0,
             1.0,
@@ -885,7 +872,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "default_configuration_family": "full",
     },
     # Heavy loss channel illustrating erasure-dominated behavior.
-    ("local-cpu", "lossy_chain"): {
+    ("state-vector", "lossy_chain"): {
         "positions": [float(i) * 1.5 for i in range(6)],
         "blockade_radius": 1.5,
         "grid_layout": {
@@ -925,7 +912,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "default_configuration_family": "dense_chain",
     },
-    ("local-cpu", "lossy_block"): {
+    ("state-vector", "lossy_block"): {
         "positions": [float(i) for i in range(16)],
         "coordinates": [
             [float(x) * 1.5, float(y), float(z)]
@@ -972,7 +959,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "default_configuration_family": "full",
     },
     # 20-qubit benchmark chain for GHZ/volume experiments with moderate noise.
-    ("local-cpu", "benchmark_chain"): {
+    ("state-vector", "benchmark_chain"): {
         "positions": [float(i) * 1.3 for i in range(20)],
         "blockade_radius": 1.6,
         "grid_layout": {
@@ -1035,7 +1022,7 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "default_configuration_family": "dense_chain",
     },
     # SPAM-focused preset with notable readout flips and mild runtime loss.
-    ("local-cpu", "readout_stress"): {
+    ("state-vector", "readout_stress"): {
         "positions": [float(i) for i in range(8)],
         "blockade_radius": 1.2,
         "grid_layout": {
@@ -1084,15 +1071,9 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
     },
 }
 
-if has_oneapi:
-    for (device_id, profile), config in list(_PROFILE_TABLE.items()):
-        if device_id != "local-cpu":
-            continue
-        _PROFILE_TABLE[("local-arc", profile)] = deepcopy(config)
-
 if has_stabilizer:
     for (device_id, profile), config in list(_PROFILE_TABLE.items()):
-        if device_id != "local-cpu":
+        if device_id != "state-vector":
             continue
         sanitized = _stabilizer_config_from(config)
         _PROFILE_TABLE[("stabilizer", profile)] = sanitized
@@ -1412,8 +1393,8 @@ def connect_device(
 ) -> Device:
     """Return a handle that behaves like a virtual neutral atom device.
 
-    The local C++ runtime powers the ``"local-cpu"`` preset and the
-    ``"local-arc"`` alias, so callers simply request a device/profile pair and
+    The local C++ runtime powers the ``"state-vector"`` preset (and the
+    ``"stabilizer"`` alias when Stim is enabled), so callers simply request a
     ``connect_device`` looks up the matching preset rather than requiring raw
     geometry.
     """

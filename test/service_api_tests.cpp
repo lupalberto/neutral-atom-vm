@@ -8,8 +8,8 @@
 namespace {
 
 TEST(ServiceApiTests, BackendSelectionRespectsLocalDevices) {
-    EXPECT_EQ(service::backend_for_device("local-arc"), BackendKind::kOneApi);
-    EXPECT_EQ(service::backend_for_device("local-cpu"), BackendKind::kCpu);
+    EXPECT_EQ(service::backend_for_device("state-vector"), BackendKind::kCpu);
+    EXPECT_EQ(service::backend_for_device("stabilizer"), BackendKind::kStabilizer);
 }
 
 TEST(ServiceApiTests, JobRequestJson) {
@@ -30,7 +30,7 @@ TEST(ServiceApiTests, JobRequestJson) {
 
     service::JobRequest job;
     job.job_id = "job-test";
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware = cfg;
     job.program = program;
@@ -39,7 +39,7 @@ TEST(ServiceApiTests, JobRequestJson) {
 
     const std::string json = service::to_json(job);
     EXPECT_NE(json.find("\"job_id\":\"job-test\""), std::string::npos);
-    EXPECT_NE(json.find("\"device_id\":\"local-cpu\""), std::string::npos);
+    EXPECT_NE(json.find("\"device_id\":\"state-vector\""), std::string::npos);
     EXPECT_NE(json.find("\"profile\":\"ideal_small_array\""), std::string::npos);
     EXPECT_NE(json.find("\"shots\":8"), std::string::npos);
     EXPECT_NE(json.find("\"isa_version\":{\"major\":1,\"minor\":1}"), std::string::npos);
@@ -129,7 +129,7 @@ TEST(ServiceApiTests, JobRunnerEmitsExecutionLogs) {
 TEST(ServiceApiTests, BenchmarkChainEnforcesNearestNeighborConnectivity) {
     service::JobRequest job;
     job.job_id = "job-benchmark-chain-connectivity";
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "benchmark_chain";
     job.hardware.positions = {0.0, 1.3, 2.6};
     job.hardware.blockade_radius = 3.0;
@@ -165,7 +165,7 @@ TEST(ServiceApiTests, BenchmarkChainEnforcesNearestNeighborConnectivity) {
 TEST(ServiceApiTests, BenchmarkChainEnforcesMeasurementCooldown) {
     service::JobRequest job;
     job.job_id = "job-benchmark-chain-cooldown";
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "benchmark_chain";
     job.hardware.positions = {0.0};
     job.hardware.blockade_radius = 1.6;
@@ -273,7 +273,7 @@ TEST(ServiceApiTests, StimBackendTimelineIsChronological) {
 TEST(ServiceApiTests, NoisySquareArrayEnforcesGridConnectivity) {
     service::JobRequest job;
     job.job_id = "job-noisy-square-grid";
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "noisy_square_array";
     // Geometry here mirrors the Python preset: a conceptual 4x4 grid
     // flattened into 16 positions.
@@ -320,7 +320,7 @@ TEST(ServiceApiTests, NoisySquareArrayEnforcesGridConnectivity) {
 TEST(ServiceApiTests, JobRunnerLogsMeasurementNoiseEvents) {
     service::JobRequest job;
     job.job_id = "job-measurement-noise-log";
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     job.profile = "ideal_small_array";
     job.hardware.positions = {0.0};
     job.hardware.blockade_radius = 1.0;

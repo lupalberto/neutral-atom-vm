@@ -49,7 +49,7 @@ TEST(ValidatorRegistryTests, RunsLambdaValidatorsInOrder) {
 
 TEST(ValidatorRegistryTests, FactorySelectsValidators) {
     service::JobRequest job;
-    job.device_id = "local-cpu";
+    job.device_id = "state-vector";
     HardwareConfig hw;
     hw.site_ids = {0, 1};
     hw.transport_edges = {TransportEdge{0, 1}};

@@ -1,6 +1,5 @@
 #include "service/job.hpp"
 #include "hardware_vm.hpp"
-#include "noise/device_noise_builder.hpp"
 #include "service/job_validation.hpp"
 #include "service/scheduler.hpp"
 
@@ -400,9 +399,6 @@ void append_instruction_json(const Instruction& instr, std::ostringstream& out) 
 namespace service {
 
 BackendKind backend_for_device(const std::string& device_id) {
-    if (device_id == "local-arc") {
-        return BackendKind::kOneApi;
-    }
     if (device_id == "stabilizer") {
         return BackendKind::kStabilizer;
     }
@@ -416,8 +412,7 @@ void enrich_hardware_with_profile_constraints(
     HardwareConfig& hw
 ) {
     const bool is_sim_device =
-        job.device_id == "local-cpu" ||
-        job.device_id == "local-arc" ||
+        job.device_id == "state-vector" ||
         job.device_id == "stabilizer";
     if (!is_sim_device) {
         return;
@@ -634,8 +629,6 @@ JobResult JobRunner::run(
         if (job.noise_config) {
             profile.noise_config = job.noise_config;
             profile.noise_engine = std::make_shared<SimpleNoiseEngine>(*job.noise_config);
-            profile.device_noise_engine =
-                neutral_atom_vm::noise::build_device_noise_engine(*job.noise_config);
         }
         if (job.stim_circuit) {
             profile.stim_circuit_text = job.stim_circuit;

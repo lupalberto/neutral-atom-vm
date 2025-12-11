@@ -3,30 +3,13 @@ project(neutral_atom_vm_bindings LANGUAGES CXX)
 
 cmake_policy(SET CMP0148 NEW)
 
-option(NA_VM_WITH_ONEAPI "Enable oneAPI/SYCL backend for the Python bindings" OFF)
 option(NA_VM_WITH_STIM "Enable Stim-backed stabilizer backend for the Python bindings" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(ONEAPI_COMPILE_OPTIONS "")
-set(ONEAPI_LINK_OPTIONS "")
-set(ONEAPI_TOOLCHAIN_ROOT "")
-
 get_filename_component(NA_VM_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
 include("${NA_VM_ROOT}/cmake/vm_sources.cmake")
-
-if(NA_VM_WITH_ONEAPI)
-    find_program(DPCPP_COMPILER dpcpp)
-    if(NOT DPCPP_COMPILER)
-        message(FATAL_ERROR "NA_VM_WITH_ONEAPI requires the dpcpp compiler (e.g. conda-forge dpcpp_linux-64) on PATH")
-    endif()
-    set(CMAKE_CXX_COMPILER "${DPCPP_COMPILER}" CACHE FILEPATH "SYCL compiler" FORCE)
-    set(CMAKE_CXX_STANDARD 17)
-    set(CMAKE_CXX_STANDARD_REQUIRED ON)
-    set(ONEAPI_COMPILE_OPTIONS -fsycl -fno-sycl-id-queries-fit-in-int)
-    set(ONEAPI_LINK_OPTIONS -fsycl)
-endif()
 
 if(NA_VM_WITH_STIM)
     if(DEFINED ENV{CONDA_PREFIX})
@@ -61,11 +44,6 @@ target_include_directories(vm PUBLIC
 )
 set_target_properties(vm PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-if(NA_VM_WITH_ONEAPI)
-    target_compile_definitions(vm PRIVATE NA_VM_WITH_ONEAPI=1)
-    target_compile_options(vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
-    target_link_options(vm PRIVATE ${ONEAPI_LINK_OPTIONS})
-endif()
 if(NA_VM_WITH_STIM)
     target_compile_definitions(vm PRIVATE NA_VM_WITH_STIM=1)
     target_include_directories(vm PRIVATE ${STIM_INCLUDE_DIR})
@@ -76,11 +54,6 @@ pybind11_add_module(_neutral_atom_vm
     ../src/bindings/python/module.cpp
 )
 target_link_libraries(_neutral_atom_vm PRIVATE vm)
-if(NA_VM_WITH_ONEAPI)
-    target_compile_options(_neutral_atom_vm PRIVATE ${ONEAPI_COMPILE_OPTIONS})
-    target_link_options(_neutral_atom_vm PRIVATE ${ONEAPI_LINK_OPTIONS})
-    target_compile_definitions(_neutral_atom_vm PRIVATE NA_VM_WITH_ONEAPI=1)
-endif()
 if(NA_VM_WITH_STIM)
     target_compile_definitions(_neutral_atom_vm PRIVATE NA_VM_WITH_STIM=1)
     target_include_directories(_neutral_atom_vm PRIVATE ${STIM_INCLUDE_DIR})
