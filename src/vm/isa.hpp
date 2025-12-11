@@ -111,6 +111,7 @@ struct SiteDescriptor {
     int id = 0;
     double x = 0.0;
     double y = 0.0;
+    double z = 0.0;
     int zone_id = 0;
 };
 

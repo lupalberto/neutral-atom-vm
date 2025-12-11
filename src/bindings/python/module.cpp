@@ -38,6 +38,9 @@ void fill_site_descriptor(const py::dict& src, SiteDescriptor& dst) {
     if (src.contains("y")) {
         dst.y = py::cast<double>(src["y"]);
     }
+    if (src.contains("z")) {
+        dst.z = py::cast<double>(src["z"]);
+    }
     if (src.contains("zone_id")) {
         dst.zone_id = py::cast<int>(src["zone_id"]);
     }

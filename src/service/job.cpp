@@ -124,6 +124,7 @@ void append_site_descriptor(const SiteDescriptor& site, std::ostringstream& out)
     out << "{\"id\":" << site.id
         << ",\"x\":" << site.x
         << ",\"y\":" << site.y
+        << ",\"z\":" << site.z
         << ",\"zone_id\":" << site.zone_id << '}';
 }
 
@@ -195,6 +196,9 @@ void populate_sites_from_coordinates(HardwareConfig& hw) {
         }
         if (coord.size() > 1) {
             site.y = coord[1];
+        }
+        if (coord.size() > 2) {
+            site.z = coord[2];
         }
         site.zone_id = 0;
         hw.sites.push_back(site);

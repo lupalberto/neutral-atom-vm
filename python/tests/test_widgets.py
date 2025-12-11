@@ -2,9 +2,21 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import pytest
 
+
+def _linear_sites(values: Sequence[float]) -> list[dict[str, float]]:
+    return [
+        {"id": idx, "x": float(value), "y": 0.0, "z": 0.0, "zone_id": 0}
+        for idx, value in enumerate(values)
+    ]
+
 def _sample_presets():
+    tutorial_sites = _linear_sites([0.0, 1.0, 2.0])
+    benchmark_sites = _linear_sites([0.0, 0.8, 1.6, 2.4])
+    dense_sites = _linear_sites([float(i) for i in range(6)])
     return {
         "device-alpha": {
             "tutorial": {
@@ -12,6 +24,8 @@ def _sample_presets():
                 "blockade_radius": 1.5,
                 "noise": {"p_loss": 0.1, "p_quantum_flip": 0.01},
                 "metadata": {"label": "Alpha Tutorial", "persona": "education"},
+                "sites": tutorial_sites,
+                "site_ids": [site["id"] for site in tutorial_sites],
             },
             "benchmark": {
                 "positions": [0.0, 0.8, 1.6, 2.4],
@@ -22,6 +36,8 @@ def _sample_presets():
                     "readout": {"p_flip0_to_1": 0.01, "p_flip1_to_0": 0.02},
                 },
                 "metadata": {"label": "Alpha Benchmark", "persona": "throughput"},
+                "sites": benchmark_sites,
+                "site_ids": [site["id"] for site in benchmark_sites],
             },
         },
         "device-beta": {
@@ -42,6 +58,8 @@ def _sample_presets():
                     "persona": "diagnostics",
                     "description": "Dense geometry with tunable noise",
                 },
+                "sites": dense_sites,
+                "site_ids": [site["id"] for site in dense_sites],
             }
         },
     }
@@ -116,6 +134,8 @@ def test_profile_payload_reflects_user_changes():
     assert payload["config"]["noise"]["p_loss"] == 0.42
     assert payload["config"]["noise"]["readout"]["p_flip0_to_1"] == 0.04
     assert payload["config"]["noise"]["gate"]["single_qubit"]["px"] == 0.07
+    assert payload["config"]["site_ids"] == [0, 1, 2]
+    assert payload["config"]["sites"][0]["x"] == 0.0
 
 
 def test_profile_configurator_emits_coordinates():
@@ -129,6 +149,7 @@ def test_profile_configurator_emits_coordinates():
 
     assert payload["config"]["positions"] == [0, 1, 2]
     assert payload["config"]["coordinates"] == [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+    assert payload["config"]["site_ids"] == [0, 1, 2]
 
 
 def test_profile_configurator_supports_custom_profile():
@@ -149,6 +170,8 @@ def test_profile_configurator_supports_custom_profile():
     assert payload["profile"] == "my_custom"
     assert payload["config"]["blockade_radius"] == 2.5
     assert payload["config"]["positions"] == [0.0, 1.2, 2.4]
+    assert payload["config"]["site_ids"] == [0, 1, 2]
+    assert payload["config"]["sites"][2]["x"] == pytest.approx(2.4)
     assert configurator.metadata_html.value.startswith("<em")
 
 

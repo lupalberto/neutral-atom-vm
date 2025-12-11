@@ -277,6 +277,7 @@ def _parse_site_descriptors(entries: Sequence[Any] | None) -> Sequence[SiteDescr
             id=int(item.get("id", len(descriptors))),
             x=float(item.get("x", 0.0) or 0.0),
             y=float(item.get("y", 0.0) or 0.0),
+            z=float(item.get("z", 0.0) or 0.0),
             zone_id=int(item.get("zone_id", 0) or 0),
         )
         descriptors.append(descriptor)
@@ -910,6 +911,53 @@ def build_device_from_config(
         timing_limits=timing_limits,
         submit_job_fn=submit_job_fn,
     )
+
+
+def _site_entries_from_config(config: Mapping[str, Any]) -> list[tuple[float, ...]]:
+    entries: list[tuple[float, ...]] = []
+    coordinates = config.get("coordinates")
+    if isinstance(coordinates, Sequence):
+        for entry in coordinates:
+            if isinstance(entry, Sequence) and not isinstance(entry, (str, bytes)):
+                try:
+                    tuple_entry = tuple(float(value) for value in entry)
+                except (TypeError, ValueError):
+                    continue
+                if tuple_entry:
+                    entries.append(tuple_entry)
+    if not entries:
+        positions = config.get("positions")
+        if isinstance(positions, Sequence):
+            for value in positions:
+                try:
+                    entries.append((float(value),))
+                except (TypeError, ValueError):
+                    continue
+    return entries
+
+
+def _sites_from_entries(entries: Sequence[tuple[float, ...]]) -> list[Dict[str, float]]:
+    sites: list[Dict[str, float]] = []
+    for idx, entry in enumerate(entries):
+        x = entry[0] if entry else 0.0
+        y = entry[1] if len(entry) > 1 else 0.0
+        z = entry[2] if len(entry) > 2 else 0.0
+        sites.append({"id": idx, "x": float(x), "y": float(y), "z": float(z), "zone_id": 0})
+    return sites
+
+
+def _ensure_site_metadata() -> None:
+    for config in _PROFILE_TABLE.values():
+        sites = config.get("sites")
+        if not sites:
+            entries = _site_entries_from_config(config)
+            sites = _sites_from_entries(entries) if entries else []
+            config["sites"] = sites
+        if "site_ids" not in config:
+            config["site_ids"] = [site["id"] for site in sites]
+
+
+_ensure_site_metadata()
 
 
 def connect_device(

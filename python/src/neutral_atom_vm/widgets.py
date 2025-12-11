@@ -120,6 +120,44 @@ def _parse_position_entries(text: str) -> list[tuple[float, ...]]:
     return entries
 
 
+def _site_descriptors_from_entries(entries: Sequence[tuple[float, ...]]) -> list[Dict[str, float]]:
+    sites: list[Dict[str, float]] = []
+    for idx, entry in enumerate(entries):
+        x = float(entry[0]) if entry else 0.0
+        y = float(entry[1]) if len(entry) > 1 else 0.0
+        z = float(entry[2]) if len(entry) > 2 else 0.0
+        sites.append({"id": idx, "x": x, "y": y, "z": z, "zone_id": 0})
+    return sites
+
+
+def _coords_from_sites(
+    sites: Sequence[Mapping[str, Any]],
+    layout_info: Mapping[str, Any] | None = None,
+) -> list[list[float]]:
+    if not sites:
+        return []
+    dim = 1
+    if isinstance(layout_info, Mapping):
+        dim = max(1, int(layout_info.get("dim", 1)))
+    else:
+        has_y = any(float(site.get("y", 0.0)) != 0.0 for site in sites)
+        has_z = any(float(site.get("z", 0.0)) != 0.0 for site in sites)
+        if has_z:
+            dim = 3
+        elif has_y:
+            dim = 2
+    coords: list[list[float]] = []
+    for site in sites:
+        x = float(site.get("x", 0.0))
+        row: list[float] = [x]
+        if dim >= 2:
+            row.append(float(site.get("y", 0.0)))
+        if dim >= 3:
+            row.append(float(site.get("z", 0.0)))
+        coords.append(row)
+    return coords
+
+
 def _format_matrix(matrix: Sequence[Sequence[float]] | None) -> str:
     if not matrix:
         return ""
@@ -355,7 +393,8 @@ class ProfileConfigurator:
                 "<small>Example: 0.0, 1.0, 2.0 or one value per line. "
                 "For multi-dimensional layouts, list each slot as a comma- or space-separated tuple "
                 "(e.g., `0 0`, `1 0`, `2 0`, `3 0`, `0 1`, ... for the first rows of a 4x4 grid). "
-                "The configurator keeps the legacy `positions` list while emitting richer `coordinates` for the backend.</small>"
+                "The configurator keeps the legacy `positions` list while emitting richer `coordinates`, "
+                "`sites`, and `site_ids` so the backend understands the lattice plus slot mapping.</small>"
             ),
             layout=widgets.Layout(margin="0 0 0 8px"),
         )
@@ -565,7 +604,12 @@ class ProfileConfigurator:
             return
         self._apply_grid_layout_info(config.get("grid_layout"))
         self.blockade_input.value = float(config.get("blockade_radius", 0.0))
-        coords = config.get("coordinates")
+        coords = None
+        sites = config.get("sites")
+        if isinstance(sites, Sequence):
+            coords = _coords_from_sites(sites, config.get("grid_layout"))
+        elif config.get("coordinates"):
+            coords = config.get("coordinates")
         self.positions_editor.value = _format_positions(coords if coords else config.get("positions", []))
         self.metadata_html.value = _format_metadata(config.get("metadata"))
         self._load_noise(config.get("noise"))
@@ -625,6 +669,10 @@ class ProfileConfigurator:
         }
         if coordinates:
             config["coordinates"] = coordinates
+        site_descriptors = _site_descriptors_from_entries(entries)
+        if site_descriptors:
+            config["sites"] = site_descriptors
+            config["site_ids"] = [site["id"] for site in site_descriptors]
         layout_info = self._grid_layout_info()
         if layout_info:
             config["grid_layout"] = layout_info
@@ -775,7 +823,12 @@ class ProfileConfigurator:
         if profile_name:
             self.custom_profile_name.value = str(profile_name)
         config = payload.get("config") or {}
-        coords = config.get("coordinates")
+        coords = None
+        sites = config.get("sites")
+        if isinstance(sites, Sequence):
+            coords = _coords_from_sites(sites, config.get("grid_layout"))
+        elif config.get("coordinates"):
+            coords = config.get("coordinates")
         positions = config.get("positions")
         if coords:
             self.positions_editor.value = _format_positions(coords)

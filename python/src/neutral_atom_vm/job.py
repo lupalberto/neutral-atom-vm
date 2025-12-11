@@ -350,10 +350,11 @@ class SiteDescriptor:
     id: int = 0
     x: float = 0.0
     y: float = 0.0
+    z: float = 0.0
     zone_id: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "x": self.x, "y": self.y, "zone_id": self.zone_id}
+        return {"id": self.id, "x": self.x, "y": self.y, "z": self.z, "zone_id": self.zone_id}
 
 
 @dataclass
