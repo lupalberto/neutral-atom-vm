@@ -13,6 +13,9 @@ set(ONEAPI_COMPILE_OPTIONS "")
 set(ONEAPI_LINK_OPTIONS "")
 set(ONEAPI_TOOLCHAIN_ROOT "")
 
+get_filename_component(NA_VM_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
+include("${NA_VM_ROOT}/cmake/vm_sources.cmake")
+
 if(NA_VM_WITH_ONEAPI)
     find_program(DPCPP_COMPILER dpcpp)
     if(NOT DPCPP_COMPILER)
@@ -48,30 +51,11 @@ execute_process(
 )
 find_package(pybind11 CONFIG REQUIRED HINTS ${PYBIND11_CMAKE_DIR})
 
-add_library(vm STATIC
-    ../src/engine_statevector.cpp
-    ../src/cpu_state_backend.cpp
-    ../src/oneapi_state_backend.cpp
-    ../src/noise.cpp
-    ../src/noise/pauli_utils.cpp
-    ../src/noise/amplitude_damping_source.cpp
-    ../src/noise/measurement_noise_source.cpp
-    ../src/noise/single_qubit_pauli_source.cpp
-    ../src/noise/two_qubit_pauli_source.cpp
-    ../src/noise/correlated_pauli_source.cpp
-    ../src/noise/device_pauli_noise_source.cpp
-    ../src/noise/device_noise_builder.cpp
-    ../src/noise/idle_dephasing_source.cpp
-    ../src/noise/phase_kick_noise_source.cpp
-    ../src/noise/idle_phase_drift_source.cpp
-    ../src/noise/loss_tracking_source.cpp
-    ../src/hardware_vm.cpp
-    ../src/stabilizer_backend.cpp
-    ../src/service/job.cpp
-    ../src/service/job_validation.cpp
-    ../src/service/scheduler.cpp
-    ../src/service/job_service.cpp
-)
+set(NA_VM_SOURCE_FILES_PY "")
+foreach(src IN LISTS NA_VM_SOURCE_FILES)
+    list(APPEND NA_VM_SOURCE_FILES_PY "../${src}")
+endforeach()
+add_library(vm STATIC ${NA_VM_SOURCE_FILES_PY})
 target_include_directories(vm PUBLIC
     ${CMAKE_SOURCE_DIR}/../src
 )
