@@ -245,6 +245,42 @@ void append_pulse_limits_json(const PulseLimits& limits, std::ostringstream& out
         << '}';
 }
 
+void append_transport_edge(const TransportEdge& edge, std::ostringstream& out) {
+    out << "{\"src_site_id\":" << edge.src_site_id
+        << ",\"dst_site_id\":" << edge.dst_site_id
+        << ",\"distance\":" << edge.distance
+        << ",\"duration_ns\":" << edge.duration_ns << '}';
+}
+
+void append_transport_edges_json(const std::vector<TransportEdge>& edges, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t idx = 0; idx < edges.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_transport_edge(edges[idx], out);
+    }
+    out << ']';
+}
+
+bool move_limits_has_data(const MoveLimits& limits) {
+    return limits.max_total_displacement_per_atom > 0.0 ||
+           limits.max_moves_per_atom > 0 ||
+           limits.max_moves_per_shot > 0 ||
+           limits.max_moves_per_configuration_change > 0 ||
+           limits.rearrangement_window_ns > 0.0;
+}
+
+void append_move_limits_json(const MoveLimits& limits, std::ostringstream& out) {
+    out << '{'
+        << "\"max_total_displacement_per_atom\":" << limits.max_total_displacement_per_atom << ','
+        << "\"max_moves_per_atom\":" << limits.max_moves_per_atom << ','
+        << "\"max_moves_per_shot\":" << limits.max_moves_per_shot << ','
+        << "\"max_moves_per_configuration_change\":" << limits.max_moves_per_configuration_change << ','
+        << "\"rearrangement_window_ns\":" << limits.rearrangement_window_ns
+        << '}';
+}
+
 void populate_sites_from_coordinates(HardwareConfig& hw) {
     if (!hw.sites.empty() || hw.coordinates.empty()) {
         return;
@@ -534,6 +570,14 @@ std::string to_json(const JobRequest& job) {
     append_timing_limits_json(job.hardware.timing_limits, out);
     out << ",\"pulse_limits\":";
     append_pulse_limits_json(job.hardware.pulse_limits, out);
+    if (!job.hardware.transport_edges.empty()) {
+        out << ",\"transport_edges\":";
+        append_transport_edges_json(job.hardware.transport_edges, out);
+    }
+    if (move_limits_has_data(job.hardware.move_limits)) {
+        out << ",\"move_limits\":";
+        append_move_limits_json(job.hardware.move_limits, out);
+    }
     out << "},";
     out << "\"program\":";
     out << '[';
@@ -609,6 +653,7 @@ JobResult JobRunner::run(
         ensure_coordinates_from_sites(hw);
         validate_active_qubits(hw, job.program);
         validate_blockade_constraints(hw, job.program);
+        validate_transport_constraints(hw, job.program);
         profile.hardware = std::move(hw);
         profile.backend = backend_for_device(job.device_id);
         if (job.noise_config) {

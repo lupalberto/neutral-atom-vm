@@ -35,6 +35,13 @@ def _load_native_module():
     if _native_module is not None:
         return _native_module
 
+    try:
+        module = importlib.import_module("neutral_atom_vm._neutral_atom_vm")
+        _native_module = module
+        return module
+    except ImportError:
+        pass
+
     package_dir = os.path.dirname(__file__)
     pattern = os.path.join(package_dir, "_neutral_atom_vm*.so")
     candidates = glob.glob(pattern)
@@ -54,17 +61,11 @@ def _load_native_module():
         _native_module = module
         return module
 
-    try:
-        from ._neutral_atom_vm import submit_job as dummy  # noqa: F401 - ensure module can be imported
-    except ImportError as exc:
-        raise ImportError(
-            "The compiled neutral_atom_vm bindings are missing. "
-            "Build the C++ extension via CMake or install the package "
-            "with a wheel that includes '_neutral_atom_vm'."
-        ) from exc
-    module = importlib.import_module("neutral_atom_vm._neutral_atom_vm")
-    _native_module = module
-    return module
+    raise ImportError(
+        "The compiled neutral_atom_vm bindings are missing. "
+        "Build the C++ extension via CMake or reinstall the package "
+        "so that '_neutral_atom_vm' is available."
+    )
 
 
 def has_oneapi_backend() -> bool:
@@ -418,6 +419,49 @@ class PulseLimits:
 
 
 @dataclass
+class TransportEdge:
+    src_site_id: int = 0
+    dst_site_id: int = 0
+    distance: float = 0.0
+    duration_ns: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "src_site_id": self.src_site_id,
+            "dst_site_id": self.dst_site_id,
+            "distance": self.distance,
+            "duration_ns": self.duration_ns,
+        }
+
+
+@dataclass
+class MoveLimits:
+    max_total_displacement_per_atom: float = 0.0
+    max_moves_per_atom: int = 0
+    max_moves_per_shot: int = 0
+    max_moves_per_configuration_change: int = 0
+    rearrangement_window_ns: float = 0.0
+
+    def has_data(self) -> bool:
+        return (
+            self.max_total_displacement_per_atom > 0.0
+            or self.max_moves_per_atom > 0
+            or self.max_moves_per_shot > 0
+            or self.max_moves_per_configuration_change > 0
+            or self.rearrangement_window_ns > 0.0
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "max_total_displacement_per_atom": self.max_total_displacement_per_atom,
+            "max_moves_per_atom": self.max_moves_per_atom,
+            "max_moves_per_shot": self.max_moves_per_shot,
+            "max_moves_per_configuration_change": self.max_moves_per_configuration_change,
+            "rearrangement_window_ns": self.rearrangement_window_ns,
+        }
+
+
+@dataclass
 class InteractionPair:
     site_a: int = 0
     site_b: int = 0
@@ -495,6 +539,8 @@ class HardwareConfig:
     timing_limits: TimingLimits = field(default_factory=TimingLimits)
     pulse_limits: PulseLimits = field(default_factory=PulseLimits)
     blockade_model: BlockadeModel = field(default_factory=BlockadeModel)
+    transport_edges: Sequence[TransportEdge] | None = None
+    move_limits: MoveLimits = field(default_factory=MoveLimits)
 
     def to_dict(self) -> Dict[str, Any]:
         payload = {
@@ -515,6 +561,10 @@ class HardwareConfig:
             payload["blockade_model"] = self.blockade_model.to_dict()
         payload["timing_limits"] = self.timing_limits.to_dict()
         payload["pulse_limits"] = self.pulse_limits.to_dict()
+        if self.transport_edges:
+            payload["transport_edges"] = [edge.to_dict() for edge in self.transport_edges]
+        if self.move_limits and self.move_limits.has_data():
+            payload["move_limits"] = self.move_limits.to_dict()
         return payload
 
 

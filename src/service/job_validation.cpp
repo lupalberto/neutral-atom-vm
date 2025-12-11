@@ -1,8 +1,13 @@
 #include "service/job_validation.hpp"
 
+#include <cmath>
+#include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace service {
 namespace {
@@ -32,6 +37,59 @@ std::string format_interaction_message(int site_a, int site_b) {
     }
     return oss.str();
 }
+
+bool move_limits_has_data(const MoveLimits& limits) {
+    return limits.max_total_displacement_per_atom > 0.0 ||
+           limits.max_moves_per_atom > 0 ||
+           limits.max_moves_per_shot > 0 ||
+           limits.max_moves_per_configuration_change > 0 ||
+           limits.rearrangement_window_ns > 0.0;
+}
+
+struct TransportGraph {
+    void add_edge(int src, int dst) {
+        adjacency_[src].insert(dst);
+        adjacency_[dst].insert(src);
+    }
+
+    bool allows(int src, int dst) const {
+        const auto it = adjacency_.find(src);
+        if (it == adjacency_.end()) {
+            return false;
+        }
+        return it->second.find(dst) != it->second.end();
+    }
+
+    bool empty() const {
+        return adjacency_.empty();
+    }
+
+private:
+    std::unordered_map<int, std::unordered_set<int>> adjacency_;
+};
+
+std::optional<int> find_site_id_for_position(const HardwareConfig& hardware, double position) {
+    constexpr double kPositionTolerance = 1e-6;
+    for (std::size_t idx = 0; idx < hardware.positions.size(); ++idx) {
+        if (std::fabs(hardware.positions[idx] - position) < kPositionTolerance) {
+            if (idx < hardware.site_ids.size()) {
+                return hardware.site_ids[idx];
+            }
+            return static_cast<int>(idx);
+        }
+    }
+    for (const auto& site : hardware.sites) {
+        if (std::fabs(site.x - position) < kPositionTolerance) {
+            return site.id;
+        }
+    }
+    return std::nullopt;
+}
+
+struct MoveStats {
+    int moves = 0;
+    double displacement = 0.0;
+};
 
 }  // namespace
 
@@ -81,6 +139,113 @@ void validate_blockade_constraints(
                         std::to_string(q1) + " violates " + *reason);
                 }
             }
+        }
+    }
+}
+
+void validate_transport_constraints(
+    const HardwareConfig& hardware,
+    const std::vector<Instruction>& program
+) {
+    if (hardware.transport_edges.empty() && !move_limits_has_data(hardware.move_limits)) {
+        return;
+    }
+    const SiteIndexMap index = build_site_index(hardware);
+    const std::size_t slot_count = configuration_limit(hardware);
+    if (slot_count == 0) {
+        return;
+    }
+    std::vector<int> slot_site_ids(slot_count, -1);
+    std::vector<double> slot_positions(slot_count, 0.0);
+    for (std::size_t slot = 0; slot < slot_count; ++slot) {
+        if (slot < hardware.site_ids.size()) {
+            slot_site_ids[slot] = hardware.site_ids[slot];
+        } else {
+            slot_site_ids[slot] = static_cast<int>(slot);
+        }
+        if (slot < hardware.positions.size()) {
+            slot_positions[slot] = hardware.positions[slot];
+        } else if (const SiteDescriptor* descriptor =
+                       site_descriptor_for_slot(hardware, index, static_cast<int>(slot))) {
+            slot_positions[slot] = descriptor->x;
+        }
+    }
+
+    TransportGraph graph;
+    for (const auto& edge : hardware.transport_edges) {
+        graph.add_edge(edge.src_site_id, edge.dst_site_id);
+    }
+
+    const MoveLimits& limits = hardware.move_limits;
+    bool seen_main_program = false;
+    std::vector<MoveStats> stats(slot_count);
+    int total_moves = 0;
+
+    for (const auto& instr : program) {
+        if (instr.op == Op::MoveAtom) {
+            if (limits.rearrangement_window_ns > 0.0 && seen_main_program) {
+                throw std::invalid_argument("MoveAtom violates rearrangement window constraints");
+            }
+            const auto& move = std::get<MoveAtomInstruction>(instr.payload);
+            if (move.atom < 0 || static_cast<std::size_t>(move.atom) >= slot_count) {
+                throw std::invalid_argument("MoveAtom references invalid atom index");
+            }
+            const std::size_t slot = static_cast<std::size_t>(move.atom);
+            const int prev_site_id = slot_site_ids[slot];
+            const double prev_position = slot_positions[slot];
+            const double target_position = move.position;
+            const std::optional<int> target_site_id =
+                find_site_id_for_position(hardware, target_position);
+            if (!graph.empty() && prev_site_id >= 0 && !target_site_id) {
+                std::ostringstream oss;
+                oss << "MoveAtom target position " << target_position
+                    << " has no transport edge";
+                throw std::invalid_argument(oss.str());
+            }
+            if (!graph.empty() && prev_site_id >= 0 && target_site_id &&
+                !graph.allows(prev_site_id, *target_site_id)) {
+                std::ostringstream oss;
+                oss << "MoveAtom from site " << prev_site_id << " to " << *target_site_id
+                    << " is not allowed by transport edges";
+                throw std::invalid_argument(oss.str());
+            }
+
+            double displacement = std::abs(target_position - prev_position);
+            if (prev_site_id >= 0 && target_site_id) {
+                const double site_distance =
+                    distance_between_sites(hardware, index, prev_site_id, *target_site_id);
+                if (std::isfinite(site_distance)) {
+                    displacement = site_distance;
+                }
+            }
+
+            stats[slot].moves += 1;
+            stats[slot].displacement += displacement;
+            total_moves += 1;
+
+            if (limits.max_moves_per_atom > 0 && stats[slot].moves > limits.max_moves_per_atom) {
+                throw std::invalid_argument("MoveAtom exceeds per-atom move limit");
+            }
+            if (limits.max_moves_per_shot > 0 && total_moves > limits.max_moves_per_shot) {
+                throw std::invalid_argument("MoveAtom exceeds per-shot move limit");
+            }
+            if (limits.max_moves_per_configuration_change > 0 &&
+                total_moves > limits.max_moves_per_configuration_change) {
+                throw std::invalid_argument("MoveAtom exceeds per-configuration move limit");
+            }
+            if (limits.max_total_displacement_per_atom > 0.0 &&
+                stats[slot].displacement > limits.max_total_displacement_per_atom) {
+                std::ostringstream oss;
+                oss << "Atom " << slot << " exceeds displacement limit";
+                throw std::invalid_argument(oss.str());
+            }
+
+            slot_positions[slot] = target_position;
+            slot_site_ids[slot] = target_site_id.value_or(-1);
+            continue;
+        }
+        if (instr.op == Op::ApplyGate || instr.op == Op::Measure || instr.op == Op::Pulse) {
+            seen_main_program = true;
         }
     }
 }

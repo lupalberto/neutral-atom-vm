@@ -1,7 +1,7 @@
 # Ticket: Physical Transport & Rearrangement Semantics
 
 - **Priority:** Medium
-- **Status:** Backlog
+- **Status:** Completed
 
 ## Summary
 Model realistic **transport/rearrangement** on neutral-atom QPUs by:
@@ -65,3 +65,8 @@ while keeping the core ISA simple.
 - Configuration families can be annotated as reachable/unreachable under a given transport model.
 - Documentation explains transport semantics in terms that match real neutral-atom rearrangement workflows.
 
+## Resolution
+- Added `transport_edges` and `move_limits` to `HardwareConfig` plus ISA helpers so the service can understand lattice moves.
+- The service validates transport paths and move budgets in `validate_transport_constraints`, and the profile serializer now emits the new fields for clients.
+- The validator derives slot data from available geometry when `site_ids` are missing to keep enforcement active.
+- Python bindings expose `TransportEdge`/`MoveLimits`, and regression tests cover rejected moves and per-atom budgets.

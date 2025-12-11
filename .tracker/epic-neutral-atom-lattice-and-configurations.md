@@ -1,7 +1,7 @@
 # Epic: Neutral Atom Lattices, Configurations, and Geometry‑Aware UX
 
 - **Priority:** High
-- **Status:** In Progress
+- **Status:** Completed
 
 ## Summary
 Deliver a cohesive, physically grounded geometry model for the Neutral Atom VM by:
@@ -84,4 +84,8 @@ Key outcomes:
 ## Status Update
 - Lattice + configuration ticket is done, and the ProfileConfigurator UI now surfaces configurations/special regions as part of the earned UX upgrade.
 - The interaction/crosstalk ticket has been implemented: the service validates interaction graphs, anisotropic blockade radii, and zone overrides while the SDK exposes the same metadata.
-- Transport & rearrangement is still backlog pending a separate effort.
+- Transport & rearrangement is now implemented: transport edges/move budgets are validated in the service even when `site_ids` are absent, and SDK bindings/tests exercise the new schema.
+
+## Resolution
+- All acceptance criteria have been satisfied by making lattices/configurations first-class, adding geometry-aware UX, enforcing interaction/blockade constraints, and validating transport/rearrangement limits in the service.
+- The Neutral Atom Lattices, Configurations, and Geometry-Aware UX epic can be closed as every roadmap item now has corresponding implementation + tests.

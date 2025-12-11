@@ -175,6 +175,21 @@ struct PulseLimits {
     int max_overlapping_pulses = 0;  // 0 = unlimited
 };
 
+struct TransportEdge {
+    int src_site_id = 0;
+    int dst_site_id = 0;
+    double distance = 0.0;
+    double duration_ns = 0.0;
+};
+
+struct MoveLimits {
+    double max_total_displacement_per_atom = 0.0;
+    int max_moves_per_atom = 0;
+    int max_moves_per_shot = 0;
+    int max_moves_per_configuration_change = 0;
+    double rearrangement_window_ns = 0.0;
+};
+
 struct HardwareConfig {
     // Legacy v1.0 fields.
     std::vector<double> positions;  // 1D positions for atoms (chain view)
@@ -191,6 +206,8 @@ struct HardwareConfig {
     std::vector<NativeGate> native_gates;
     TimingLimits timing_limits;
     PulseLimits pulse_limits;
+    std::vector<TransportEdge> transport_edges;
+    MoveLimits move_limits;
 };
 
 using SiteIndexMap = std::unordered_map<int, std::size_t>;
@@ -248,6 +265,39 @@ inline int site_id_for_slot(
         return site->id;
     }
     return -1;
+}
+
+inline const SiteDescriptor* site_descriptor_by_id(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int site_id
+) {
+    const auto it = index.find(site_id);
+    if (it == index.end()) {
+        return nullptr;
+    }
+    const std::size_t site_index = it->second;
+    if (site_index >= hw.sites.size()) {
+        return nullptr;
+    }
+    return &hw.sites[site_index];
+}
+
+inline double distance_between_sites(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int site_a,
+    int site_b
+) {
+    const SiteDescriptor* sa = site_descriptor_by_id(hw, index, site_a);
+    const SiteDescriptor* sb = site_descriptor_by_id(hw, index, site_b);
+    if (!sa || !sb) {
+        return std::numeric_limits<double>::infinity();
+    }
+    const double dx = sa->x - sb->x;
+    const double dy = sa->y - sb->y;
+    const double dz = sa->z - sb->z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 inline bool interaction_pair_allowed(const InteractionGraph& graph, int a, int b) {

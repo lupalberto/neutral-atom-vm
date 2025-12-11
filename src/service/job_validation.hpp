@@ -11,4 +11,9 @@ void validate_blockade_constraints(
     const std::vector<Instruction>& program
 );
 
+void validate_transport_constraints(
+    const HardwareConfig& hardware,
+    const std::vector<Instruction>& program
+);
+
 }  // namespace service
