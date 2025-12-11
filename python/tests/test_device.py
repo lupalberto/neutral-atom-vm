@@ -270,7 +270,10 @@ def test_device_submit_raises_on_blockade_violation():
     job = device.submit(program, shots=1)
     result = job.result()
     assert result["status"] == "failed"
-    assert "nearest-neighbor chain connectivity" in result["message"]
+    assert (
+        "nearest-neighbor chain connectivity" in result["message"] or
+        "violates blockade radius" in result["message"]
+    )
 
 
 def test_device_submit_forwards_thread_limit(monkeypatch):

@@ -13,8 +13,12 @@ from bloqade import qubit
 
 from .layouts import GridLayout, grid_layout_for_profile
 from .job import (
+    BlockadeModel,
+    BlockadeZoneOverride,
     ConnectivityKind,
     HardwareConfig,
+    InteractionGraph,
+    InteractionPair,
     JobRequest,
     NativeGate,
     SiteDescriptor,
@@ -266,6 +270,67 @@ def _parse_native_gates(payload: Sequence[Mapping[str, Any]]) -> list[NativeGate
     return gates
 
 
+def _parse_interaction_graphs(
+    payload: Sequence[Any] | None
+) -> Sequence[InteractionGraph] | None:
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        return None
+    graphs: list[InteractionGraph] = []
+    for entry in payload:
+        if not isinstance(entry, Mapping):
+            continue
+        gate_name = _coerce_to_str(entry.get("gate_name")) or ""
+        allowed_pairs: list[InteractionPair] = []
+        pairs_payload = entry.get("allowed_pairs")
+        if isinstance(pairs_payload, Sequence) and not isinstance(pairs_payload, (str, bytes)):
+            for pair_obj in pairs_payload:
+                if not isinstance(pair_obj, Mapping):
+                    continue
+                try:
+                    site_a = int(pair_obj.get("site_a", 0))
+                except (TypeError, ValueError):
+                    site_a = 0
+                try:
+                    site_b = int(pair_obj.get("site_b", 0))
+                except (TypeError, ValueError):
+                    site_b = 0
+                allowed_pairs.append(InteractionPair(site_a=site_a, site_b=site_b))
+        graphs.append(
+            InteractionGraph(
+                gate_name=gate_name,
+                allowed_pairs=tuple(allowed_pairs),
+            )
+        )
+    return tuple(graphs) or None
+
+
+def _parse_blockade_model(payload: Mapping[str, Any] | None) -> BlockadeModel | None:
+    if not isinstance(payload, Mapping):
+        return None
+    overrides: list[BlockadeZoneOverride] = []
+    zone_entries = payload.get("zone_overrides")
+    if isinstance(zone_entries, Sequence) and not isinstance(zone_entries, (str, bytes)):
+        for entry in zone_entries:
+            if not isinstance(entry, Mapping):
+                continue
+            try:
+                zone_id = int(entry.get("zone_id", 0))
+            except (TypeError, ValueError):
+                zone_id = 0
+            try:
+                radius = float(entry.get("radius", 0.0))
+            except (TypeError, ValueError):
+                radius = 0.0
+            overrides.append(BlockadeZoneOverride(zone_id=zone_id, radius=radius))
+    return BlockadeModel(
+        radius=float(payload.get("radius", 0.0) or 0.0),
+        radius_x=float(payload.get("radius_x", 0.0) or 0.0),
+        radius_y=float(payload.get("radius_y", 0.0) or 0.0),
+        radius_z=float(payload.get("radius_z", 0.0) or 0.0),
+        zone_overrides=tuple(overrides),
+    )
+
+
 def _parse_site_descriptors(entries: Sequence[Any] | None) -> Sequence[SiteDescriptor] | None:
     if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
         return None
@@ -463,6 +528,8 @@ class Device:
     grid_layout: GridLayout | None = None
     native_gates: Sequence[NativeGate] | None = None
     timing_limits: TimingLimits | None = None
+    interaction_graphs: Sequence[InteractionGraph] | None = None
+    blockade_model: BlockadeModel | None = None
     submit_job_fn: SubmitJobFn | None = None
     configuration_families: Dict[str, ConfigurationFamily] | None = None
     regions: Sequence[Region] | None = None
@@ -523,6 +590,8 @@ class Device:
                 site_ids=list(self.site_ids) if self.site_ids else None,
                 sites=list(self.sites) if self.sites else None,
                 native_gates=self.native_gates,
+                interaction_graphs=list(self.interaction_graphs) if self.interaction_graphs else None,
+                blockade_model=self.blockade_model or BlockadeModel(),
                 timing_limits=self.timing_limits or TimingLimits(),
             ),
             device_id=self.id,
@@ -984,9 +1053,11 @@ def build_device_from_config(
     if isinstance(gates_payload, Sequence) and not isinstance(gates_payload, (str, bytes)):
         mapping_entries = [entry for entry in gates_payload if isinstance(entry, Mapping)]
         if mapping_entries:
-                    parsed = _parse_native_gates(mapping_entries)
-                    if parsed:
-                        native_gates = parsed
+            parsed = _parse_native_gates(mapping_entries)
+            if parsed:
+                native_gates = parsed
+    interaction_graphs = _parse_interaction_graphs(resolved_config.get("interaction_graphs"))
+    blockade_model = _parse_blockade_model(resolved_config.get("blockade_model"))
     layout_payload = resolved_config.get("grid_layout")
     layout = (
         GridLayout.from_info(layout_payload)
@@ -1007,6 +1078,8 @@ def build_device_from_config(
         grid_layout=layout,
         native_gates=native_gates,
         timing_limits=timing_limits,
+        interaction_graphs=interaction_graphs,
+        blockade_model=blockade_model,
         configuration_families=configuration_families or None,
         regions=tuple(region_entries) if region_entries else None,
         active_configuration_family_name=default_family_name,

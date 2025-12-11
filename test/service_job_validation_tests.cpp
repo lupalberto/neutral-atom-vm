@@ -20,6 +20,45 @@ service::JobRequest make_blockade_job() {
     return job;
 }
 
+service::JobRequest make_interaction_job() {
+    service::JobRequest job;
+    job.device_id = "local-cpu";
+    job.profile = "ideal_small_array";
+    job.hardware.positions = {0.0, 1.0, 2.0};
+    job.hardware.site_ids = {0, 1, 2};
+    job.hardware.sites.clear();
+    for (int idx = 0; idx < 3; ++idx) {
+        SiteDescriptor site;
+        site.id = idx;
+        site.x = static_cast<double>(idx);
+        site.y = static_cast<double>(idx);
+        site.zone_id = idx % 2;
+        job.hardware.sites.push_back(site);
+    }
+    job.shots = 1;
+    job.program = {
+        {Op::AllocArray, 3},
+        {Op::ApplyGate, Gate{"CX", {0, 1}}},
+        {Op::Measure, std::vector<int>{0, 1}},
+    };
+    return job;
+}
+
+service::JobRequest make_zone_blockade_job() {
+    service::JobRequest job = make_blockade_job();
+    job.hardware.site_ids = {0, 1};
+    job.hardware.sites.clear();
+    for (int idx = 0; idx < 2; ++idx) {
+        SiteDescriptor site;
+        site.id = idx;
+        site.x = 0.0;
+        site.y = static_cast<double>(idx);
+        site.zone_id = 5;
+        job.hardware.sites.push_back(site);
+    }
+    return job;
+}
+
 }  // namespace
 
 TEST(ServiceJobValidationTests, BlockadeConstraintCheckedBeforeExecution) {
@@ -33,4 +72,67 @@ TEST(ServiceJobValidationTests, BlockadeConstraintCheckedBeforeExecution) {
         result.message.find("blockade radius"),
         std::string::npos
     );
+}
+
+TEST(ServiceJobValidationTests, InteractionGraphRejectsUnsupportedPairs) {
+    service::JobRunner runner;
+    auto job = make_interaction_job();
+    job.hardware.blockade_radius = 10.0;
+    job.hardware.interaction_graphs = {
+        InteractionGraph{
+            .gate_name = "CX",
+            .allowed_pairs = {{0, 1}},
+        },
+    };
+    job.program[1] = {Op::ApplyGate, Gate{"CX", {0, 2}}};
+
+    const auto result = runner.run(job);
+    EXPECT_EQ(result.status, service::JobStatus::Failed);
+    EXPECT_FALSE(result.message.empty());
+    EXPECT_NE(result.message.find("interaction graph"), std::string::npos);
+}
+
+TEST(ServiceJobValidationTests, InteractionGraphAllowsAuthorizedPairs) {
+    service::JobRunner runner;
+    auto job = make_interaction_job();
+    job.hardware.blockade_radius = 10.0;
+    job.hardware.interaction_graphs = {
+        InteractionGraph{
+            .gate_name = "CX",
+            .allowed_pairs = {{0, 1}, {1, 2}},
+        },
+    };
+    job.program[1] = {Op::ApplyGate, Gate{"CX", {1, 2}}};
+
+    const auto result = runner.run(job);
+    EXPECT_EQ(result.status, service::JobStatus::Completed);
+}
+
+TEST(ServiceJobValidationTests, AxisSpecificBlockadeEnforced) {
+    service::JobRunner runner;
+    auto job = make_blockade_job();
+    job.hardware.positions = {0.0, 0.0};
+    job.hardware.coordinates = {{0.0, 0.0, 0.0}, {0.0, 0.5, 0.0}};
+    job.hardware.blockade_radius = 5.0;
+    job.hardware.blockade_model.radius = 5.0;
+    job.hardware.blockade_model.radius_y = 0.25;
+
+    const auto result = runner.run(job);
+    EXPECT_EQ(result.status, service::JobStatus::Failed);
+    EXPECT_NE(result.message.find("y-axis"), std::string::npos);
+}
+
+TEST(ServiceJobValidationTests, ZoneOverrideBlockadeTakesPrecedence) {
+    service::JobRunner runner;
+    auto job = make_zone_blockade_job();
+    job.hardware.blockade_radius = 5.0;
+    job.hardware.blockade_model.radius = 5.0;
+    job.hardware.blockade_model.zone_overrides = {
+        BlockadeZoneOverride{5, 0.1},
+    };
+    job.hardware.positions = {0.0, 0.2};
+
+    const auto result = runner.run(job);
+    EXPECT_EQ(result.status, service::JobStatus::Failed);
+    EXPECT_NE(result.message.find("zone 5"), std::string::npos);
 }

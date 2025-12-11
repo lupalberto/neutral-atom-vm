@@ -1,7 +1,7 @@
 # Epic: Neutral Atom Lattices, Configurations, and Geometry‑Aware UX
 
 - **Priority:** High
-- **Status:** Backlog
+- **Status:** In Progress
 
 ## Summary
 Deliver a cohesive, physically grounded geometry model for the Neutral Atom VM by:
@@ -81,3 +81,7 @@ Key outcomes:
 - Documentation:
   - Architecture/UX docs explain lattices, regions, configuration families, interaction graphs, and transport in concrete neutral‑atom terms, with examples drawn from realistic device scenarios.
 
+## Status Update
+- Lattice + configuration ticket is done, and the ProfileConfigurator UI now surfaces configurations/special regions as part of the earned UX upgrade.
+- The interaction/crosstalk ticket has been implemented: the service validates interaction graphs, anisotropic blockade radii, and zone overrides while the SDK exposes the same metadata.
+- Transport & rearrangement is still backlog pending a separate effort.

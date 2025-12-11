@@ -319,6 +319,7 @@ This mode supports CI, staging, and production setups where multiple users submi
 2. **Compiler visibility**
    - Compile-to-VM passes should produce programs that are easy to inspect/debug (JSON dumps, alignment with a DSL).
    - Provide diagnostics (e.g., “gate CX on qubits 0/1 exceeded blockade radius”) upstream to Kirin/Bloqade.
+    - Constraints and error messages now speak the hardware geometry—the new interaction graphs, anisotropic blockade radii, and zone-level capacities are exposed by name so compilers can reason about the lattice directly.
 
 3. **Service contract**
    - Job statuses, structured errors, logs, and streaming measurements make the VM service feel like hardware rather than a library.

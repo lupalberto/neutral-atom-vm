@@ -161,6 +161,68 @@ void append_native_gates_json(const std::vector<NativeGate>& gates, std::ostring
     out << ']';
 }
 
+void append_interaction_pair(const InteractionPair& pair, std::ostringstream& out) {
+    out << "{\"site_a\":" << pair.site_a
+        << ",\"site_b\":" << pair.site_b << '}';
+}
+
+void append_interaction_graph(const InteractionGraph& graph, std::ostringstream& out) {
+    out << "{\"gate_name\":\"" << escape_json(graph.gate_name)
+        << "\",\"allowed_pairs\":[";
+    for (std::size_t idx = 0; idx < graph.allowed_pairs.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_interaction_pair(graph.allowed_pairs[idx], out);
+    }
+    out << "]}";
+}
+
+void append_interaction_graphs_json(const std::vector<InteractionGraph>& graphs, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t idx = 0; idx < graphs.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_interaction_graph(graphs[idx], out);
+    }
+    out << ']';
+}
+
+void append_blockade_zone_override(const BlockadeZoneOverride& override, std::ostringstream& out) {
+    out << "{\"zone_id\":" << override.zone_id
+        << ",\"radius\":" << override.radius << '}';
+}
+
+void append_blockade_zone_overrides(const std::vector<BlockadeZoneOverride>& overrides, std::ostringstream& out) {
+    out << '[';
+    for (std::size_t idx = 0; idx < overrides.size(); ++idx) {
+        if (idx > 0) {
+            out << ',';
+        }
+        append_blockade_zone_override(overrides[idx], out);
+    }
+    out << ']';
+}
+
+bool blockade_model_has_data(const BlockadeModel& model) {
+    return model.radius > 0.0 || model.radius_x > 0.0 || model.radius_y > 0.0 ||
+           model.radius_z > 0.0 || !model.zone_overrides.empty();
+}
+
+void append_blockade_model_json(const BlockadeModel& model, std::ostringstream& out) {
+    out << '{'
+        << "\"radius\":" << model.radius
+        << ",\"radius_x\":" << model.radius_x
+        << ",\"radius_y\":" << model.radius_y
+        << ",\"radius_z\":" << model.radius_z;
+    if (!model.zone_overrides.empty()) {
+        out << ",\"zone_overrides\":";
+        append_blockade_zone_overrides(model.zone_overrides, out);
+    }
+    out << '}';
+}
+
 void append_timing_limits_json(const TimingLimits& limits, std::ostringstream& out) {
     out << '{'
         << "\"min_wait_ns\":" << limits.min_wait_ns << ','
@@ -452,6 +514,14 @@ std::string to_json(const JobRequest& job) {
         append_double_matrix(job.hardware.coordinates, out);
     }
     out << ",\"blockade_radius\":" << job.hardware.blockade_radius;
+    if (!job.hardware.interaction_graphs.empty()) {
+        out << ",\"interaction_graphs\":";
+        append_interaction_graphs_json(job.hardware.interaction_graphs, out);
+    }
+    if (blockade_model_has_data(job.hardware.blockade_model)) {
+        out << ",\"blockade_model\":";
+        append_blockade_model_json(job.hardware.blockade_model, out);
+    }
     if (!job.hardware.sites.empty()) {
         out << ",\"sites\":";
         append_sites_json(job.hardware.sites, out);

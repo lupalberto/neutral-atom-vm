@@ -1,7 +1,7 @@
 # Ticket: Interaction Graphs & Crosstalk-Aware Constraints
 
 - **Priority:** Medium
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Upgrade blockade and two-qubit gate validation from a purely geometric radius check to a **hardware-shaped interaction model** that reflects:
@@ -63,3 +63,6 @@ while keeping the user/program-facing instruction set unchanged.
 - Zone-based parallelism limits are explained and enforced as properties of physical control resources, not just abstract counters.
 - Documentation gives at least one concrete, hardware-inspired example of how interaction graphs and crosstalk constraints are specified and enforced.
 
+## Status Update
+- Service validation/statevector paths now guard 2Q gates against interaction graphs plus anisotropic/zone-aware blockade models, emitting geometry-aware diagnostics.
+- Python bindings expose `interaction_graphs` and enriched blockade models so SDK/CLI consumers can declare the same constraints and see the resulting error messages.

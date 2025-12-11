@@ -106,7 +106,6 @@ class StatevectorEngine {
     void wait_duration(const WaitInstruction& wait_instr);
     void apply_pulse(const PulseInstruction& pulse);
     void enforce_blockade(int q0, int q1) const;
-    double distance_between_qubits(int q0, int q1) const;
     void refresh_site_mapping();
     const SiteDescriptor* site_descriptor_for_qubit(int qubit) const;
 #ifdef NA_VM_WITH_ONEAPI

@@ -67,6 +67,65 @@ void fill_native_gate(const py::dict& src, NativeGate& dst) {
     }
 }
 
+void fill_interaction_pair(const py::dict& src, InteractionPair& dst) {
+    if (src.contains("site_a")) {
+        dst.site_a = py::cast<int>(src["site_a"]);
+    }
+    if (src.contains("site_b")) {
+        dst.site_b = py::cast<int>(src["site_b"]);
+    }
+}
+
+void fill_interaction_graph(const py::dict& src, InteractionGraph& dst) {
+    if (src.contains("gate_name")) {
+        dst.gate_name = py::cast<std::string>(src["gate_name"]);
+    }
+    if (src.contains("allowed_pairs")) {
+        const auto pairs = py::cast<py::list>(src["allowed_pairs"]);
+        dst.allowed_pairs.clear();
+        dst.allowed_pairs.reserve(pairs.size());
+        for (const auto& pair_obj : pairs) {
+            InteractionPair pair;
+            fill_interaction_pair(py::cast<py::dict>(pair_obj), pair);
+            dst.allowed_pairs.push_back(pair);
+        }
+    }
+}
+
+void fill_blockade_zone_override(const py::dict& src, BlockadeZoneOverride& dst) {
+    if (src.contains("zone_id")) {
+        dst.zone_id = py::cast<int>(src["zone_id"]);
+    }
+    if (src.contains("radius")) {
+        dst.radius = py::cast<double>(src["radius"]);
+    }
+}
+
+void fill_blockade_model(const py::dict& src, BlockadeModel& dst) {
+    if (src.contains("radius")) {
+        dst.radius = py::cast<double>(src["radius"]);
+    }
+    if (src.contains("radius_x")) {
+        dst.radius_x = py::cast<double>(src["radius_x"]);
+    }
+    if (src.contains("radius_y")) {
+        dst.radius_y = py::cast<double>(src["radius_y"]);
+    }
+    if (src.contains("radius_z")) {
+        dst.radius_z = py::cast<double>(src["radius_z"]);
+    }
+    if (src.contains("zone_overrides")) {
+        const auto overrides = py::cast<py::list>(src["zone_overrides"]);
+        dst.zone_overrides.clear();
+        dst.zone_overrides.reserve(overrides.size());
+        for (const auto& override_obj : overrides) {
+            BlockadeZoneOverride override_entry;
+            fill_blockade_zone_override(py::cast<py::dict>(override_obj), override_entry);
+            dst.zone_overrides.push_back(override_entry);
+        }
+    }
+}
+
 void fill_timing_limits(const py::dict& src, TimingLimits& dst) {
     if (src.contains("min_wait_ns")) {
         dst.min_wait_ns = py::cast<double>(src["min_wait_ns"]);
@@ -382,6 +441,19 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
                 job.hardware.native_gates.push_back(std::move(gate));
             }
         }
+        if (hardware.contains("interaction_graphs")) {
+            const auto graph_list = py::cast<py::list>(hardware["interaction_graphs"]);
+            job.hardware.interaction_graphs.clear();
+            job.hardware.interaction_graphs.reserve(graph_list.size());
+            for (const auto& graph_obj : graph_list) {
+                InteractionGraph graph;
+                fill_interaction_graph(py::cast<py::dict>(graph_obj), graph);
+                job.hardware.interaction_graphs.push_back(std::move(graph));
+            }
+        }
+        if (hardware.contains("blockade_model")) {
+            fill_blockade_model(py::cast<py::dict>(hardware["blockade_model"]), job.hardware.blockade_model);
+        }
         if (hardware.contains("timing_limits")) {
             fill_timing_limits(py::cast<py::dict>(hardware["timing_limits"]), job.hardware.timing_limits);
         }
@@ -394,6 +466,19 @@ service::JobRequest build_job_request(const py::dict& job_obj) {
         }
         if (job_obj.contains("blockade_radius")) {
             job.hardware.blockade_radius = py::cast<double>(job_obj["blockade_radius"]);
+        }
+        if (job_obj.contains("interaction_graphs")) {
+            const auto graph_list = py::cast<py::list>(job_obj["interaction_graphs"]);
+            job.hardware.interaction_graphs.clear();
+            job.hardware.interaction_graphs.reserve(graph_list.size());
+            for (const auto& graph_obj : graph_list) {
+                InteractionGraph graph;
+                fill_interaction_graph(py::cast<py::dict>(graph_obj), graph);
+                job.hardware.interaction_graphs.push_back(std::move(graph));
+            }
+        }
+        if (job_obj.contains("blockade_model")) {
+            fill_blockade_model(py::cast<py::dict>(job_obj["blockade_model"]), job.hardware.blockade_model);
         }
     }
 

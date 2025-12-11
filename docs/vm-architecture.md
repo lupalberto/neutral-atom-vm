@@ -207,9 +207,13 @@ The prototype ISA is captured in `src/vm/isa.hpp`, which must remain the definit
   - `Gate` carries easy-to-read metadata (`name`, `targets`, `param`) so a compiler can express both single- and two-qubit gates without engine-specific enums.
 
 - **Hardware configuration:**
-  - `HardwareConfig` exposes the atom `positions` (1D array for this version) and a `blockade_radius`.
-  - Engines use the hardware configuration to enforce constraints before applying two-qubit operations.
-  - (New) `site_ids` map each logical slot to a `SiteDescriptor` ID, and `sites` list the full lattice with per-site coordinates and zone metadata, so clients can distinguish an addressable lattice from a chosen occupied configuration.
+  - Legacy v1.0 view:
+    - `HardwareConfig.positions` exposes a 1D chain geometry and a global `blockade_radius` used as an effective interaction cutoff.
+  - v1.1 extensions:
+    - `sites` list the physical lattice (`SiteDescriptor` with coordinates and `zone_id`).
+    - `site_ids` map each logical slot to a lattice site ID, distinguishing the addressable lattice from the occupied configuration.
+    - Optional `interaction_graphs` and `blockade_model` encode per-gate interaction constraints and anisotropic/zone-aware blockade semantics.
+  - Engines and schedulers should prefer `sites`/`site_ids` and interaction metadata for validation when present, treating `positions`/`blockade_radius` as derived, backwards-compatible summaries.
 
 When the richer fields are populated, `positions`/`coordinates` become derived, backwards-compatible per-slot geometry, while `site_ids`/`sites` describe the actual layout and allow schedulers/compilers to reason about legal subsets, zone limits, and adjacency in terms of lattice identities.
 

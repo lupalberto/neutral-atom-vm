@@ -415,6 +415,65 @@ class PulseLimits:
             "duration_max_ns": self.duration_max_ns,
             "max_overlapping_pulses": self.max_overlapping_pulses,
         }
+
+
+@dataclass
+class InteractionPair:
+    site_a: int = 0
+    site_b: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"site_a": self.site_a, "site_b": self.site_b}
+
+
+@dataclass
+class InteractionGraph:
+    gate_name: str = ""
+    allowed_pairs: Sequence[InteractionPair] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "gate_name": self.gate_name,
+            "allowed_pairs": [pair.to_dict() for pair in self.allowed_pairs],
+        }
+
+
+@dataclass
+class BlockadeZoneOverride:
+    zone_id: int = 0
+    radius: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"zone_id": self.zone_id, "radius": self.radius}
+
+
+@dataclass
+class BlockadeModel:
+    radius: float = 0.0
+    radius_x: float = 0.0
+    radius_y: float = 0.0
+    radius_z: float = 0.0
+    zone_overrides: Sequence[BlockadeZoneOverride] = field(default_factory=list)
+
+    def has_data(self) -> bool:
+        return (
+            self.radius > 0.0
+            or self.radius_x > 0.0
+            or self.radius_y > 0.0
+            or self.radius_z > 0.0
+            or bool(self.zone_overrides)
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        data: Dict[str, Any] = {
+            "radius": self.radius,
+            "radius_x": self.radius_x,
+            "radius_y": self.radius_y,
+            "radius_z": self.radius_z,
+        }
+        if self.zone_overrides:
+            data["zone_overrides"] = [override.to_dict() for override in self.zone_overrides]
+        return data
  
 
 @dataclass
@@ -432,8 +491,10 @@ class HardwareConfig:
     site_ids: Sequence[int] | None = None
     sites: Sequence[SiteDescriptor] | None = None
     native_gates: Sequence[NativeGate] | None = None
+    interaction_graphs: Sequence[InteractionGraph] | None = None
     timing_limits: TimingLimits = field(default_factory=TimingLimits)
     pulse_limits: PulseLimits = field(default_factory=PulseLimits)
+    blockade_model: BlockadeModel = field(default_factory=BlockadeModel)
 
     def to_dict(self) -> Dict[str, Any]:
         payload = {
@@ -448,6 +509,10 @@ class HardwareConfig:
             payload["sites"] = [site.to_dict() for site in self.sites]
         if self.native_gates:
             payload["native_gates"] = [gate.to_dict() for gate in self.native_gates]
+        if self.interaction_graphs:
+            payload["interaction_graphs"] = [graph.to_dict() for graph in self.interaction_graphs]
+        if self.blockade_model and self.blockade_model.has_data():
+            payload["blockade_model"] = self.blockade_model.to_dict()
         payload["timing_limits"] = self.timing_limits.to_dict()
         payload["pulse_limits"] = self.pulse_limits.to_dict()
         return payload

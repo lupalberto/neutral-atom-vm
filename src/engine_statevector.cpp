@@ -614,46 +614,9 @@ void StatevectorEngine::apply_pulse(const PulseInstruction& pulse) {
 }
 
 void StatevectorEngine::enforce_blockade(int q0, int q1) const {
-    if (state_.hw.blockade_radius <= 0.0) {
-        return;
+    if (auto reason = blockade_violation_reason(state_.hw, state_.site_index, q0, q1)) {
+        throw std::runtime_error("Gate violates " + *reason);
     }
-    const int max_index = std::max(q0, q1);
-    if (max_index >= static_cast<int>(state_.hw.positions.size())) {
-        throw std::runtime_error("Insufficient position data for blockade check");
-    }
-    const double distance = distance_between_qubits(q0, q1);
-    if (distance > state_.hw.blockade_radius) {
-        throw std::runtime_error("Gate violates blockade radius");
-    }
-}
-
-double StatevectorEngine::distance_between_qubits(int q0, int q1) const {
-    if (!state_.hw.coordinates.empty()) {
-        if (q0 >= 0 && q1 >= 0 &&
-            q0 < static_cast<int>(state_.hw.coordinates.size()) &&
-            q1 < static_cast<int>(state_.hw.coordinates.size())) {
-            const auto& vec0 = state_.hw.coordinates[static_cast<std::size_t>(q0)];
-            const auto& vec1 = state_.hw.coordinates[static_cast<std::size_t>(q1)];
-            const std::size_t dim = std::min(vec0.size(), vec1.size());
-            if (dim > 0) {
-                double sum = 0.0;
-                for (std::size_t d = 0; d < dim; ++d) {
-                    const double diff = vec0[d] - vec1[d];
-                    sum += diff * diff;
-                }
-                return std::sqrt(sum);
-            }
-        }
-    }
-    const SiteDescriptor* sa = site_descriptor_for_qubit(q0);
-    const SiteDescriptor* sb = site_descriptor_for_qubit(q1);
-    if (sa && sb) {
-        const double dx = sa->x - sb->x;
-        const double dy = sa->y - sb->y;
-        return std::sqrt(dx * dx + dy * dy);
-    }
-    const auto& positions = state_.hw.positions;
-    return std::abs(positions[static_cast<std::size_t>(q0)] - positions[static_cast<std::size_t>(q1)]);
 }
 
 void StatevectorEngine::refresh_site_mapping() {

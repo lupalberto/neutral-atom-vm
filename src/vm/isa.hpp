@@ -2,6 +2,10 @@
 
 #include <array>
 #include <cstddef>
+#include <cmath>
+#include <limits>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -130,6 +134,29 @@ struct NativeGate {
     ConnectivityKind connectivity = ConnectivityKind::AllToAll;
 };
 
+struct InteractionPair {
+    int site_a = 0;
+    int site_b = 0;
+};
+
+struct InteractionGraph {
+    std::string gate_name;
+    std::vector<InteractionPair> allowed_pairs;
+};
+
+struct BlockadeZoneOverride {
+    int zone_id = 0;
+    double radius = 0.0;
+};
+
+struct BlockadeModel {
+    double radius = 0.0;
+    double radius_x = 0.0;
+    double radius_y = 0.0;
+    double radius_z = 0.0;
+    std::vector<BlockadeZoneOverride> zone_overrides;
+};
+
 struct TimingLimits {
     double min_wait_ns = 0.0;
     double max_wait_ns = 0.0;
@@ -150,12 +177,16 @@ struct PulseLimits {
 
 struct HardwareConfig {
     // Legacy v1.0 fields.
-    std::vector<double> positions;  // 1D positions for atoms
+    std::vector<double> positions;  // 1D positions for atoms (chain view)
     std::vector<std::vector<double>> coordinates;  // Optional multidimensional coordinates.
-    std::vector<int> site_ids;  // Mapping from logical slots into the lattice described by `sites`.
-    double blockade_radius = 0.0;
+    double blockade_radius = 0.0;  // Effective global blockade radius (kept for compatibility).
 
-    // v1.1 extensions.
+    // v1.1 geometry/configuration extensions.
+    std::vector<int> site_ids;  // Mapping from logical slots into the lattice described by `sites`.
+    std::vector<InteractionGraph> interaction_graphs;  // Optional per-gate interaction graphs.
+    BlockadeModel blockade_model;  // Optional anisotropic/zone-aware blockade model.
+
+    // v1.1 lattice & timing extensions.
     std::vector<SiteDescriptor> sites;
     std::vector<NativeGate> native_gates;
     TimingLimits timing_limits;
@@ -206,4 +237,157 @@ inline int zone_for_slot(
         return site->zone_id;
     }
     return 0;
+}
+
+inline int site_id_for_slot(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int slot
+) {
+    if (const SiteDescriptor* site = site_descriptor_for_slot(hw, index, slot)) {
+        return site->id;
+    }
+    return -1;
+}
+
+inline bool interaction_pair_allowed(const InteractionGraph& graph, int a, int b) {
+    for (const auto& pair : graph.allowed_pairs) {
+        if ((pair.site_a == a && pair.site_b == b) ||
+            (pair.site_a == b && pair.site_b == a)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline const InteractionGraph* find_interaction_graph(
+    const HardwareConfig& hw,
+    const std::string& gate_name
+) {
+    for (const auto& graph : hw.interaction_graphs) {
+        if (graph.gate_name == gate_name) {
+            return &graph;
+        }
+    }
+    return nullptr;
+}
+
+struct SpatialDelta {
+    double dx = 0.0;
+    double dy = 0.0;
+    double dz = 0.0;
+    double distance = 0.0;
+};
+
+inline SpatialDelta compute_spatial_delta(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int q0,
+    int q1
+) {
+    SpatialDelta delta;
+    if (q0 < 0 || q1 < 0) {
+        delta.distance = std::numeric_limits<double>::infinity();
+        return delta;
+    }
+    const std::size_t idx0 = static_cast<std::size_t>(q0);
+    const std::size_t idx1 = static_cast<std::size_t>(q1);
+    if (idx0 < hw.coordinates.size() && idx1 < hw.coordinates.size()) {
+        const auto& lhs = hw.coordinates[idx0];
+        const auto& rhs = hw.coordinates[idx1];
+        const auto coord = [](const std::vector<double>& row, std::size_t offset) {
+            return row.size() > offset ? row[offset] : 0.0;
+        };
+        delta.dx = coord(lhs, 0) - coord(rhs, 0);
+        delta.dy = coord(lhs, 1) - coord(rhs, 1);
+        delta.dz = coord(lhs, 2) - coord(rhs, 2);
+        delta.distance = std::sqrt(delta.dx * delta.dx + delta.dy * delta.dy + delta.dz * delta.dz);
+        return delta;
+    }
+    const SiteDescriptor* sa = site_descriptor_for_slot(hw, index, q0);
+    const SiteDescriptor* sb = site_descriptor_for_slot(hw, index, q1);
+    if (sa && sb) {
+        delta.dx = sa->x - sb->x;
+        delta.dy = sa->y - sb->y;
+        delta.dz = sa->z - sb->z;
+        delta.distance = std::sqrt(delta.dx * delta.dx + delta.dy * delta.dy + delta.dz * delta.dz);
+        return delta;
+    }
+    if (idx0 < hw.positions.size() && idx1 < hw.positions.size()) {
+        delta.dx = hw.positions[idx0] - hw.positions[idx1];
+        delta.dy = 0.0;
+        delta.dz = 0.0;
+        delta.distance = std::abs(delta.dx);
+        return delta;
+    }
+    delta.distance = std::numeric_limits<double>::infinity();
+    return delta;
+}
+
+inline double zone_override_radius(const BlockadeModel& model, int zone) {
+    for (const auto& entry : model.zone_overrides) {
+        if (entry.zone_id == zone && entry.radius > 0.0) {
+            return entry.radius;
+        }
+    }
+    return 0.0;
+}
+
+inline std::optional<std::string> blockade_violation_reason(
+    const HardwareConfig& hw,
+    const SiteIndexMap& index,
+    int q0,
+    int q1
+) {
+    SpatialDelta delta = compute_spatial_delta(hw, index, q0, q1);
+    if (!std::isfinite(delta.distance)) {
+        return std::string("insufficient geometry for blockade check");
+    }
+    const BlockadeModel& model = hw.blockade_model;
+    const auto axis_limit = [&](double value, const char* axis) -> std::optional<std::string> {
+        if (value > 0.0) {
+            double delta_axis = 0.0;
+            if (axis[0] == 'x') {
+                delta_axis = std::abs(delta.dx);
+            } else if (axis[0] == 'y') {
+                delta_axis = std::abs(delta.dy);
+            } else if (axis[0] == 'z') {
+                delta_axis = std::abs(delta.dz);
+            }
+            if (delta_axis > value) {
+                std::ostringstream oss;
+                oss << "anisotropic blockade (" << axis << "-axis limit " << value << ")";
+                return oss.str();
+            }
+        }
+        return std::nullopt;
+    };
+    if (auto reason = axis_limit(model.radius_x, "x")) {
+        return reason;
+    }
+    if (auto reason = axis_limit(model.radius_y, "y")) {
+        return reason;
+    }
+    if (auto reason = axis_limit(model.radius_z, "z")) {
+        return reason;
+    }
+    double effective_radius = model.radius > 0.0 ? model.radius : hw.blockade_radius;
+    const int zone = zone_for_slot(hw, index, q0);
+    const double zone_radius = zone_override_radius(model, zone);
+    if (zone_radius > 0.0) {
+        effective_radius = zone_radius;
+    }
+    if (effective_radius <= 0.0) {
+        return std::nullopt;
+    }
+    if (delta.distance > effective_radius) {
+        std::ostringstream oss;
+        if (zone_radius > 0.0) {
+            oss << "zone " << zone << " blockade radius " << zone_radius;
+        } else {
+            oss << "blockade radius " << effective_radius;
+        }
+        return oss.str();
+    }
+    return std::nullopt;
 }
