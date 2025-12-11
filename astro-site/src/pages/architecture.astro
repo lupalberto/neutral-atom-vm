@@ -4,6 +4,7 @@ import BaseLayout from "@layouts/BaseLayout.astro";
 const nav = [
   { href: "/", label: "Overview" },
   { href: "/architecture", label: "Architecture" },
+  { href: "/hardware", label: "Hardware Model" },
   { href: "/ux", label: "User Journey" },
   { href: "/noise", label: "Noise & QEC" },
   { href: "/implementation", label: "Implementation" },
@@ -74,12 +75,21 @@ struct Instruction &#123;
 &#125;;
 
 struct HardwareConfig &#123;
+  // Legacy v1.0 chain view.
   std::vector&lt;double&gt; positions;
+  std::vector&lt;std::vector&lt;double&gt;&gt; coordinates;
   double blockade_radius;
-  std::vector&lt;SiteDescriptor&gt; sites;
+
+  // v1.1 lattice + constraints.
+  std::vector&lt;int&gt; site_ids;                 // active configuration mapping
+  std::vector&lt;SiteDescriptor&gt; sites;        // lattice (id, x, y, z, zone_id)
+  std::vector&lt;InteractionGraph&gt; interaction_graphs;
+  BlockadeModel blockade_model;
   std::vector&lt;NativeGate&gt; native_gates;
   TimingLimits timing_limits;
   PulseLimits pulse_limits;
+  std::vector&lt;TransportEdge&gt; transport_edges;
+  MoveLimits move_limits;
 &#125;;
 </code></pre>
     <p>

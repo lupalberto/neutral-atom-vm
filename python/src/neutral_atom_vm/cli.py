@@ -305,6 +305,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
     else:
         device = connect_device(args.device, profile=args.profile)
 
+    # Optional lattice configuration family selection for geometry-aware
+    # profiles. When provided, ensure the requested family exists before
+    # building the job request so we can fail fast on typos or mismatches.
+    configuration_family = getattr(args, "configuration_family", None)
+    if configuration_family:
+        families = getattr(device, "configuration_families", None) or {}
+        if configuration_family not in families:
+            raise SystemExit(
+                f"Unknown configuration family {configuration_family!r} for "
+                f"device {args.device!r} profile {device.profile!r}"
+            )
+        device.active_configuration_family_name = configuration_family
+
     if args.threads < 0:
         raise SystemExit("--threads must be >= 0")
     thread_limit: int | None = args.threads if args.threads > 0 else None
@@ -462,8 +475,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "--profile-config",
         help=(
-            "Path to a JSON file describing a custom profile (positions, "
-            "blockade_radius, optional noise). Overrides --profile when set."
+            "Path to a JSON file describing a custom profile (geometry, "
+            "lattice/sites, configuration families, noise). Overrides "
+            "--profile when set."
         ),
     )
     run_parser.add_argument(
@@ -475,6 +489,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--profile",
         default="ideal_small_array",
         help="Device profile name (e.g. ideal_small_array)",
+    )
+    run_parser.add_argument(
+        "--configuration-family",
+        dest="configuration_family",
+        help=(
+            "Name of the active configuration family for lattice-aware "
+            "profiles (e.g. dense_chain, checkerboard)."
+        ),
     )
     run_parser.add_argument(
         "--shots",

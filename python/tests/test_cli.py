@@ -242,3 +242,104 @@ def test_quera_vm_grid_output_for_noisy_square_array(capsys):
 
     assert exit_code == 0
     assert "Grid:" in captured.out
+
+
+def test_quera_vm_run_accepts_configuration_family(monkeypatch, capsys):
+    """CLI should allow selecting a configuration family for a profile."""
+
+    from neutral_atom_vm import cli
+
+    class FakeDevice:
+        def __init__(self) -> None:
+            self.configuration_families = {"dense": object()}
+            self.active_configuration_family_name = None
+            self.profile = "ideal_small_array"
+
+        def build_job_request(self, kernel, shots: int, max_threads: int | None):  # type: ignore[override]
+            # The CLI should set the active family before building the job.
+            assert self.active_configuration_family_name == "dense"
+            return object()
+
+    fake_device = FakeDevice()
+
+    def fake_connect(device_id: str, profile: str | None):  # type: ignore[override]
+        assert device_id == "local-cpu"
+        assert profile == "ideal_small_array"
+        return fake_device
+
+    def fake_run_local(job_request, status_callback=None):  # type: ignore[override]
+        return {"status": "completed"}
+
+    def fake_load_kernel(target: str):  # type: ignore[override]
+        def _kernel():
+            return []
+
+        return _kernel
+
+    monkeypatch.setattr(cli, "connect_device", fake_connect)
+    monkeypatch.setattr(cli, "_run_local_job_with_progress", fake_run_local)
+    monkeypatch.setattr(cli, "_load_kernel", fake_load_kernel)
+
+    argv = [
+        "run",
+        "--device",
+        "local-cpu",
+        "--profile",
+        "ideal_small_array",
+        "--configuration-family",
+        "dense",
+        "--shots",
+        "1",
+        "tests.squin_programs:bell_pair",
+    ]
+
+    exit_code = cli.main(argv)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Status" in captured.out
+
+
+def test_quera_vm_run_rejects_unknown_configuration_family(monkeypatch):
+    """CLI should fail fast for an unknown configuration family."""
+
+    from neutral_atom_vm import cli
+
+    class FakeDevice:
+        def __init__(self) -> None:
+            self.configuration_families = {"dense": object()}
+            self.active_configuration_family_name = None
+            self.profile = "ideal_small_array"
+
+        def build_job_request(self, kernel, shots: int, max_threads: int | None):  # type: ignore[override]
+            raise AssertionError("build_job_request should not be called on invalid family")
+
+    def fake_connect(device_id: str, profile: str | None):  # type: ignore[override]
+        return FakeDevice()
+
+    def fake_load_kernel(target: str):  # type: ignore[override]
+        def _kernel():
+            return []
+
+        return _kernel
+
+    monkeypatch.setattr(cli, "connect_device", fake_connect)
+    monkeypatch.setattr(cli, "_load_kernel", fake_load_kernel)
+
+    argv = [
+        "run",
+        "--device",
+        "local-cpu",
+        "--profile",
+        "ideal_small_array",
+        "--configuration-family",
+        "does_not_exist",
+        "--shots",
+        "1",
+        "tests.squin_programs:bell_pair",
+    ]
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(argv)
+    # SystemExit defaults to exit code 1 when given a message string.
+    assert excinfo.value.code != 0

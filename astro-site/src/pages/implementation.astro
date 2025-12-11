@@ -4,6 +4,7 @@ import BaseLayout from "@layouts/BaseLayout.astro";
 const nav = [
   { href: "/", label: "Overview" },
   { href: "/architecture", label: "Architecture" },
+  { href: "/hardware", label: "Hardware Model" },
   { href: "/ux", label: "User Journey" },
   { href: "/noise", label: "Noise & QEC" },
   { href: "/implementation", label: "Implementation" },
@@ -76,7 +77,14 @@ const nav = [
   "isa_version": &#123;"major": 1, "minor": 1&#125;,
   "hardware": &#123;
     "positions": [0,1,2],
-    "blockade_radius": 1.5
+    "coordinates": [[0,0],[1,0],[2,0]],
+    "blockade_radius": 1.5,
+    "sites": [
+      &#123;"id": 0, "x": 0.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;,
+      &#123;"id": 1, "x": 1.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;,
+      &#123;"id": 2, "x": 2.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;
+    ],
+    "site_ids": [0,1,2]
   &#125;,
   "program": [
     &#123;"op": "AllocArray", "n_qubits": 3&#125;,

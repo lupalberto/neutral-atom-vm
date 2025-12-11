@@ -1,7 +1,7 @@
 # Ticket: Addressable Site Lattices vs Occupied Configurations
 
 - **Priority:** Medium
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Clarify and refactor how the Neutral Atom VM represents device geometry so we distinguish between the *addressable site lattice* (all trap sites a piece of hardware can host) and the *occupied configuration* for a particular profile/job (which sites are populated with atoms and in what logical order). Today profiles conflate these concepts by using `positions`/`coordinates` both as the hardware layout and as the slot-to-atom mapping, which limits our ability to describe legal configurations and scheduler behavior accurately.
@@ -37,4 +37,3 @@ Clarify and refactor how the Neutral Atom VM represents device geometry so we di
 - Profiles for real devices can share a single site lattice but expose multiple configurations (e.g., “dense chain”, “sparse chain”, “checkerboard grid”) without redefining geometry from scratch.
 - Blockade and scheduling logic operate over site IDs/coordinates consistently, and error messages explain violations in terms of occupied sites.
 - Documentation (ISA + architecture docs + roadmap) clearly describes the separation between addressable site lattices and occupied qubit configurations.
-

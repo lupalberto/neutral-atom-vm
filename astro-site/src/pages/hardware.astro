@@ -1,0 +1,235 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const nav = [
+  { href: "/", label: "Overview" },
+  { href: "/architecture", label: "Architecture" },
+  { href: "/hardware", label: "Hardware Model" },
+  { href: "/ux", label: "User Journey" },
+  { href: "/noise", label: "Noise & QEC" },
+  { href: "/implementation", label: "Implementation" },
+  { href: "/open-questions", label: "Open Questions" },
+];
+---
+<BaseLayout
+  title="Hardware Model"
+  description="How the Neutral Atom VM characterizes lattices, configurations, regions, and constraints so compilers and users see a realistic device."
+  nav={nav}
+  page="hardware"
+>
+  <section>
+    <h1>Hardware characterization model</h1>
+    <p>
+      The Neutral Atom VM treats the hardware description as a <strong>first-class contract</strong> between
+      compilers, schedulers, and backends. Instead of a flat array of positions and a single
+      <code>blockade_radius</code>, the ISA exposes a lattice with per-site metadata, configuration families,
+      regions, interaction graphs, and timing/transport limits. This page summarizes that model in human terms.
+    </p>
+  </section>
+
+  <section>
+    <h2>Lattice vs. configuration</h2>
+    <div class="grid" style="margin-top:1rem;">
+      <div class="card">
+        <h3>Lattice sites (physical traps)</h3>
+        <p>
+          The lattice is described by a list of <code>SiteDescriptor</code> entries in
+          <code>HardwareConfig.sites</code>. Each site has an integer <code>id</code>, coordinates
+          <code>(x, y, z)</code>, and a <code>zone_id</code> used for parallelism/crosstalk limits.
+          This represents the <em>full set of traps</em> a device can host, independent of any particular
+          experiment.
+        </p>
+        <pre><code>sites: [
+  &#123;"id": 0, "x": 0.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;,
+  &#123;"id": 1, "x": 1.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;,
+  &#123;"id": 2, "x": 2.0, "y": 0.0, "z": 0.0, "zone_id": 0&#125;
+]</code></pre>
+      </div>
+      <div class="card">
+        <h3>Configurations (occupied sites)</h3>
+        <p>
+          A configuration is a mapping from logical slots to lattice sites via <code>site_ids</code>.
+          Profiles can expose multiple named <strong>configuration families</strong> (dense chains, checkerboard,
+          ancilla bands, etc.), each with its own choice of occupied sites and region labels. The VM treats
+          <code>site_ids</code> as the canonical geometry for validation and scheduling when present.
+        </p>
+        <pre><code>site_ids: [0, 1, 2]
+configuration_families: &#123;
+  "dense_chain": &#123;
+    "site_ids": [0, 1, 2],
+    "regions": [
+      &#123;"name": "data", "role": "DATA", "site_ids": [0, 1, 2]&#125;
+    ]
+  &#125;
+&#125;</code></pre>
+      </div>
+    </div>
+    <p>
+      This separation lets compilers and ProfileConfigurator talk about “which sites are loaded” instead of
+      juggling raw indices. Legacy <code>positions</code> and <code>coordinates</code> remain for compatibility,
+      but all new work should think in terms of <code>sites</code> and <code>site_ids</code>.
+    </p>
+  </section>
+
+  <section>
+    <h2>Regions, zones, and personas</h2>
+    <div class="grid" style="margin-top:1rem;">
+      <div class="card">
+        <h3>Region roles</h3>
+        <p>
+          Regions classify sites within a configuration into roles such as DATA, ANCILLA, PARKING, and CALIB.
+          They appear both as top-level <code>regions</code> and within configuration families, and are surfaced
+          directly in the ProfileConfigurator UI.
+        </p>
+        <pre><code>regions: [
+  &#123;
+    "name": "data_row",
+    "role": "DATA",
+    "site_ids": [0, 1, 2, 3]
+  &#125;,
+  &#123;
+    "name": "ancilla_edges",
+    "role": "ANCILLA",
+    "site_ids": [4, 5]
+  &#125;
+]</code></pre>
+      </div>
+      <div class="card">
+        <h3>Zones and parallelism</h3>
+        <p>
+          Each <code>SiteDescriptor</code> carries a <code>zone_id</code>. The scheduler uses zones together with
+          <code>TimingLimits.max_parallel_per_zone</code> to cap the number of concurrent gates on strongly
+          coupled subsets of the lattice. Zone-aware blockade overrides are expressed via <code>BlockadeModel</code>.
+        </p>
+        <pre><code>timing_limits: &#123;
+  "max_parallel_single_qubit": 0,
+  "max_parallel_two_qubit": 0,
+  "max_parallel_per_zone": 2,
+  "measurement_cooldown_ns": 50_000
+&#125;
+
+blockade_model: &#123;
+  "radius": 1.5,
+  "zone_overrides": [
+    &#123;"zone_id": 5, "radius": 0.8&#125;
+  ]
+&#125;</code></pre>
+      </div>
+    </div>
+    <p>
+      Profiles also include metadata describing personas (tutorial, benchmarking, loss-heavy, SPAM-focused), so
+      the same lattice can support different use cases without changing the underlying hardware model.
+    </p>
+  </section>
+
+  <section>
+    <h2>Interaction graphs and blockade model</h2>
+    <div class="grid" style="margin-top:1rem;">
+      <div class="card">
+        <h3>Per-gate interaction graphs</h3>
+        <p>
+          Interaction graphs restrict which site pairs are legal targets for a given two-qubit gate. Each
+          <code>InteractionGraph</code> entry names a gate and lists allowed site pairs. The job validator rejects
+          programs that attempt gates outside this graph, and error messages refer to sites and slots, not just
+          qubit indices.
+        </p>
+        <pre><code>interaction_graphs: [
+  &#123;
+    "gate_name": "CX",
+    "allowed_pairs": [
+      &#123;"site_a": 0, "site_b": 1&#125;,
+      &#123;"site_a": 1, "site_b": 2&#125;
+    ]
+  &#125;
+]</code></pre>
+      </div>
+      <div class="card">
+        <h3>Anisotropic, zone-aware blockade</h3>
+        <p>
+          The blockade model extends a simple radius into an anisotropic, zone-aware constraint. Axial limits
+          (<code>radius_x</code>, <code>radius_y</code>, <code>radius_z</code>) and zone overrides capture more
+          realistic crosstalk behaviour while remaining easy to validate against.
+        </p>
+        <pre><code>blockade_model: &#123;
+  "radius": 0.0,
+  "radius_x": 5.0,
+  "radius_y": 3.0,
+  "radius_z": 0.0,
+  "zone_overrides": [
+    &#123;"zone_id": 2, "radius": 2.5&#125;
+  ]
+&#125;</code></pre>
+      </div>
+    </div>
+    <p>
+      Together, interaction graphs and the blockade model let the VM say “<em>this</em> pair of sites cannot host a
+      CX under the selected profile” in ways that match experimental intuition.
+    </p>
+  </section>
+
+  <section>
+    <h2>Transport and move limits</h2>
+    <div class="grid" style="margin-top:1rem;">
+      <div class="card">
+        <h3>Transport graph</h3>
+        <p>
+          Transport edges describe which lattice sites can be connected by <code>MoveAtom</code> operations.
+          The validator rejects moves that jump between sites with no graph edge, and can optionally enforce a
+          limited rearrangement window.
+        </p>
+        <pre><code>transport_edges: [
+  &#123;"src_site_id": 0, "dst_site_id": 1&#125;,
+  &#123;"src_site_id": 1, "dst_site_id": 2&#125;
+]</code></pre>
+      </div>
+      <div class="card">
+        <h3>Move budgets</h3>
+        <p>
+          <code>MoveLimits</code> bound how aggressively a program can rearrange atoms: total displacement per atom,
+          moves per atom, moves per shot, and moves per configuration change. Violations surface as explicit error
+          messages before execution.
+        </p>
+        <pre><code>move_limits: &#123;
+  "max_total_displacement_per_atom": 10.0,
+  "max_moves_per_atom": 4,
+  "max_moves_per_shot": 32,
+  "rearrangement_window_ns": 1e6
+&#125;</code></pre>
+      </div>
+    </div>
+    <p>
+      Even when a device is simulated, these limits help keep workloads realistic and make it clear what a future
+      hardware backend would be expected to enforce.
+    </p>
+  </section>
+
+  <section>
+    <h2>How this shows up in presets and CLI</h2>
+    <div class="grid" style="margin-top:1rem;">
+      <div class="card">
+        <h3>Profiles as hardware personas</h3>
+        <p>
+          Built-in profiles such as <code>ideal_square_grid</code>, <code>noisy_square_array</code>,
+          <code>lossy_block</code>, and <code>benchmark_chain</code> now include explicit configuration families
+          and regions. For example, the 4×4 grid exposes <code>full</code> and <code>checkerboard</code> families
+          with DATA/ANCILLA splits aligned to the lattice.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Lattice-aware CLI</h3>
+        <p>
+          The <code>quera-vm</code> CLI lets you select a device/profile and an optional
+          <code>--configuration-family</code> (for example, <code>dense_chain</code> or
+          <code>checkerboard</code>). The resulting <code>JobRequest</code> carries the chosen family name in
+          metadata so schedulers and logs can explain violations in terms of that configuration.
+        </p>
+      </div>
+    </div>
+    <p>
+      This hardware characterization model is the bridge between neutral-atom devices and the VM: compilers target
+      lattices and configurations instead of ad-hoc arrays, schedulers enforce realistic limits, and users see
+      error messages that reference sites, regions, and zones instead of opaque indices.
+    </p>
+  </section>
+</BaseLayout>
+

@@ -1,7 +1,7 @@
 # Ticket: Post-Epic Lattice Integration Sweep (Scheduler, UI, Validators)
 
 - **Priority:** Medium
-- **Status:** Backlog
+- **Status:** Completed
 
 ## Summary
 Once the **Neutral Atom Lattices & Configurations** epic (`epic-neutral-atom-lattice-and-configurations.md` and its child tickets) is implemented, perform a focused sweep to ensure the rest of the VM stack (scheduler, device presets, validators, UI, docs) actually *uses* the new lattice/configuration abstractions and no longer relies on legacy shortcuts (e.g. `blockade_radius` alone, raw `positions`).

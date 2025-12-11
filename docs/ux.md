@@ -138,9 +138,20 @@ events.
 Jobs that go through the scheduler also expose a `timeline` array in the JSON result and Python `JobResult`. Each entry lists the scheduled start time, duration, operation name, and a short detail string, so you can trace how the VM spaced gates, measurements, waits, and inserts idle time without parsing the raw logs. These `timeline` entries, and every `logs[*].time`, are now reported in microseconds (`timeline_units = log_time_units = "us"` in the JSON payload) even though the underlying ISA math continues to run in nanoseconds.
 
 For ad-hoc experiments, `--profile-config path/to/profile.json` can override the
-built-in profile definitions. The JSON file can specify geometry (`positions`,
-`blockade_radius`) and the noise configuration that eventually becomes
-`SimpleNoiseConfig`, so developers no longer have to pass raw `--noise` blobs.
+built-in profile definitions. The JSON file can specify lattice-aware geometry
+and constraints – for example:
+
+- legacy fields such as `positions` and `blockade_radius`,
+- lattice sites (`sites`) and the active configuration mapping (`site_ids`),
+- regions and configuration families (`regions`, `configuration_families`,
+  `default_configuration_family`), and
+- interaction/timing metadata (`interaction_graphs`, `blockade_model`,
+  `timing_limits`, `move_limits`).
+
+Noise parameters are still expressed in the same JSON schema that becomes
+`SimpleNoiseConfig`, so developers no longer have to pass raw `--noise` blobs,
+but new profiles can now describe both **where** atoms live (lattice + regions)
+and **how** they are allowed to interact.
 
 ### Built-in devices and profiles
 
@@ -205,20 +216,27 @@ directly in Jupyter/VS Code, combining:
 
 - Device/profile dropdowns backed by `available_presets()`, including metadata
   callouts so users understand geometry, persona, and noise focus.
-- A geometry tab where blockade radius and the atom positions array can be
-  edited inline (comma or newline separated floats). Multi-dimensional layouts
-  are supported by entering coordinates per line (e.g., `0 0`, `1 0`, ... for a
-  2-D grid), and the configurator exports both the flattened positions and the
-  full coordinate list so downstream tools preserve actual distances.
+- A geometry tab that works in terms of the **lattice** and **configurations**:
+  - visualizes and edits lattice sites (`sites`) and per-site coordinates,
+  - lets you choose among configuration families or activate a custom
+    configuration (`configuration_families`, `default_configuration_family`),
+  - surfaces region roles (DATA, ANCILLA, PARKING, CALIB) over `site_ids`, and
+  - previews zones/distances derived from the underlying lattice.
+  Multi-dimensional layouts are still editable numerically (per-line
+  coordinates such as `0 0`, `1 0`, … for a 2‑D grid), and the configurator
+  exports both flattened positions and full coordinate lists for
+  backwards-compatible consumers.
 - A noise tab that groups the most common top-level parameters (SPAM, Pauli
   channels, phase, damping, runtime loss) plus a textarea for the correlated CZ
   matrix.
 
 `configurator.profile_payload` returns a dictionary compatible with
-`build_device_from_config`/`--profile-config`, so a notebook can capture the
-selected profile and feed it into `connect_device` or the CLI. This keeps the
-“discover → tweak → run” flow in one place and mirrors the CLI/SDK UX described
-above.
+`build_device_from_config`/`--profile-config`. In addition to `positions` and
+`blockade_radius`, that payload includes lattice-aware fields such as `sites`,
+`site_ids`, `regions`, configuration families, and timing/interaction hints,
+so a notebook can capture the selected geometry and feed it into
+`connect_device` or the CLI. This keeps the “discover → tweak → run” flow in
+one place and mirrors the CLI/SDK UX described above.
 
 Pair it with `neutral_atom_vm.widgets.JobResultViewer` to summarize the job
 output inline instead of dumping JSON blobs. Call
@@ -257,12 +275,18 @@ visualization, and any saved previews deterministic across reloads.
 Need something brand-new? The configurator now includes a “Create new profile”
 option:
 
-- Enter a name, choose the dimension (1D/2D/3D), configure rows/columns/layers and the per-axis spacing,
-  and hit “Populate positions” to seed the geometry (you can still fine‑tune
-  the coordinates manually afterward).
-- Set the blockade radius and tweak the noise controls just like you would for
-  a preset. The resulting `profile_payload` carries your custom name so you can
-  pass it straight into `build_device_from_config` or `--profile-config`.
+- Enter a name, choose the dimension (1D/2D/3D), configure rows/columns/layers
+  and the per-axis spacing, and hit “Populate positions” to seed the lattice.
+  You can still fine‑tune coordinates and per-site metadata afterward.
+- Define which sites are occupied and how they are grouped:
+  select configuration families, mark regions as DATA/ANCILLA/PARKING/CALIB,
+  and, where appropriate, assign zone IDs for scheduler parallelism.
+- Set the blockade radius (or richer blockade model) and tweak the noise
+  controls just like you would for a preset.
+
+The resulting `profile_payload` carries your custom name plus full
+lattice/configuration metadata, so you can pass it straight into
+`build_device_from_config` or `--profile-config`.
 
 Notebook ergonomics now also improve by default: `JobHandle.result()` returns a
 dict-like object with an HTML representation, so simply evaluating `result` in a

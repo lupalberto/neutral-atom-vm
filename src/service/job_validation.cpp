@@ -28,14 +28,64 @@ std::size_t configuration_limit(const HardwareConfig& hardware) {
     return 0;
 }
 
-std::string format_interaction_message(int site_a, int site_b) {
+std::string format_coordinate_triplet(double x, double y, double z) {
     std::ostringstream oss;
-    if (site_a >= 0 && site_b >= 0) {
-        oss << site_a << "/" << site_b;
-    } else {
-        oss << "unknown sites";
+    oss << "(" << x << "," << y << "," << z << ")";
+    return oss.str();
+}
+
+std::string describe_slot_coordinates(const HardwareConfig& hardware, int slot) {
+    if (slot < 0) {
+        return {};
+    }
+    const std::size_t index = static_cast<std::size_t>(slot);
+    if (index < hardware.coordinates.size()) {
+        const auto& coords = hardware.coordinates[index];
+        const double x = coords.size() > 0 ? coords[0] : 0.0;
+        const double y = coords.size() > 1 ? coords[1] : 0.0;
+        const double z = coords.size() > 2 ? coords[2] : 0.0;
+        return format_coordinate_triplet(x, y, z);
+    }
+    if (index < hardware.positions.size()) {
+        return format_coordinate_triplet(hardware.positions[index], 0.0, 0.0);
+    }
+    return {};
+}
+
+std::string describe_slot_location(
+    const HardwareConfig& hardware,
+    const SiteIndexMap& index_map,
+    int slot
+) {
+    std::ostringstream oss;
+    oss << "slot " << slot;
+    const SiteDescriptor* descriptor = site_descriptor_for_slot(hardware, index_map, slot);
+    if (descriptor) {
+        oss << " (site " << descriptor->id
+            << " coords=" << format_coordinate_triplet(descriptor->x, descriptor->y, descriptor->z)
+            << " zone=" << descriptor->zone_id << ")";
+        return oss.str();
+    }
+    const std::string coords = describe_slot_coordinates(hardware, slot);
+    if (!coords.empty()) {
+        oss << " coords=" << coords;
+    }
+    const int site_id = site_id_for_slot(hardware, index_map, slot);
+    if (site_id >= 0) {
+        oss << " site=" << site_id;
     }
     return oss.str();
+}
+
+std::string describe_slot_pair(
+    const HardwareConfig& hardware,
+    const SiteIndexMap& index_map,
+    int slot_a,
+    int slot_b
+) {
+    return describe_slot_location(hardware, index_map, slot_a) +
+        " and " +
+        describe_slot_location(hardware, index_map, slot_b);
 }
 
 bool move_limits_has_data(const MoveLimits& limits) {
@@ -123,20 +173,21 @@ void validate_blockade_constraints(
             for (std::size_t j = i + 1; j < gate.targets.size(); ++j) {
                 const int q0 = gate.targets[i];
                 const int q1 = gate.targets[j];
+                const std::string slot_pair_description = describe_slot_pair(hardware, index, q0, q1);
                 if (graph) {
                     const int site0 = site_id_for_slot(hardware, index, q0);
                     const int site1 = site_id_for_slot(hardware, index, q1);
                     if (site0 < 0 || site1 < 0 ||
                         !interaction_pair_allowed(*graph, site0, site1)) {
                         throw std::invalid_argument(
-                            "Gate " + gate.name + " on " + format_interaction_message(site0, site1) +
+                            "Gate " + gate.name + " between " + slot_pair_description +
                             " violates interaction graph constraints");
                     }
                 }
                 if (auto reason = blockade_violation_reason(hardware, index, q0, q1)) {
                     throw std::invalid_argument(
-                        "Gate " + gate.name + " on qubits " + std::to_string(q0) + "/" +
-                        std::to_string(q1) + " violates " + *reason);
+                        "Gate " + gate.name + " between " + slot_pair_description +
+                        " violates " + *reason);
                 }
             }
         }

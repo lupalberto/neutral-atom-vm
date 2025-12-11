@@ -94,6 +94,8 @@ TEST(ServiceJobValidationTests, BlockadeConstraintCheckedBeforeExecution) {
         result.message.find("blockade radius"),
         std::string::npos
     );
+    EXPECT_NE(result.message.find("slot 0"), std::string::npos);
+    EXPECT_NE(result.message.find("slot 1"), std::string::npos);
 }
 
 TEST(ServiceJobValidationTests, InteractionGraphRejectsUnsupportedPairs) {

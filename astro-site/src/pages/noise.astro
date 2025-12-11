@@ -4,6 +4,7 @@ import BaseLayout from "@layouts/BaseLayout.astro";
 const nav = [
   { href: "/", label: "Overview" },
   { href: "/architecture", label: "Architecture" },
+  { href: "/hardware", label: "Hardware Model" },
   { href: "/ux", label: "User Journey" },
   { href: "/noise", label: "Noise & QEC" },
   { href: "/implementation", label: "Implementation" },
@@ -92,14 +93,16 @@ const nav = [
   <section>
     <h2>Program-annotated noise</h2>
     <p>
-      Bloqade and related DSLs may emit explicit noise annotations (for example, <code>single_qubit_pauli_channel</code>).
-      Engines can either combine them with device configs or switch to a program-aware strategy. Detection happens during
-      lowering so we do not double-count noise or violate the effective IR.
+      Bloqade and related DSLs may emit explicit noise annotations (for example,
+      <code>single_qubit_pauli_channel</code>). Engines can either combine them with device configs or switch to a
+      program-aware strategy. Detection happens during lowering so we do not double-count noise or violate the
+      effective IR.
     </p>
     <p>
-      When targeting the Stim-backed <code>stabilizer</code> device, the Python SDK now recognizes kernels that call the
-      documented Pauli helpers and routes them straight to Stim. The lowering pipeline runs <code>bloqade.stim.passes.SquinToStimPass</code>, emits the prebuilt
-      circuit, and attaches it to the job. Stim therefore receives the exact <code>PAULI_CHANNEL*</code> calls at the program locations you authored, while the VM
+      When targeting the Stim-backed <code>stabilizer</code> device, the Python SDK recognizes kernels that call the
+      documented Pauli helpers and routes them straight to Stim. The lowering pipeline runs
+      <code>bloqade.stim.passes.SquinToStimPass</code>, emits the prebuilt circuit, and attaches it to the job. Stim
+      therefore receives the exact <code>PAULI_CHANNEL*</code> calls at the program locations you authored, while the VM
       continues to enforce geometry, timing, and blockade via the usual ISA validation.
     </p>
     <pre><code class="language-python">from bloqade import squin
@@ -113,8 +116,59 @@ def noisy_bell():
     squin.measure(q)
 </code></pre>
     <p>
-      When you submit this kernel via <code>connect_device("stabilizer", profile="ideal_small_array")</code>, the job payload includes a Stim circuit whose execution honors the annoted Pauli channel.
-      Sending the same kernel to hardware-style devices (e.g., <code>local-cpu</code>) now raises a clear error so programmatic noise stays simulation-only.
+      When you submit this kernel via <code>connect_device("stabilizer", profile="ideal_small_array")</code>, the job
+      payload includes a Stim circuit whose execution honors the annotated Pauli channel. Sending the same kernel to
+      hardware-style devices (for example, <code>local-cpu</code>) now raises a clear error so programmatic noise stays
+      simulation-only.
+    </p>
+  </section>
+
+  <section>
+    <h2>QEC primitives on top of the noise model</h2>
+    <p>
+      The QEC primitives layer builds small stabilizer-style workflows on top of the same noise IR and Stim
+      integration. Rather than extending the ISA, it provides <em>protocol-level</em> helpers that use existing
+      gates/measurements and then post-process the resulting <code>JobResult</code>.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h4>Repetition code helpers</h4>
+        <p>
+          The module <code>neutral_atom_vm.qec</code> includes a <code>repetition_code_job</code> helper that constructs a
+          small repetition-code circuit (distance and rounds configurable), submits it to the VM, and returns a
+          <code>JobResult</code>. By default it targets the Stim-backed <code>stabilizer</code> device when available,
+          falling back to <code>local-cpu</code> with Pauli-only noise.
+        </p>
+        <pre><code class="language-python">from neutral_atom_vm import qec
+
+result = qec.repetition_code_job(
+    distance=3,
+    rounds=2,
+    shots=128,
+)
+metrics = qec.compute_repetition_code_metrics(result, distance=3, rounds=2)
+print(metrics["logical_x_error_rate"])</code></pre>
+      </div>
+      <div class="card">
+        <h4>Logical error metrics</h4>
+        <p>
+          <code>compute_repetition_code_metrics</code> derives logical X error rates from <code>JobResult</code>
+          measurements by identifying the data-qubit readout group, applying a majority vote, and comparing against the
+          prepared logical state. It returns a small dictionary with fields such as
+          <code>logical_x_error_rate</code>, <code>shots</code>, <code>distance</code>, and <code>rounds</code>.
+        </p>
+        <p>
+          This keeps the core C++ <code>JobResult</code> schema unchanged: QEC analysis is a Python-side layer that
+          interprets measurement records, so the same job payloads can be used both for hardware-style studies and for
+          QEC/decoder experiments.
+        </p>
+      </div>
+    </div>
+    <p>
+      The reference example <code>python/examples/repetition_code_qec.py</code> demonstrates this end to end: it runs a
+      distance‑3 repetition code for a few rounds under the configured noise model and prints the observed logical
+      error rate. Paired with the <code>stabilizer</code> device and explicit Pauli channels, this makes it easy to
+      prototype QEC workflows while staying within the same Neutral Atom VM surface.
     </p>
   </section>
 

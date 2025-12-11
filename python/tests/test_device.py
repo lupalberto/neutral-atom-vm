@@ -162,6 +162,60 @@ def test_presets_include_timing_and_gate_catalogs():
             assert gate.get("duration_ns") == pytest.approx(1000.0)
 
 
+def test_square_grid_preset_exposes_configuration_families():
+    presets = available_presets()
+    cpu_profiles = presets.get("local-cpu", {})
+    grid = cpu_profiles.get("ideal_square_grid")
+    assert grid is not None, "expected ideal_square_grid preset"
+
+    families = grid.get("configuration_families")
+    assert families, "expected configuration families in ideal_square_grid preset"
+    # At least one named family in addition to the default.
+    assert len(families) >= 2
+
+    default_family = grid.get("default_configuration_family")
+    assert isinstance(default_family, str)
+    assert default_family in families
+
+    for name, family in families.items():
+        assert family.get("site_ids"), f"configuration family {name} must declare site_ids"
+
+    regions = grid.get("regions")
+    assert regions, "expected region metadata for ideal_square_grid preset"
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "ideal_small_array",
+        "noisy_square_array",
+        "lossy_chain",
+        "lossy_block",
+        "benchmark_chain",
+        "readout_stress",
+    ],
+)
+def test_other_presets_expose_configuration_families(profile):
+    presets = available_presets()
+    cpu_profiles = presets.get("local-cpu", {})
+    entry = cpu_profiles.get(profile)
+    assert entry is not None, f"expected preset {profile}"
+
+    families = entry.get("configuration_families")
+    assert families, f"expected configuration families in {profile} preset"
+    assert isinstance(families, dict)
+
+    default_family = entry.get("default_configuration_family")
+    assert isinstance(default_family, str)
+    assert default_family in families
+
+    for name, family in families.items():
+        assert family.get("site_ids"), f"configuration family {name} in {profile} must declare site_ids"
+
+    regions = entry.get("regions")
+    assert regions, f"expected regions metadata for {profile} preset"
+
+
 HAS_ONEAPI = has_oneapi_backend()
 DEVICE_ALIAS_IDS = ["local-cpu"]
 if HAS_ONEAPI:

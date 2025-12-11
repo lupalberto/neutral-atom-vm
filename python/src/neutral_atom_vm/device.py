@@ -712,6 +712,29 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "noise": None,
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborChain"),
+        "configuration_families": {
+            "dense_chain": {
+                "site_ids": [int(i) for i in range(10)],
+                "description": "All 10 sites occupied for simple chain tutorials.",
+            },
+            "edge_ancilla": {
+                "site_ids": [int(i) for i in range(1, 9)],
+                "regions": [
+                    {
+                        "name": "data",
+                        "site_ids": [int(i) for i in range(1, 9)],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla_edges",
+                        "site_ids": [0, 9],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Inner data chain with ancilla-like edge sites.",
+            },
+        },
+        "default_configuration_family": "dense_chain",
     },
     # 2D noiseless grid for layout exploration.
     ("local-cpu", "ideal_square_grid"): {
@@ -732,6 +755,41 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         "noise": None,
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborGrid"),
+        "configuration_families": {
+            "full": {
+                "site_ids": [int(i) for i in range(16)],
+                "description": "All 16 lattice sites occupied.",
+            },
+            "checkerboard": {
+                "site_ids": [
+                    int(i)
+                    for i in range(16)
+                    if ((i % 4) + (i // 4)) % 2 == 0
+                ],
+                "regions": [
+                    {
+                        "name": "data",
+                        "site_ids": [
+                            int(i)
+                            for i in range(16)
+                            if ((i % 4) + (i // 4)) % 2 == 0
+                        ],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla",
+                        "site_ids": [
+                            int(i)
+                            for i in range(16)
+                            if ((i % 4) + (i // 4)) % 2 == 1
+                        ],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Checkerboard configuration splitting data and ancilla sites.",
+            },
+        },
+        "default_configuration_family": "full",
     },
     # Captures a 4x4 grid with moderate depolarizing noise and idle dephasing.
     ("local-cpu", "noisy_square_array"): {
@@ -790,6 +848,41 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborGrid"),
+        "configuration_families": {
+            "full": {
+                "site_ids": [int(i) for i in range(16)],
+                "description": "All 16 noisy sites occupied for grid experiments.",
+            },
+            "checkerboard": {
+                "site_ids": [
+                    int(i)
+                    for i in range(16)
+                    if ((i % 4) + (i // 4)) % 2 == 0
+                ],
+                "regions": [
+                    {
+                        "name": "data",
+                        "site_ids": [
+                            int(i)
+                            for i in range(16)
+                            if ((i % 4) + (i // 4)) % 2 == 0
+                        ],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla",
+                        "site_ids": [
+                            int(i)
+                            for i in range(16)
+                            if ((i % 4) + (i // 4)) % 2 == 1
+                        ],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Checkerboard configuration highlighting data vs ancilla sites under noise.",
+            },
+        },
+        "default_configuration_family": "full",
     },
     # Heavy loss channel illustrating erasure-dominated behavior.
     ("local-cpu", "lossy_chain"): {
@@ -808,6 +901,29 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborChain"),
+        "configuration_families": {
+            "dense_chain": {
+                "site_ids": [int(i) for i in range(6)],
+                "description": "All 6 sites occupied under heavy loss.",
+            },
+            "data_plus_parking": {
+                "site_ids": [int(i) for i in range(6)],
+                "regions": [
+                    {
+                        "name": "data",
+                        "site_ids": [0, 1, 2, 3],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "parking",
+                        "site_ids": [4, 5],
+                        "role": "PARKING",
+                    },
+                ],
+                "description": "Head-tail sites reserved as parking under loss.",
+            },
+        },
+        "default_configuration_family": "dense_chain",
     },
     ("local-cpu", "lossy_block"): {
         "positions": [float(i) for i in range(16)],
@@ -831,6 +947,29 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("AllToAll"),
+        "configuration_families": {
+            "full": {
+                "site_ids": [int(i) for i in range(16)],
+                "description": "All 16 sites occupied in a 2x4x2 block.",
+            },
+            "top_layer_data": {
+                "site_ids": [int(i) for i in range(16)],
+                "regions": [
+                    {
+                        "name": "data_top_layer",
+                        "site_ids": [int(i) for i in range(8, 16)],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla_bottom_layer",
+                        "site_ids": [int(i) for i in range(0, 8)],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Top layer used as data, bottom as ancilla/parking.",
+            },
+        },
+        "default_configuration_family": "full",
     },
     # 20-qubit benchmark chain for GHZ/volume experiments with moderate noise.
     ("local-cpu", "benchmark_chain"): {
@@ -871,6 +1010,29 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborChain"),
+        "configuration_families": {
+            "dense_chain": {
+                "site_ids": [int(i) for i in range(20)],
+                "description": "All 20 sites active for benchmarking.",
+            },
+            "even_data_odd_ancilla": {
+                "site_ids": [int(i) for i in range(20)],
+                "regions": [
+                    {
+                        "name": "data_even",
+                        "site_ids": [int(i) for i in range(20) if i % 2 == 0],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla_odd",
+                        "site_ids": [int(i) for i in range(20) if i % 2 == 1],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Alternating even data / odd ancilla sites.",
+            },
+        },
+        "default_configuration_family": "dense_chain",
     },
     # SPAM-focused preset with notable readout flips and mild runtime loss.
     ("local-cpu", "readout_stress"): {
@@ -896,6 +1058,29 @@ _PROFILE_TABLE: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {
         },
         "timing_limits": _timing_limits_config(),
         "native_gates": _native_gate_catalog("NearestNeighborChain"),
+        "configuration_families": {
+            "dense_chain": {
+                "site_ids": [int(i) for i in range(8)],
+                "description": "All 8 sites active for SPAM-heavy runs.",
+            },
+            "split_data_ancilla": {
+                "site_ids": [int(i) for i in range(8)],
+                "regions": [
+                    {
+                        "name": "data_front",
+                        "site_ids": [0, 1, 2, 3],
+                        "role": "DATA",
+                    },
+                    {
+                        "name": "ancilla_back",
+                        "site_ids": [4, 5, 6, 7],
+                        "role": "ANCILLA",
+                    },
+                ],
+                "description": "Front half as data, back half as ancilla under readout stress.",
+            },
+        },
+        "default_configuration_family": "dense_chain",
     },
 }
 
