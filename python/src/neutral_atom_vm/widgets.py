@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from html import escape
 import re
-from typing import Any, Dict, Mapping, MutableMapping, Sequence
+from collections import Counter
+from typing import Any, Callable, Dict, Iterable, Mapping, MutableMapping, Sequence
 
 from .device import available_presets
 from .display import build_result_summary_html, format_histogram
@@ -53,6 +55,8 @@ _NOISE_FIELD_SPECS: Sequence[_NoiseFieldSpec] = [
     _NoiseFieldSpec("loss_runtime.per_gate", "Per gate", "Runtime loss", "Atom loss injected by each gate."),
     _NoiseFieldSpec("loss_runtime.idle_rate", "Idle rate", "Runtime loss", "Atom loss accumulated while idle."),
 ]
+
+_ROLE_OPTIONS = ("DATA", "ANCILLA", "PARKING", "CALIB")
 
 
 def _format_number(value: float) -> str:
@@ -217,6 +221,15 @@ def _assign_nested(mapping: MutableMapping[str, Any], path: str, value: float) -
     target[keys[-1]] = value
 
 
+def _coerce_to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(value)
+    except Exception:
+        return None
+
+
 def _format_metadata(metadata: Mapping[str, Any] | None) -> str:
     if not metadata:
         return "<em>No additional metadata for this profile.</em>"
@@ -249,6 +262,8 @@ class ProfileConfigurator:
     """High-level helper that renders an ipywidgets UI for profile selection."""
 
     CUSTOM_PROFILE_LABEL = "(Create new profile)"
+    CUSTOM_CONFIGURATION_LABEL = "(Create new configuration)"
+    _CUSTOM_CONFIGURATION_VALUE = "__custom_configuration__"
 
     def __init__(
         self,
@@ -303,6 +318,14 @@ class ProfileConfigurator:
             options=[],
             layout=widgets.Layout(width="280px"),
         )
+        self.configuration_dropdown = widgets.Dropdown(
+            description="Configuration",
+            options=[],
+            layout=widgets.Layout(width="320px"),
+            disabled=True,
+        )
+        self.configuration_dropdown.observe(self._on_configuration_change, names="value")
+        self._suspend_configuration_callback = False
         self.custom_profile_name = widgets.Text(
             description="Profile name",
             placeholder="my_profile",
@@ -401,6 +424,117 @@ class ProfileConfigurator:
         self.metadata_html = widgets.HTML(
             layout=widgets.Layout(min_height="48px", padding="4px", border="1px solid #ddd"),
         )
+        self.geometry_summary = widgets.HTML(
+            layout=widgets.Layout(min_height="48px", padding="4px", border="none"),
+        )
+        self.zone_summary = widgets.HTML(
+            layout=widgets.Layout(min_height="32px", padding="4px", border="none"),
+        )
+        self.warning_html = widgets.HTML(
+            value="<em>No warnings.</em>",
+            layout=widgets.Layout(min_height="32px", padding="4px 0", border="none"),
+        )
+
+        self.geometry_help_button = widgets.Button(
+            description="Show geometry help",
+            tooltip="Explain how the geometry tabs and controls relate to the device lattice.",
+            button_style="info",
+            layout=widgets.Layout(width="170px"),
+        )
+        self.geometry_help_button.on_click(lambda _: self._toggle_geometry_help())
+        self.geometry_help_output = widgets.HTML(
+            value=(
+                "<p><strong>Physical lattice tab</strong> shows the canonical device lattice and the "
+                "region/zone-aware occupancy controls. Use the row/column/perimeter tools and the "
+                "region palette to toggle which traps are occupied without editing raw indices.</p>"
+                "<p><strong>Positions tab</strong> retains the legacy slot count, spacing, and timing "
+                "controls plus the raw positions textarea. Generate evenly spaced coordinates or "
+                "edit them directly; the configurator will keep the derived site metadata for "
+                "backward compatibility.</p>"
+            ),
+            layout=widgets.Layout(
+                display="none",
+                padding="8px",
+                margin="0 0 8px 0",
+                border="1px solid #ddd",
+            ),
+        )
+        self._geometry_help_visible = False
+        self.row_selector = widgets.Dropdown(
+            description="Row",
+            options=[],
+            layout=widgets.Layout(width="130px"),
+            disabled=True,
+        )
+        self.select_row_button = widgets.Button(
+            description="Toggle row",
+            layout=widgets.Layout(width="130px"),
+        )
+        self.col_selector = widgets.Dropdown(
+            description="Column",
+            options=[],
+            layout=widgets.Layout(width="130px"),
+            disabled=True,
+        )
+        self.select_col_button = widgets.Button(
+            description="Toggle column",
+            layout=widgets.Layout(width="130px"),
+        )
+        self.perimeter_button = widgets.Button(
+            description="Toggle perimeter",
+            layout=widgets.Layout(width="200px"),
+        )
+        self.clear_button = widgets.Button(
+            description="Clear occupancy",
+            button_style="warning",
+            layout=widgets.Layout(width="160px"),
+        )
+        self.fill_button = widgets.Button(
+            description="Fill all sites",
+            button_style="success",
+            layout=widgets.Layout(width="160px"),
+        )
+        self.region_role_dropdown = widgets.Dropdown(
+            description="Role",
+            options=[(option.capitalize(), option) for option in _ROLE_OPTIONS],
+            value="DATA",
+            layout=widgets.Layout(width="200px"),
+        )
+        self.region_assign_button = widgets.Button(
+            description="Assign role",
+            layout=widgets.Layout(width="150px"),
+        )
+        self.select_row_button.on_click(lambda _: self._toggle_row_selection())
+        self.clear_button.on_click(lambda _: self._set_current_site_ids(set()))
+        self.fill_button.on_click(lambda _: self._set_current_site_ids(self._all_site_ids()))
+        self.region_assign_button.on_click(lambda _: self._toggle_role_assignment_mode())
+        self.layer_selector = widgets.Dropdown(
+            description="Layer",
+            options=[],
+            layout=widgets.Layout(width="130px"),
+            disabled=True,
+        )
+        self.select_layer_button = widgets.Button(
+            description="Toggle layer",
+            layout=widgets.Layout(width="130px"),
+        )
+        self.select_layer_button.on_click(lambda _: self._toggle_layer_selection())
+        self.lattice_grid = widgets.GridBox(
+            layout=widgets.Layout(width="100%", grid_template_columns="repeat(5, minmax(40px, 1fr))", grid_gap="4px"),
+        )
+        self.region_palette = widgets.VBox(layout=widgets.Layout(gap="4px"))
+        self._configuration_families: Dict[str, Mapping[str, Any]] = {}
+        self._region_definitions: list[Dict[str, Any]] = []
+        self._base_region_definitions: list[Dict[str, Any]] = []
+        self._preset_sites: list[Mapping[str, Any]] = []
+        self._site_layout_info: Mapping[str, Any] | None = None
+        self._current_site_ids: set[int] = set()
+        self._custom_configuration_active = False
+        self._suspend_region_callbacks = False
+        self._role_assignment_mode = False
+        self._pending_role_selection: set[int] = set()
+        self._last_selection_site_ids: set[int] = set()
+        self._custom_region_counter = 0
 
         self.noise_fields: Dict[str, widgets.FloatText] = {}
         self.correlated_matrix = widgets.Textarea(
@@ -429,14 +563,89 @@ class ProfileConfigurator:
             ],
             layout=widgets.Layout(),
         )
-        geometry_box = widgets.VBox(
+        selection_controls = widgets.VBox(
+            [
+                widgets.HBox(
+                    [
+                        self.row_selector,
+                        self.select_row_button,
+                        self.col_selector,
+                        self.select_col_button,
+                        self.layer_selector,
+                        self.select_layer_button,
+                    ],
+                    layout=widgets.Layout(gap="6px"),
+                ),
+                widgets.HBox(
+                    [
+                        self.perimeter_button,
+                        self.clear_button,
+                        self.fill_button,
+                    ],
+                    layout=widgets.Layout(gap="6px"),
+                ),
+                widgets.HBox(
+                    [
+                        self.region_role_dropdown,
+                        self.region_assign_button,
+                    ],
+                    layout=widgets.Layout(gap="6px"),
+                ),
+            ],
+            layout=widgets.Layout(margin="8px 0", gap="4px"),
+        )
+        geometry_map_box = widgets.VBox(
+            [
+                self.geometry_summary,
+                self.zone_summary,
+                self.warning_html,
+                selection_controls,
+                self.lattice_grid,
+                widgets.HTML("<strong>Regions</strong>"),
+                self.region_palette,
+            ],
+            layout=widgets.Layout(padding="4px", border="1px solid #ddd", flex="1"),
+        )
+        detail_panel = widgets.VBox(
             [
                 self.blockade_input,
                 dimension_box,
                 spacing_box,
                 self.positions_editor,
                 self.positions_help,
-            ]
+            ],
+            layout=widgets.Layout(padding="4px", border="1px solid #ddd", flex="1"),
+        )
+        lattice_tab_header = widgets.HBox(
+            [
+                widgets.HTML("<strong>Physical lattice</strong>"),
+                self.geometry_help_button,
+            ],
+            layout=widgets.Layout(justify_content="space-between", align_items="center"),
+        )
+        lattice_tab = widgets.VBox(
+            [
+                lattice_tab_header,
+                self.geometry_help_output,
+                geometry_map_box,
+            ],
+            layout=widgets.Layout(padding="4px", gap="6px"),
+        )
+        positions_tab = widgets.VBox(
+            [
+                widgets.HTML("<strong>Positions & timing</strong>"),
+                detail_panel,
+            ],
+            layout=widgets.Layout(padding="4px", gap="6px"),
+        )
+        self.geometry_subtabs = widgets.Tab(children=[lattice_tab, positions_tab])
+        self.geometry_subtabs.set_title(0, "Physical lattice")
+        self.geometry_subtabs.set_title(1, "Positions")
+        geometry_box = widgets.VBox(
+            [
+                self.geometry_subtabs,
+            ],
+            layout=widgets.Layout(),
         )
         noise_editor = self._build_noise_editor()
         tabs = widgets.Tab(children=[geometry_box, noise_editor])
@@ -457,14 +666,14 @@ class ProfileConfigurator:
         self.container = widgets.VBox(
             [
                 widgets.HBox(
-                    [self.device_dropdown, self.profile_dropdown],
+                    [self.device_dropdown, self.profile_dropdown, self.configuration_dropdown],
                     layout=widgets.Layout(justify_content="flex-start"),
                 ),
                 self.custom_profile_box,
                 self.metadata_html,
                 tabs,
             ],
-            layout=widgets.Layout(width="820px"),
+            layout=widgets.Layout(width="920px"),
         )
 
         self._update_dimension_layout()
@@ -602,6 +811,7 @@ class ProfileConfigurator:
         config = self._presets.get(device_id, {}).get(profile)
         if not config:
             return
+        self._load_configuration_metadata(config)
         self._apply_grid_layout_info(config.get("grid_layout"))
         self.blockade_input.value = float(config.get("blockade_radius", 0.0))
         coords = None
@@ -613,6 +823,611 @@ class ProfileConfigurator:
         self.positions_editor.value = _format_positions(coords if coords else config.get("positions", []))
         self.metadata_html.value = _format_metadata(config.get("metadata"))
         self._load_noise(config.get("noise"))
+        self._refresh_geometry_panel()
+
+    def _load_configuration_metadata(self, config: Mapping[str, Any], *, custom_mode: bool = False) -> None:
+        sites = config.get("sites")
+        if isinstance(sites, Sequence):
+            self._preset_sites = [dict(site) for site in sites if isinstance(site, Mapping)]
+        else:
+            self._preset_sites = []
+        layout_info = config.get("grid_layout")
+        self._site_layout_info = layout_info if isinstance(layout_info, Mapping) else None
+        self._base_region_definitions = self._normalize_regions(config.get("regions"))
+        self._region_definitions = self._clone_regions(self._base_region_definitions)
+        if custom_mode:
+            self._configuration_families = {}
+            self._custom_configuration_active = True
+            self._active_configuration_family_name = self._CUSTOM_CONFIGURATION_VALUE
+            self._current_site_ids = set(self._coerce_site_ids(config.get("site_ids")))
+            if not self._current_site_ids and self._preset_sites:
+                self._current_site_ids = {
+                    int(site.get("id", idx)) for idx, site in enumerate(self._preset_sites)
+                }
+            self._last_selection_site_ids = set(self._current_site_ids)
+            return
+
+        self._configuration_families = self._normalize_configuration_families(
+            config.get("configuration_families"),
+        )
+        self._custom_configuration_active = False
+        default_family = _coerce_to_str(config.get("default_configuration_family"))
+        if not default_family and self._configuration_families:
+            default_family = next(iter(self._configuration_families))
+        self._active_configuration_family_name = default_family
+        if self._configuration_families and self._active_configuration_family_name in self._configuration_families:
+            self._current_site_ids = set(
+                self._configuration_families[self._active_configuration_family_name]["site_ids"]
+            )
+        else:
+            self._current_site_ids = set(self._coerce_site_ids(config.get("site_ids")))
+        if not self._current_site_ids and self._preset_sites:
+            self._current_site_ids = {
+                int(site.get("id", idx)) for idx, site in enumerate(self._preset_sites)
+            }
+        self._apply_active_configuration_family_regions()
+        self._update_configuration_dropdown()
+        self._last_selection_site_ids = set(self._current_site_ids)
+
+    def _normalize_regions(self, entries: Any) -> list[Dict[str, Any]]:
+        regions: list[Dict[str, Any]] = []
+        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+            return regions
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            site_ids = self._coerce_site_ids(entry.get("site_ids"))
+            if not site_ids:
+                continue
+            role = str(entry.get("role", "DATA")).upper()
+            if role not in {"DATA", "ANCILLA", "PARKING", "CALIB"}:
+                role = "DATA"
+            regions.append(
+                {
+                    "name": str(entry.get("name", "region")),
+                    "site_ids": site_ids,
+                    "role": role,
+                    "zone_id": entry.get("zone_id"),
+                }
+            )
+        return regions
+
+    def _coerce_site_ids(self, entries: Any) -> list[int]:
+        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+            return []
+        ids: list[int] = []
+        for entry in entries:
+            try:
+                ids.append(int(entry))
+            except (TypeError, ValueError):
+                continue
+        return ids
+
+    def _normalize_configuration_families(self, entries: Any) -> Dict[str, Mapping[str, Any]]:
+        families: Dict[str, Mapping[str, Any]] = {}
+        if not isinstance(entries, Mapping):
+            return families
+        for name, payload in entries.items():
+            if not isinstance(payload, Mapping):
+                continue
+            site_ids = self._coerce_site_ids(payload.get("site_ids"))
+            if not site_ids:
+                continue
+            family: Dict[str, Any] = {
+                "site_ids": site_ids,
+                "regions": self._normalize_regions(payload.get("regions")),
+                "description": _coerce_to_str(payload.get("description")),
+            }
+            families[str(name)] = family
+        return families
+
+    def _clone_regions(self, entries: Sequence[Mapping[str, Any]] | None) -> list[Dict[str, Any]]:
+        clones: list[Dict[str, Any]] = []
+        if not entries:
+            return clones
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            clone = dict(entry)
+            clone["site_ids"] = self._coerce_site_ids(entry.get("site_ids"))
+            clones.append(clone)
+        return clones
+
+    def _apply_active_configuration_family_regions(self) -> None:
+        if self._custom_configuration_active:
+            return
+        regions_source: Sequence[Mapping[str, Any]] | None = self._base_region_definitions
+        if (
+            self._active_configuration_family_name
+            and self._active_configuration_family_name in self._configuration_families
+        ):
+            family_regions = self._configuration_families[self._active_configuration_family_name].get(
+                "regions"
+            )
+            if family_regions:
+                regions_source = family_regions
+        self._region_definitions = self._clone_regions(regions_source)
+
+    def _activate_custom_configuration(self) -> None:
+        if self._custom_configuration_active and self._active_configuration_family_name == self._CUSTOM_CONFIGURATION_VALUE:
+            return
+        self._custom_configuration_active = True
+        self._active_configuration_family_name = self._CUSTOM_CONFIGURATION_VALUE
+        self._update_configuration_dropdown()
+
+    def _update_configuration_dropdown(self) -> None:
+        options: list[tuple[str, Any]] = []
+        for name, family in self._configuration_families.items():
+            label_parts = [name]
+            description = family.get("description")
+            if description:
+                label_parts.insert(0, description)
+            site_ids = family.get("site_ids") or []
+            count = len(site_ids)
+            label = f"{' - '.join(label_parts)} ({count} sites)"
+            options.append((label, name))
+        if options:
+            options.append((self.CUSTOM_CONFIGURATION_LABEL, self._CUSTOM_CONFIGURATION_VALUE))
+            desired_value = (
+                self._active_configuration_family_name
+                if self._active_configuration_family_name in self._configuration_families
+                else self._CUSTOM_CONFIGURATION_VALUE
+            )
+            self.configuration_dropdown.disabled = False
+        else:
+            options = [(self.CUSTOM_CONFIGURATION_LABEL, self._CUSTOM_CONFIGURATION_VALUE)]
+            desired_value = self._CUSTOM_CONFIGURATION_VALUE
+            self.configuration_dropdown.disabled = True
+        self._suspend_configuration_callback = True
+        try:
+            self.configuration_dropdown.options = options
+            self.configuration_dropdown.value = desired_value
+        finally:
+            self._suspend_configuration_callback = False
+
+    def _on_configuration_change(self, change: Dict[str, Any]) -> None:
+        if self._suspend_configuration_callback:
+            return
+        new_value = change.get("new")
+        if new_value is None:
+            return
+        if new_value == self._CUSTOM_CONFIGURATION_VALUE:
+            base_family = self._active_configuration_family_name
+            if base_family and base_family in self._configuration_families:
+                self._current_site_ids = set(
+                    self._configuration_families[base_family].get("site_ids", [])
+                )
+            self._activate_custom_configuration()
+        else:
+            self._custom_configuration_active = False
+            self._active_configuration_family_name = str(new_value)
+            if self._active_configuration_family_name in self._configuration_families:
+                self._current_site_ids = set(
+                    self._configuration_families[self._active_configuration_family_name]["site_ids"]
+                )
+            self._apply_active_configuration_family_regions()
+        self._refresh_geometry_panel()
+
+    def _refresh_geometry_panel(self) -> None:
+        self.geometry_summary.value = self._geometry_summary_text()
+        self._update_layout_selectors()
+        self._update_zone_summary()
+        self._update_warnings()
+        self._render_lattice_map()
+        self._render_region_palette()
+
+    def _geometry_summary_text(self) -> str:
+        total_sites = len(self._preset_sites)
+        occupied = len(self._current_site_ids)
+        family_label = (
+            "custom configuration"
+            if self._custom_configuration_active
+            else (self._active_configuration_family_name or "default")
+        )
+        return (
+            f"<strong>Configuration:</strong> {occupied}/{total_sites or '?'} occupied "
+            f"sites ({family_label})."
+        )
+
+    def _update_layout_selectors(self) -> None:
+        info = self._site_layout_info
+        layers = max(1, int(info.get("layers", 1))) if info else 1
+        if not info:
+            self.row_selector.options = []
+            self.col_selector.options = []
+            self.layer_selector.options = []
+            self.row_selector.disabled = True
+            self.col_selector.disabled = True
+            self.layer_selector.disabled = True
+            self.select_row_button.disabled = True
+            self.select_col_button.disabled = True
+            self.perimeter_button.disabled = True
+            self.clear_button.disabled = not bool(self._current_site_ids)
+            self.fill_button.disabled = not bool(self._preset_sites)
+            return
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", 1)))
+        layers = max(1, int(info.get("layers", 1)))
+        self.row_selector.options = list(range(rows))
+        self.col_selector.options = list(range(cols))
+        self.layer_selector.options = list(range(layers))
+        if self.row_selector.options and (self.row_selector.value not in self.row_selector.options):
+            self.row_selector.value = self.row_selector.options[0]
+        if self.col_selector.options and (self.col_selector.value not in self.col_selector.options):
+            self.col_selector.value = self.col_selector.options[0]
+        if self.layer_selector.options and (self.layer_selector.value not in self.layer_selector.options):
+            self.layer_selector.value = self.layer_selector.options[0]
+        self.row_selector.disabled = False
+        self.col_selector.disabled = False
+        self.layer_selector.disabled = False
+        self.select_row_button.disabled = False
+        self.select_col_button.disabled = False
+        self.select_layer_button.disabled = False
+        self.perimeter_button.disabled = not bool(self._perimeter_site_ids())
+        self.clear_button.disabled = not bool(self._current_site_ids)
+        self.fill_button.disabled = not bool(self._preset_sites)
+
+    def _toggle_row_selection(self) -> None:
+        if self.row_selector.value is None:
+            return
+        ids = self._row_site_ids(int(self.row_selector.value))
+        self._select_or_toggle_sites(ids)
+
+    def _toggle_column_selection(self) -> None:
+        if self.col_selector.value is None:
+            return
+        ids = self._column_site_ids(int(self.col_selector.value))
+        self._select_or_toggle_sites(ids)
+
+    def _toggle_perimeter_selection(self) -> None:
+        ids = self._perimeter_site_ids()
+        self._select_or_toggle_sites(ids)
+
+    def _toggle_layer_selection(self) -> None:
+        if self.layer_selector.value is None:
+            return
+        ids = self._layer_site_ids(int(self.layer_selector.value))
+        self._select_or_toggle_sites(ids)
+
+    def _handle_site_click(self, site_id: int, _: widgets.Button) -> None:
+        self._select_or_toggle_sites({site_id})
+
+    def _select_or_toggle_sites(self, site_ids: Iterable[int]) -> None:
+        if self._role_assignment_mode:
+            self._select_sites_for_role(site_ids)
+        else:
+            self._toggle_sites(site_ids)
+
+    def _toggle_geometry_help(self) -> None:
+        self._geometry_help_visible = not self._geometry_help_visible
+        self.geometry_help_output.layout.display = (
+            "block" if self._geometry_help_visible else "none"
+        )
+        self.geometry_help_button.description = (
+            "Hide geometry help" if self._geometry_help_visible else "Show geometry help"
+        )
+
+    def _toggle_sites(self, site_ids: Iterable[int]) -> None:
+        if not site_ids:
+            return
+        site_set = set(site_ids)
+        if site_set.issubset(self._current_site_ids):
+            self._current_site_ids -= site_set
+        else:
+            self._current_site_ids.update(site_set)
+        self._record_assignment_selection(site_set)
+        self._activate_custom_configuration()
+        self._refresh_geometry_panel()
+
+    def _select_sites_for_role(self, site_ids: Iterable[int]) -> None:
+        site_set = {site_id for site_id in site_ids if isinstance(site_id, int)}
+        if not site_set:
+            return
+        added = False
+        for site_id in site_set:
+            if site_id not in self._current_site_ids:
+                self._current_site_ids.add(site_id)
+                added = True
+        self._record_assignment_selection(site_set)
+        if added:
+            self._activate_custom_configuration()
+        self._refresh_geometry_panel()
+
+    def _set_current_site_ids(self, site_ids: set[int]) -> None:
+        self._current_site_ids = set(site_ids)
+        self._record_assignment_selection(site_ids)
+        self._activate_custom_configuration()
+        self._refresh_geometry_panel()
+
+    def _all_site_ids(self) -> set[int]:
+        return {
+            int(site.get("id", idx))
+            for idx, site in enumerate(self._preset_sites)
+            if isinstance(site, Mapping)
+        }
+
+    def _row_site_ids(self, row: int) -> list[int]:
+        info = self._site_layout_info
+        if not info:
+            return []
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", 1)))
+        layers = max(1, int(info.get("layers", 1)))
+        if row < 0 or row >= rows:
+            return []
+        ids: list[int] = []
+        stride = rows * cols
+        for layer in range(layers):
+            for col in range(cols):
+                idx = layer * stride + row * cols + col
+                if idx < len(self._preset_sites):
+                    ids.append(int(self._preset_sites[idx].get("id", idx)))
+        return ids
+
+    def _column_site_ids(self, col: int) -> list[int]:
+        info = self._site_layout_info
+        if not info:
+            return []
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", 1)))
+        layers = max(1, int(info.get("layers", 1)))
+        if col < 0 or col >= cols:
+            return []
+        ids: list[int] = []
+        stride = rows * cols
+        for layer in range(layers):
+            for row in range(rows):
+                idx = layer * stride + row * cols + col
+                if idx < len(self._preset_sites):
+                    ids.append(int(self._preset_sites[idx].get("id", idx)))
+        return ids
+
+    def _layer_site_ids(self, layer: int) -> list[int]:
+        info = self._site_layout_info
+        if not info:
+            return []
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", 1)))
+        layers = max(1, int(info.get("layers", 1)))
+        if layer < 0 or layer >= layers:
+            return []
+        ids: list[int] = []
+        stride = rows * cols
+        for row in range(rows):
+            for col in range(cols):
+                idx = layer * stride + row * cols + col
+                if idx < len(self._preset_sites):
+                    ids.append(int(self._preset_sites[idx].get("id", idx)))
+        return ids
+
+    def _perimeter_site_ids(self) -> set[int]:
+        info = self._site_layout_info
+        if not info:
+            return set()
+        rows = max(1, int(info.get("rows", 1)))
+        cols = max(1, int(info.get("cols", 1)))
+        layers = max(1, int(info.get("layers", 1)))
+        ids: set[int] = set()
+        stride = rows * cols
+        for layer in range(layers):
+            for row in range(rows):
+                for col in range(cols):
+                    idx = layer * stride + row * cols + col
+                    if idx >= len(self._preset_sites):
+                        continue
+                    is_edge = (
+                        row in (0, rows - 1)
+                        or col in (0, cols - 1)
+                        or layer in (0, layers - 1)
+                    )
+                    if is_edge:
+                        ids.add(int(self._preset_sites[idx].get("id", idx)))
+        return ids
+
+    def _record_assignment_selection(self, site_ids: Iterable[int]) -> None:
+        self._last_selection_site_ids = set(site_ids)
+        if self._role_assignment_mode:
+            self._pending_role_selection.update(site_ids)
+
+    def _toggle_role_assignment_mode(self) -> None:
+        if not self._role_assignment_mode:
+            self._role_assignment_mode = True
+            self._pending_role_selection.clear()
+            self.region_assign_button.description = "Done"
+            self.region_assign_button.button_style = "success"
+            self.region_assign_button.tooltip = "Select sites (rows, columns, or individual traps) then click Done"
+            return
+        self._role_assignment_mode = False
+        self.region_assign_button.description = "Assign role"
+        self.region_assign_button.button_style = ""
+        self.region_assign_button.tooltip = "Pick occupied traps and label their role"
+        if self._pending_role_selection:
+            self._create_custom_region(self._pending_role_selection, self.region_role_dropdown.value)
+        self._pending_role_selection.clear()
+
+    def _create_custom_region(self, site_ids: set[int], role: str | None) -> None:
+        if not site_ids:
+            return
+        role_value = role.upper() if isinstance(role, str) else "DATA"
+        for region in self._region_definitions:
+            region["site_ids"] = [site_id for site_id in region.get("site_ids", []) if site_id not in site_ids]
+        self._region_definitions = [region for region in self._region_definitions if region.get("site_ids")]
+        name = f"custom_region_{self._custom_region_counter}"
+        self._custom_region_counter += 1
+        self._region_definitions.append(
+            {
+                "name": name,
+                "site_ids": sorted(site_ids),
+                "role": role_value,
+                "_just_created": True,
+            }
+        )
+        self._activate_custom_configuration()
+        self._refresh_geometry_panel()
+
+    def _update_zone_summary(self) -> None:
+        if not self._preset_sites:
+            self.zone_summary.value = ""
+            return
+        total = Counter()
+        occupied = Counter()
+        for idx, site in enumerate(self._preset_sites):
+            zone = str(site.get("zone_id", 0))
+            site_id = int(site.get("id", idx))
+            total[zone] += 1
+            if site_id in self._current_site_ids:
+                occupied[zone] += 1
+        parts = []
+        for zone in sorted(total.keys()):
+            parts.append(f"zone {zone}: {occupied[zone]}/{total[zone]}")
+        self.zone_summary.value = "<strong>Zones:</strong> " + ", ".join(parts)
+
+    def _update_warnings(self) -> None:
+        if not self._current_site_ids:
+            self.warning_html.value = "<em>No warnings.</em>"
+            return
+        non_data = []
+        orphan = []
+        for site_id in sorted(self._current_site_ids):
+            role = self._site_role_for(site_id)
+            if role is None:
+                orphan.append(site_id)
+            elif role != "DATA":
+                non_data.append((site_id, role))
+        warnings = []
+        if non_data:
+            regions = ", ".join(sorted({role.lower() for _, role in non_data}))
+            sites = ", ".join(str(site_id) for site_id, _ in non_data)
+            warnings.append(f"Occupied sites {sites} belong to {regions} region(s).")
+        if orphan:
+            warnings.append(f"Sites {', '.join(str(site_id) for site_id in orphan)} lack region metadata.")
+        self.warning_html.value = "<br/>".join(warnings) if warnings else "<em>No warnings.</em>"
+
+    def _render_lattice_map(self) -> None:
+        if not self._preset_sites:
+            self.lattice_grid.children = (
+                widgets.HTML("<em>Lattice data unavailable for this profile.</em>"),
+            )
+            return
+        cols = 1
+        if self._site_layout_info:
+            cols = max(1, int(self._site_layout_info.get("cols", 1)))
+        cols = min(cols or 1, max(1, len(self._preset_sites)))
+        self.lattice_grid.layout.grid_template_columns = f"repeat({cols}, minmax(40px, 1fr))"
+        children: list[widgets.Widget] = []
+        for idx, site in enumerate(self._preset_sites):
+            site_id = int(site.get("id", idx))
+            occupied = site_id in self._current_site_ids
+            role = self._site_role_for(site_id)
+            pending_color = None
+            if self._role_assignment_mode:
+                pending_role = self.region_role_dropdown.value
+                pending_color = self._color_for_role(pending_role.upper()) if isinstance(pending_role, str) else None
+            if self._role_assignment_mode and site_id in self._pending_role_selection and pending_color:
+                color = pending_color
+            else:
+                color = self._color_for_role(role) if occupied else "#f5f5f5"
+            tooltip_parts = [f"site {site_id}", f"zone {site.get('zone_id', 0)}"]
+            if role:
+                tooltip_parts.append(f"role {role.lower()}")
+            tooltip_parts.append("occupied" if occupied else "vacant")
+            tooltip = "; ".join(tooltip_parts)
+            button = widgets.Button(
+                description=str(site_id),
+                tooltip=tooltip,
+                layout=widgets.Layout(height="56px", min_width="48px", width="100%"),
+            )
+            button.style.button_color = color
+            button.on_click(partial(self._handle_site_click, site_id))
+            children.append(button)
+        self.lattice_grid.children = tuple(children)
+
+    def _render_region_palette(self) -> None:
+        if not self._region_definitions:
+            self.region_palette.children = (
+                widgets.HTML("<em>No region metadata provided.</em>"),
+            )
+            return
+        boxes: list[widgets.Widget] = []
+        self._suspend_region_callbacks = True
+        try:
+            for region in self._region_definitions:
+                name = region.get("name", "region")
+                site_ids = region.get("site_ids", [])
+                just_created = bool(region.pop("_just_created", False))
+                included = just_created or all(int(site_id) in self._current_site_ids for site_id in site_ids)
+                checkbox = widgets.Checkbox(
+                    description=f"{name} ({len(site_ids)} sites)",
+                    value=included,
+                    indent=False,
+                )
+                checkbox.style = {"description_width": "initial"}
+                checkbox.observe(self._make_region_handler(region), names="value")
+                role_dropdown = widgets.Dropdown(
+                    options=[(option.capitalize(), option) for option in _ROLE_OPTIONS],
+                    value=region.get("role", "DATA"),
+                    layout=widgets.Layout(width="150px"),
+                )
+                role_dropdown.observe(self._make_region_role_handler(region), names="value")
+                box = widgets.HBox(
+                    [
+                        checkbox,
+                        role_dropdown,
+                    ],
+                    layout=widgets.Layout(justify_content="space-between", align_items="center"),
+                )
+                boxes.append(box)
+        finally:
+            self._suspend_region_callbacks = False
+        self.region_palette.children = tuple(boxes)
+
+    def _make_region_handler(self, region: Mapping[str, Any]):
+        def handler(change: Dict[str, Any]) -> None:
+            self._on_region_toggle(region, change)
+        return handler
+
+    def _make_region_role_handler(self, region: Mapping[str, Any]):
+        def handler(change: Dict[str, Any]) -> None:
+            if self._suspend_region_callbacks:
+                return
+            new_role = change.get("new")
+            if not isinstance(new_role, str):
+                return
+            region["role"] = new_role.upper()
+            self._activate_custom_configuration()
+            self._refresh_geometry_panel()
+        return handler
+
+    def _on_region_toggle(self, region: Mapping[str, Any], change: Dict[str, Any]) -> None:
+        if self._suspend_region_callbacks:
+            return
+        checked = bool(change.get("new"))
+        for entry in region.get("site_ids", []):
+            try:
+                site_id = int(entry)
+            except (TypeError, ValueError):
+                continue
+            if checked:
+                self._current_site_ids.add(site_id)
+            else:
+                self._current_site_ids.discard(site_id)
+        self._activate_custom_configuration()
+        self._refresh_geometry_panel()
+
+    def _site_role_for(self, site_id: int) -> str | None:
+        for region in self._region_definitions:
+            if int(site_id) in region.get("site_ids", []):
+                return region.get("role")
+        return None
+
+    def _color_for_role(self, role: str | None) -> str:
+        palette = {
+            "DATA": "#4CAF50",
+            "ANCILLA": "#2196F3",
+            "PARKING": "#FF9800",
+            "CALIB": "#9E9E9E",
+        }
+        return palette.get(role, "#cfd8dc")
 
     def _apply_grid_layout_info(self, layout_info: Mapping[str, Any] | None) -> None:
         if not layout_info:
@@ -669,16 +1484,77 @@ class ProfileConfigurator:
         }
         if coordinates:
             config["coordinates"] = coordinates
-        site_descriptors = _site_descriptors_from_entries(entries)
-        if site_descriptors:
-            config["sites"] = site_descriptors
-            config["site_ids"] = [site["id"] for site in site_descriptors]
         layout_info = self._grid_layout_info()
+        site_descriptors = _site_descriptors_from_entries(entries)
+        preset_entries: list[tuple[float, ...]] = []
+        if self._preset_sites:
+            preset_coords = _coords_from_sites(self._preset_sites, layout_info)
+            preset_entries = [tuple(entry) for entry in preset_coords]
+        current_entries = [tuple(entry) for entry in entries]
+        positions_match = bool(preset_entries) and len(preset_entries) == len(current_entries)
+        if positions_match:
+            positions_match = all(
+                preset_entries[idx] == current_entries[idx]
+                for idx in range(len(current_entries))
+            )
+        manual_sites = bool(site_descriptors) and (
+            (self._custom_configuration_active and not positions_match)
+            or not self._preset_sites
+            or len(site_descriptors) != len(self._preset_sites)
+        )
+        manual_site_ids: list[int] | None = None
+        if manual_sites:
+            config["sites"] = site_descriptors
+            if not self._preset_sites or len(site_descriptors) != len(self._preset_sites):
+                manual_site_ids = [site["id"] for site in site_descriptors]
+        elif self._preset_sites:
+            config["sites"] = [dict(site) for site in self._preset_sites]
+        elif site_descriptors:
+            config["sites"] = site_descriptors
         if layout_info:
             config["grid_layout"] = layout_info
         noise_payload = self._collect_noise_payload()
         if noise_payload:
             config["noise"] = noise_payload
+        ordered_site_ids: list[int] | None = None
+        if manual_site_ids is None and self._current_site_ids:
+            ordered_ids: list[int] = []
+            if self._preset_sites:
+                for idx, site in enumerate(self._preset_sites):
+                    try:
+                        site_id = int(site.get("id", idx))
+                    except (TypeError, ValueError):
+                        continue
+                    if site_id in self._current_site_ids:
+                        ordered_ids.append(site_id)
+            else:
+                ordered_ids = sorted(self._current_site_ids)
+            if ordered_ids:
+                ordered_site_ids = ordered_ids
+        if ordered_site_ids is None:
+            ordered_site_ids = manual_site_ids if manual_site_ids is not None else []
+        config["site_ids"] = ordered_site_ids
+        regions_payload = []
+        for region in self._region_definitions:
+            region_entry = {
+                "name": region["name"],
+                "site_ids": list(region["site_ids"]),
+                "role": region["role"],
+            }
+            if region.get("zone_id") is not None:
+                region_entry["zone_id"] = region["zone_id"]
+            regions_payload.append(region_entry)
+        if regions_payload:
+            config["regions"] = regions_payload
+        if self._active_configuration_family_name:
+            family_value = (
+                "custom"
+                if self._custom_configuration_active
+                or self._active_configuration_family_name == self._CUSTOM_CONFIGURATION_VALUE
+                else self._active_configuration_family_name
+            )
+            if family_value != self._CUSTOM_CONFIGURATION_VALUE:
+                config["configuration_family"] = family_value
         return {
             "device_id": device_id,
             "profile": None if actual_profile == "(default)" else actual_profile,
@@ -814,15 +1690,28 @@ class ProfileConfigurator:
     def _enter_custom_mode(self) -> None:
         self.custom_profile_box.layout.display = "block"
         self.metadata_html.value = "<em>Define positions, blockade, and noise to create a custom profile.</em>"
+        self.configuration_dropdown.disabled = True
+        self._configuration_families = {}
+        self._active_configuration_family_name = self._CUSTOM_CONFIGURATION_VALUE
+        self._preset_sites = []
+        self._region_definitions = []
+        self._current_site_ids = set()
+        self._custom_configuration_active = True
+        self._last_selection_site_ids = set()
+        self._update_configuration_dropdown()
+        self._refresh_geometry_panel()
 
     def _exit_custom_mode(self) -> None:
         self.custom_profile_box.layout.display = "none"
+        self.configuration_dropdown.disabled = not bool(self._configuration_families)
 
     def _load_custom_payload(self, payload: Mapping[str, Any]) -> None:
         profile_name = payload.get("profile")
         if profile_name:
             self.custom_profile_name.value = str(profile_name)
         config = payload.get("config") or {}
+        self._load_configuration_metadata(config, custom_mode=True)
+        self._apply_grid_layout_info(config.get("grid_layout"))
         coords = None
         sites = config.get("sites")
         if isinstance(sites, Sequence):
@@ -842,6 +1731,7 @@ class ProfileConfigurator:
             self._load_noise(noise)
         else:
             self._load_noise(None)
+        self._refresh_geometry_panel()
 
 
 class JobResultViewer:

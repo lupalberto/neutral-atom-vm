@@ -257,7 +257,15 @@ Relative to v1, ISA v1.1 extends the hardware description rather than adding new
   - `sites` – an array of per‑site descriptors:
     - `id: int` – logical site index.
     - `x, y: double` – 2D coordinates (1D devices set `y = 0`).
-    - `zone_id: int` – optional grouping label for per‑zone limits.
+  - `zone_id: int` – optional grouping label for per-zone limits.
+  - `site_ids` – slot-to-site mapping for the currently selected configuration family (a sequence of `SiteDescriptor.id` values). When `site_ids` is populated, clients no longer have to infer geometry from the legacy 1D `positions` array.
+  - `configuration_families` – optional dictionary keyed by human-readable family names. Each entry describes:
+    - `site_ids` – which sites are occupied in that family.
+    - `regions` – a list of region descriptors that classify occupied traps (data/ancilla/parking/calibration).
+    - `description`/`intended_use` – textual hints that the ProfileConfigurator, SDK, and scheduler can show to users.
+    - The SDK and ProfileConfigurator emit the chosen family’s name in job metadata (`metadata["configuration_family"]`), so schedulers/logs can explain violations in terms of that concrete configuration.
+    - `default_configuration_family` (per profile) controls which family is chosen when a client does nothing special.
+  - `regions` – a standalone list of `{ name, site_ids, role, zone_id? }` entries that describe data/ancilla/parking cohorts over the whole lattice. These are the canonical role annotations that schedulers, diagnostics, and the ProfileConfigurator consult when they need to show “this is the ancilla row” or “parking sites should stay empty.”
   - `native_gates` – list of gate families supported by the hardware:
     - `name: std::string` – `"X"`, `"RZ"`, `"CZ"`, `"MOVE"`, etc.
     - `arity: int` – number of targets (1, 2, …).

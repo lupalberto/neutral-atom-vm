@@ -1,7 +1,7 @@
 # Ticket: Geometry‑Aware ProfileConfigurator UI for Neutral Atoms
 
 - **Priority:** Medium
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Redesign the `ProfileConfigurator` widget so that users interact with **physical NA device concepts**—lattice sites, regions, and configuration families—instead of editing raw `positions` arrays. The new UI should make it easy to:
@@ -193,3 +193,14 @@ Restructure the widget into three conceptual areas:
   - see basic physical summaries (qubit counts, rows, zones),
   - understand from the UI alone which traps are used and for what role (data vs ancilla vs parking) for a given configuration.
 
+## Progress
+
+- Implemented a configuration dropdown, lattice map, and region palette so the widget displays the current family plus occupancy/role coloring for each site, directly tied to `site_ids`.
+- Added row/column/perimeter selectors, clear/fill actions, and region role assignment controls so users can build custom configurations at the lattice level while the payload still emits consistent `sites`, `site_ids`, `regions`, and derived `positions`/`coordinates`.
+- Surfaced zone summaries, occupancy warnings (non-data/unknown regions), and documented the enriched payload so SDKs/services can reason about family selections and region roles (`profile_payload` now keeps `layout_info`, warnings, and `metadata["configuration_family"]`).
+- Expanded widget tests to cover configuration families, row toggles, and warning generation, plus SDK/runtime tests continue to validate configuration-family parsing.
+- Split the Geometry tab into dedicated "Physical lattice" and "Positions" subtabs and added a toggleable help blurb so the lattice view keeps occupancy checkpoints while the legacy positions editor and timing controls sit in their own workspace.
+
+## Next Steps
+
+- Collect user feedback on the new lattice controls and warning states so follow-up refinements (e.g., improved zone summaries, richer editing tools, or animation hints) can be scoped in later tickets.

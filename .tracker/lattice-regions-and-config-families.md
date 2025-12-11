@@ -1,7 +1,7 @@
 # Ticket: Lattice Regions & Configuration Families
 
 - **Priority:** High
-- **Status:** Backlog
+- **Status:** Done
 
 ## Summary
 Elevate `sites` + `site_ids` from an internal implementation detail to a first-class *hardware capability* for real neutral-atom QPUs by:
@@ -67,3 +67,8 @@ with end-to-end support in presets, SDK, and the ProfileConfigurator UI.
 - Documentation clearly distinguishes:
   - physical lattice vs logical configuration families vs regions, with examples grounded in real neutral-atom hardware layouts.
 
+## Status Update
+
+- Canonical `sites`/`site_ids` metadata now flows through presets, `available_presets`, and `build_device_from_config`; built-in profiles expose named configuration families plus region roles so runtimes and schedulers can refer to them directly.
+- The SDK and ProfileConfigurator now parse/preserve configuration family selections (`metadata["configuration_family"]`), emit derived `regions`, and treat `site_ids` as the authoritative set of occupied traps while keeping legacy `positions`/`coordinates` around for compatibility.
+- Added unit coverage (`python/tests/test_configuration_families.py`) and docs updates (vm-architecture) to explain the lattice/configuration split.

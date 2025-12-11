@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from typing import Sequence
 
+ROLE_COLORS = {
+    "DATA": "#4CAF50",
+    "ANCILLA": "#2196F3",
+    "PARKING": "#FF9800",
+    "CALIB": "#9E9E9E",
+}
+
+import ipywidgets as widgets
+
 import pytest
 
 
@@ -26,6 +35,28 @@ def _sample_presets():
                 "metadata": {"label": "Alpha Tutorial", "persona": "education"},
                 "sites": tutorial_sites,
                 "site_ids": [site["id"] for site in tutorial_sites],
+                "regions": [
+                    {"name": "center_data", "site_ids": [0, 1], "role": "DATA"},
+                    {"name": "edge_parking", "site_ids": [2], "role": "PARKING"},
+                ],
+                "configuration_families": {
+                    "default": {
+                    "site_ids": [0, 1, 2],
+                    "regions": [
+                        {"name": "center_data", "site_ids": [0, 1], "role": "DATA"},
+                        {"name": "edge_parking", "site_ids": [2], "role": "PARKING"},
+                    ],
+                    "description": "Tutorial default",
+                },
+                "sparse_chain": {
+                    "site_ids": [0, 2],
+                    "description": "Sparse selection",
+                    "regions": [
+                        {"name": "sparse_data", "site_ids": [0, 2], "role": "DATA"},
+                    ],
+                },
+            },
+                "default_configuration_family": "default",
             },
             "benchmark": {
                 "positions": [0.0, 0.8, 1.6, 2.4],
@@ -44,6 +75,13 @@ def _sample_presets():
             "dense": {
                 "positions": [float(i) for i in range(6)],
                 "blockade_radius": 2.0,
+                "grid_layout": {
+                    "dim": 2,
+                    "rows": 2,
+                    "cols": 3,
+                    "layers": 1,
+                    "spacing": {"x": 0.5, "y": 0.5, "z": 1.0},
+                },
                 "noise": {
                     "idle_rate": 0.5,
                     "phase": {"idle": 0.05},
@@ -60,6 +98,38 @@ def _sample_presets():
                 },
                 "sites": dense_sites,
                 "site_ids": [site["id"] for site in dense_sites],
+            }
+        },
+        "device-gamma": {
+            "block3d": {
+                "positions": [float(i) for i in range(8)],
+                "blockade_radius": 1.5,
+                "grid_layout": {
+                    "dim": 3,
+                    "rows": 2,
+                    "cols": 2,
+                    "layers": 2,
+                    "spacing": {"x": 1.0, "y": 1.0, "z": 1.0},
+                },
+                "sites": [
+                    {"id": idx, "x": float(idx % 2), "y": float((idx // 2) % 2), "z": float(idx // 4), "zone_id": idx % 2}
+                    for idx in range(8)
+                ],
+                "site_ids": [idx for idx in range(8)],
+                "regions": [
+                    {"name": "layer0", "site_ids": [0, 1, 2, 3], "role": "DATA"},
+                    {"name": "layer1", "site_ids": [4, 5, 6, 7], "role": "ANCILLA"},
+                ],
+                "configuration_families": {
+                    "block": {
+                        "site_ids": [idx for idx in range(8)],
+                        "regions": [
+                            {"name": "layer0", "site_ids": [0, 1, 2, 3], "role": "DATA"},
+                            {"name": "layer1", "site_ids": [4, 5, 6, 7], "role": "ANCILLA"},
+                        ],
+                    }
+                },
+                "default_configuration_family": "block",
             }
         },
     }
@@ -198,6 +268,208 @@ def test_profile_configurator_generates_2d_grid():
         "1.0, 1.0",
     ]
 
+
+def test_profile_configurator_addresses_configuration_families():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    assert hasattr(configurator, "configuration_dropdown")
+    dropdown = configurator.configuration_dropdown
+    values = [value for _, value in dropdown.options]
+    assert "default" in values
+    assert "sparse_chain" in values
+    payload = configurator.profile_payload
+    config = payload["config"]
+    assert config["configuration_family"] == "default"
+    assert any(region["role"] == "DATA" for region in config["regions"])
+
+
+def test_geometry_tab_has_subtabs_and_help():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+
+    tabs = configurator.container.children[-1]
+    assert isinstance(tabs, widgets.Tab)
+    geometry_tab = tabs.children[0]
+    subtabs = geometry_tab.children[0]
+    assert isinstance(subtabs, widgets.Tab)
+    labels = [subtabs.get_title(idx) for idx in range(len(subtabs.children))]
+    assert labels == ["Physical lattice", "Positions"]
+
+    help_button = configurator.geometry_help_button
+    help_output = configurator.geometry_help_output
+    assert help_output.layout.display == "none"
+    help_button.click()
+    assert help_output.layout.display != "none"
+
+
+def test_row_selector_toggle_targets_specific_row():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.device_dropdown.value = "device-beta"
+    configurator.profile_dropdown.value = "dense"
+    configurator.clear_button.click()
+    configurator.row_selector.value = 1
+    configurator.select_row_button.click()
+    payload = configurator.profile_payload
+    assert payload["config"]["site_ids"] == [3, 4, 5]
+
+
+def test_region_warnings_report_non_data_sites():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    assert "parking" in configurator.warning_html.value.lower()
+
+
+def test_layer_selector_hides_layer_sites_in_3d_array():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.device_dropdown.value = "device-gamma"
+    configurator.profile_dropdown.value = "block3d"
+    configurator.clear_button.click()
+    configurator.layer_selector.value = 1
+    configurator.select_layer_button.click()
+    payload = configurator.profile_payload
+    assert payload["config"]["site_ids"] == [4, 5, 6, 7]
+
+
+def test_configuration_family_switch_updates_regions():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    default_regions = [
+        box.children[0].description for box in configurator.region_palette.children
+    ]
+    assert "center_data" in "".join(default_regions)
+
+    configurator.configuration_dropdown.value = "sparse_chain"
+    sparse_regions = [
+        box.children[0].description for box in configurator.region_palette.children
+    ]
+    assert len(sparse_regions) == 1
+    assert "sparse_data" in sparse_regions[0]
+
+
+def test_region_toggle_marks_configuration_custom():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    first_region_checkbox = configurator.region_palette.children[0].children[0]
+    first_region_checkbox.value = not first_region_checkbox.value
+
+    assert configurator.configuration_dropdown.value == ProfileConfigurator._CUSTOM_CONFIGURATION_VALUE
+    payload = configurator.profile_payload
+    assert payload["config"]["configuration_family"] == "custom"
+
+
+def test_clearing_sites_emits_empty_site_ids():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    configurator.clear_button.click()
+    payload = configurator.profile_payload
+    assert payload["config"]["site_ids"] == []
+
+
+def test_assign_role_creates_custom_regions_from_selection():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    configurator.clear_button.click()
+
+    buttons = [
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.Button)
+    ]
+    assert len(buttons) >= 2
+
+    configurator.region_role_dropdown.value = "DATA"
+    configurator.region_assign_button.click()  # enter assign mode
+    buttons[0].click()
+    configurator.region_assign_button.click()  # finalize DATA group
+
+    configurator.region_role_dropdown.value = "ANCILLA"
+    configurator.region_assign_button.click()  # start second assignment
+    buttons[1].click()
+    configurator.region_assign_button.click()  # finalize ANCILLA group
+
+    roles = {region["role"] for region in configurator.profile_payload["config"]["regions"]}
+    assert {"DATA", "ANCILLA"}.issubset(roles)
+    assert configurator.region_palette.children[-1].children[0].value
+
+
+def test_assignment_mode_highlights_pending_selection():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    configurator.profile_dropdown.value = "tutorial"
+    configurator.region_role_dropdown.value = "ANCILLA"
+    configurator.region_assign_button.click()  # enter assignment mode
+    button = next(
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.Button)
+    )
+    button_id = button.description
+    button.click()
+    updated = next(
+        child
+        for child in configurator.lattice_grid.children
+        if isinstance(child, widgets.Button) and child.description == button_id
+    )
+    assert updated.style.button_color == ROLE_COLORS["ANCILLA"]
+
+
+def test_lattice_buttons_toggle_individual_sites():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    first_button = next(
+        (child for child in configurator.lattice_grid.children if isinstance(child, widgets.Button)),
+        None,
+    )
+    assert first_button is not None, "expected lattice to render buttons"
+    before = configurator.profile_payload["config"]["site_ids"]
+    first_button.click()
+    after = configurator.profile_payload["config"]["site_ids"]
+    assert after != before, "clicking a lattice point should update occupancy"
+
+
+def test_custom_payload_populates_geometry_panel():
+    from neutral_atom_vm.widgets import ProfileConfigurator
+
+    configurator = ProfileConfigurator(presets=_sample_presets())
+    payload = {
+        "profile": "my_custom",
+        "config": {
+            "positions": [0.0, 1.0],
+            "sites": [
+                {"id": 0, "x": 0.0, "y": 0.0, "zone_id": 1},
+                {"id": 1, "x": 1.0, "y": 0.0, "zone_id": 2},
+            ],
+            "site_ids": [0, 1],
+            "regions": [
+                {"name": "band", "site_ids": [0], "role": "DATA"},
+                {"name": "perimeter", "site_ids": [1], "role": "ANCILLA"},
+            ],
+            "grid_layout": {"dim": 2, "rows": 1, "cols": 2, "layers": 1, "spacing": {"x": 0.5, "y": 0.5, "z": 1.0}},
+        },
+    }
+
+    configurator.profile_dropdown.value = ProfileConfigurator.CUSTOM_PROFILE_LABEL
+    configurator._load_custom_payload(payload)
+    assert any(isinstance(child, widgets.Button) for child in configurator.lattice_grid.children)
+    assert "zone" in configurator.zone_summary.value.lower()
 
 def test_profile_configurator_generates_3d_stack():
     from neutral_atom_vm.widgets import ProfileConfigurator

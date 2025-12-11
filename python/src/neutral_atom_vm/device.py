@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
 import io
 
@@ -295,6 +295,118 @@ def _parse_site_ids(entries: Sequence[Any] | None) -> Sequence[int] | None:
             continue
     return site_ids or None
 
+
+_DEFAULT_FAMILY_NAME = "default"
+_DEFAULT_REGION_NAME = "data"
+_DEFAULT_REGION_ROLE = "DATA"
+_ALLOWED_REGION_ROLES = frozenset({"DATA", "ANCILLA", "PARKING", "CALIB"})
+
+
+@dataclass(frozen=True)
+class Region:
+    name: str
+    site_ids: tuple[int, ...]
+    role: str = _DEFAULT_REGION_ROLE
+    zone_id: int | None = None
+
+
+@dataclass(frozen=True)
+class ConfigurationFamily:
+    name: str
+    site_ids: tuple[int, ...]
+    regions: tuple[Region, ...] = field(default_factory=tuple)
+    description: Optional[str] = None
+    intended_use: Optional[str] = None
+
+
+def _coerce_to_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(value)
+    except Exception:
+        return None
+
+
+def _normalize_region_role(role: Any) -> str:
+    role_text = _coerce_to_str(role) or _DEFAULT_REGION_ROLE
+    role_text = role_text.upper()
+    if role_text not in _ALLOWED_REGION_ROLES:
+        return _DEFAULT_REGION_ROLE
+    return role_text
+
+
+def _parse_regions(entries: Sequence[Any] | None) -> list[Region]:
+    if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
+        return []
+    regions: list[Region] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        site_ids = _parse_site_ids(entry.get("site_ids"))
+        if not site_ids:
+            continue
+        role = _normalize_region_role(entry.get("role"))
+        zone_value = entry.get("zone_id")
+        zone_id: int | None = None
+        try:
+            if zone_value is not None:
+                zone_id = int(zone_value)
+        except (TypeError, ValueError):
+            zone_id = None
+        region_name = _coerce_to_str(entry.get("name")) or "region"
+        regions.append(
+            Region(
+                name=region_name,
+                site_ids=tuple(site_ids),
+                role=role,
+                zone_id=zone_id,
+            )
+        )
+    return regions
+
+
+def _build_configuration_family(
+    name: str,
+    payload: Mapping[str, Any],
+    site_ids: Sequence[int],
+) -> ConfigurationFamily:
+    regions = payload.get("regions")
+    parsed_regions = tuple(_parse_regions(regions if isinstance(regions, Sequence) else None))
+    description = _coerce_to_str(payload.get("description"))
+    intended_use = _coerce_to_str(payload.get("intended_use"))
+    return ConfigurationFamily(
+        name=name,
+        site_ids=tuple(site_ids),
+        regions=parsed_regions,
+        description=description,
+        intended_use=intended_use,
+    )
+
+
+def _parse_configuration_families(entries: Any) -> Dict[str, ConfigurationFamily]:
+    families: Dict[str, ConfigurationFamily] = {}
+    if isinstance(entries, Mapping):
+        iterator = ((str(key), value) for key, value in entries.items())
+    elif isinstance(entries, Sequence) and not isinstance(entries, (str, bytes)):
+        iterator = []
+        for idx, entry in enumerate(entries):
+            if not isinstance(entry, Mapping):
+                continue
+            family_name = _coerce_to_str(entry.get("name")) or f"{_DEFAULT_FAMILY_NAME}_{idx}"
+            iterator.append((family_name, entry))
+    else:
+        return families
+
+    for family_name, payload in iterator:
+        if not isinstance(payload, Mapping):
+            continue
+        site_ids = _parse_site_ids(payload.get("site_ids"))
+        if not site_ids:
+            continue
+        families[family_name] = _build_configuration_family(family_name, payload, site_ids)
+    return families
+
 ProgramType = Sequence[Dict[str, Any]]
 KernelType = Callable[..., Any]
 SubmitJobFn = Callable[[JobRequest], Mapping[str, Any]]
@@ -352,6 +464,15 @@ class Device:
     native_gates: Sequence[NativeGate] | None = None
     timing_limits: TimingLimits | None = None
     submit_job_fn: SubmitJobFn | None = None
+    configuration_families: Dict[str, ConfigurationFamily] | None = None
+    regions: Sequence[Region] | None = None
+    active_configuration_family_name: str | None = None
+
+    @property
+    def active_configuration_family(self) -> ConfigurationFamily | None:
+        if not self.configuration_families or not self.active_configuration_family_name:
+            return None
+        return self.configuration_families.get(self.active_configuration_family_name)
 
     def submit(
         self,
@@ -391,6 +512,9 @@ class Device:
                 "Explicit squin noise helpers are only supported on the stabilizer backend."
             )
         _validate_blockade_constraints(program, self.positions, self.blockade_radius, self.coordinates)
+        job_metadata: Dict[str, str] = {}
+        if self.active_configuration_family_name:
+            job_metadata["configuration_family"] = self.active_configuration_family_name
         return JobRequest(
             program=program,
             hardware=HardwareConfig(
@@ -406,6 +530,7 @@ class Device:
             profile=self.profile,
             shots=shots,
             max_threads=max_threads,
+            metadata=job_metadata,
             noise=self.noise,
             stim_circuit=stim_circuit,
         )
@@ -813,6 +938,15 @@ def available_presets() -> Dict[str, Dict[Optional[str], Dict[str, Any]]]:
             entry["site_ids"] = list(config["site_ids"])
         if "sites" in config:
             entry["sites"] = deepcopy(config["sites"])
+        if "regions" in config:
+            entry["regions"] = deepcopy(config["regions"])
+        if "configuration_families" in config:
+            entry["configuration_families"] = {
+                name: deepcopy(family)
+                for name, family in config["configuration_families"].items()
+            }
+        if "default_configuration_family" in config:
+            entry["default_configuration_family"] = str(config["default_configuration_family"])
         if "timing_limits" in config:
             entry["timing_limits"] = deepcopy(config["timing_limits"])
         if "native_gates" in config:
@@ -871,8 +1005,26 @@ def build_device_from_config(
     if coord_entries and len(positions) != len(coord_entries):
         positions = list(range(len(coord_entries)))
     blockade = float(resolved_config.get("blockade_radius", 0.0))
-    site_ids = _parse_site_ids(resolved_config.get("site_ids"))
+    configuration_families = _parse_configuration_families(resolved_config.get("configuration_families"))
+    default_family_name = (
+        _coerce_to_str(resolved_config.get("configuration_family"))
+        or _coerce_to_str(resolved_config.get("default_configuration_family"))
+    )
+    active_family: ConfigurationFamily | None = None
+    if configuration_families:
+        if default_family_name and default_family_name in configuration_families:
+            active_family = configuration_families[default_family_name]
+        else:
+            active_family = next(iter(configuration_families.values()))
+            default_family_name = active_family.name
+    parsed_site_ids = _parse_site_ids(resolved_config.get("site_ids"))
+    resolved_site_ids = list(active_family.site_ids) if active_family else list(parsed_site_ids or [])
+    if not default_family_name and active_family:
+        default_family_name = active_family.name
     site_descriptors = _parse_site_descriptors(resolved_config.get("sites"))
+    region_entries = _parse_regions(resolved_config.get("regions"))
+    if not region_entries and active_family:
+        region_entries = list(active_family.regions)
     noise_cfg = None
     noise_payload = resolved_config.get("noise")
     if isinstance(noise_payload, Mapping):
@@ -902,13 +1054,16 @@ def build_device_from_config(
         profile=profile,
         positions=positions,
         coordinates=coord_entries,
-        site_ids=site_ids,
+        site_ids=resolved_site_ids or None,
         sites=site_descriptors,
         blockade_radius=blockade,
         noise=noise_cfg,
         grid_layout=layout,
         native_gates=native_gates,
         timing_limits=timing_limits,
+        configuration_families=configuration_families or None,
+        regions=tuple(region_entries) if region_entries else None,
+        active_configuration_family_name=default_family_name,
         submit_job_fn=submit_job_fn,
     )
 
@@ -946,6 +1101,88 @@ def _sites_from_entries(entries: Sequence[tuple[float, ...]]) -> list[Dict[str, 
     return sites
 
 
+def _default_region_definition(site_ids: Sequence[int]) -> Dict[str, Any]:
+    return {
+        "name": _DEFAULT_REGION_NAME,
+        "site_ids": [int(site_id) for site_id in site_ids],
+        "role": _DEFAULT_REGION_ROLE,
+    }
+
+
+def _normalize_region_entries(
+    raw_entries: Any,
+    fallback_site_ids: Sequence[int],
+) -> list[Dict[str, Any]]:
+    normalized: list[Dict[str, Any]] = []
+    if isinstance(raw_entries, Sequence) and not isinstance(raw_entries, (str, bytes)):
+        for entry in raw_entries:
+            if not isinstance(entry, Mapping):
+                continue
+            site_ids = _parse_site_ids(entry.get("site_ids"))
+            if not site_ids:
+                continue
+            region: Dict[str, Any] = dict(entry)
+            region["site_ids"] = list(site_ids)
+            region["role"] = _normalize_region_role(entry.get("role"))
+            normalized.append(region)
+    if not normalized:
+        normalized = [_default_region_definition(fallback_site_ids)]
+    return normalized
+
+
+def _ensure_configuration_metadata() -> None:
+    for config in _PROFILE_TABLE.values():
+        site_ids = _parse_site_ids(config.get("site_ids")) or []
+        if not site_ids:
+            sites = config.get("sites")
+            if isinstance(sites, Sequence):
+                derived: list[int] = []
+                for idx, site in enumerate(sites):
+                    if not isinstance(site, Mapping):
+                        continue
+                    try:
+                        derived.append(int(site.get("id", idx)))
+                    except (TypeError, ValueError):
+                        continue
+                if derived:
+                    site_ids = derived
+                    config["site_ids"] = list(site_ids)
+        if not site_ids:
+            continue
+        regions = _normalize_region_entries(config.get("regions"), site_ids)
+        config["regions"] = regions
+        raw_families = config.get("configuration_families")
+        normalized_families: Dict[str, Dict[str, Any]] = {}
+        if isinstance(raw_families, Mapping):
+            for name, family in raw_families.items():
+                if not isinstance(family, Mapping):
+                    continue
+                family_ids = _parse_site_ids(family.get("site_ids")) or []
+                if not family_ids:
+                    continue
+                normalized_regions = _normalize_region_entries(family.get("regions"), site_ids)
+                processed: Dict[str, Any] = {
+                    key: deepcopy(value)
+                    for key, value in family.items()
+                    if key not in {"site_ids", "regions"}
+                }
+                processed["site_ids"] = list(family_ids)
+                processed["regions"] = normalized_regions
+                normalized_families[str(name)] = processed
+        if not normalized_families:
+            normalized_families[_DEFAULT_FAMILY_NAME] = {
+                "site_ids": list(site_ids),
+                "regions": [deepcopy(regions[0])],
+            }
+        elif _DEFAULT_FAMILY_NAME not in normalized_families:
+            normalized_families[_DEFAULT_FAMILY_NAME] = {
+                "site_ids": list(site_ids),
+                "regions": [deepcopy(regions[0])],
+            }
+        config["configuration_families"] = normalized_families
+        config.setdefault("default_configuration_family", _DEFAULT_FAMILY_NAME)
+
+
 def _ensure_site_metadata() -> None:
     for config in _PROFILE_TABLE.values():
         sites = config.get("sites")
@@ -958,6 +1195,7 @@ def _ensure_site_metadata() -> None:
 
 
 _ensure_site_metadata()
+_ensure_configuration_metadata()
 
 
 def connect_device(
