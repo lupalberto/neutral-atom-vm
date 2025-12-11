@@ -8,7 +8,7 @@ from copy import deepcopy
 from kirin.ir.method import Method
 from kirin.dialects.func import stmts as func_stmts
 from kirin.interp import MethodTable, impl
-from kirin.dialects import ilist
+from kirin.dialects import ilist, scf
 from bloqade import qubit
 
 from .layouts import GridLayout, grid_layout_for_profile
@@ -148,23 +148,57 @@ def _emit_stim_circuit(kernel: Method, program: Sequence[Dict[str, Any]]) -> str
     _ensure_emit_helpers_registered()
     # Allow the Stim emitter to see the small helper dialects that remain after
     # lowering (qubit allocations and ilist materialization).
-    extended_dialects = stim_mod.main.union([qubit, ilist])
+    extended_dialects = stim_mod.main.union([qubit, ilist, scf])
     buffer = io.StringIO()
     emitter = EmitStimMain(dialects=extended_dialects, io=buffer)
     emitter.initialize()
     emitter.run(working)
     circuit = buffer.getvalue().strip()
-    measure_lines: list[str] = []
+
+    # If Stim emitted fewer measurement instructions than the VM program
+    # declared, append plain `M` lines for the missing targets so the
+    # stabilizer backend’s bookkeeping stays in sync.
+    program_measurements: list[list[int]] = []
     for instruction in program:
         if instruction.get("op") != "Measure":
             continue
-        for target in instruction.get("targets", []):
-            measure_lines.append(f"M {int(target)}")
-    if measure_lines:
+        targets = instruction.get("targets") or []
+        coerced: list[int] = []
+        for raw in targets:
+            try:
+                coerced.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        if coerced:
+            program_measurements.append(coerced)
+
+    if not program_measurements:
+        return circuit
+
+    def _is_measure_line(line: str) -> bool:
+        stripped = line.lstrip()
+        if not stripped:
+            return False
+        return stripped.split()[0].startswith("M")
+
+    measure_lines = [line for line in circuit.splitlines() if _is_measure_line(line)]
+    pointer = 0
+    extra_lines: list[str] = []
+    for targets in program_measurements:
+        actual = 0
+        while actual < len(targets) and pointer < len(measure_lines):
+            actual += 1
+            pointer += 1
+        missing = len(targets) - actual
+        if missing > 0:
+            for target in targets[-missing:]:
+                extra_lines.append(f"M {int(target)}")
+    if extra_lines:
         if circuit:
-            circuit = f"{circuit}\n" + "\n".join(measure_lines)
+            circuit = f"{circuit}\n" + "\n".join(extra_lines)
         else:
-            circuit = "\n".join(measure_lines)
+            circuit = "\n".join(extra_lines)
+
     return circuit
 
 

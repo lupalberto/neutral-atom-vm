@@ -400,7 +400,7 @@ class StimCircuitBuilder {
                 qubit_ready_time_[idx] = end_time;
             }
         }
-        logical_time_ = std::max(logical_time_, start_time);
+        logical_time_ = std::max(logical_time_, end_time);
     }
 
     void append_wait(
@@ -410,7 +410,7 @@ class StimCircuitBuilder {
         const double safe_duration = std::max(0.0, duration);
         const double start_time = logical_time_;
         record_timeline_event(
-            "TICK",
+            "Wait",
             "duration_ns=" + std::to_string(duration),
             start_time,
             safe_duration);

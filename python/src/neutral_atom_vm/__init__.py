@@ -25,6 +25,10 @@ from .job import (
     JobResult,
     has_stabilizer_backend,
 )
+from .qec import (
+    repetition_code_job,
+    compute_repetition_code_metrics,
+)
 from .squin_lowering import to_vm_program, LoweringError
 from . import cli
 from .widgets import ProfileConfigurator, JobResultViewer
@@ -55,4 +59,6 @@ __all__ = [
     "ProfileConfigurator",
     "JobResultViewer",
     "has_stabilizer_backend",
+    "repetition_code_job",
+    "compute_repetition_code_metrics",
 ]
